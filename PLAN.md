@@ -2,13 +2,17 @@
 
 Stanje 2026-09-29. Odločitve: osnova je veja `releases/FreeCAD-1-1` (nameščen je FreeCAD 1.1.3, veja je pri 1.1.4),
 mapa `Desktop/Apps/FreeCAD`, javen fork `juskolaric/FreeCAD`.
+**Smer od 2026-09-29 (pot 1): FreeCAD je motor, uporabniški vmesnik in grafika nastajata v brskalniku.**
 
 ## Kaj je nastalo
 
 - Fork uradnega repozitorija na GitHubu (`origin`), uradni FreeCAD kot `upstream`.
 - Lokalni klon s podmoduli, delovna veja `moje-spremembe` nad `releases/FreeCAD-1-1`.
+  Veja `ukazna-vrstica`: ustavljeno delo na ukazni vrstici v slogu SolidWorksa (C++), glej korak 7.
 - Orodja: VS Build Tools 2022 s C++ (MSVC 14.44, Windows SDK 10.0.26100), pixi 0.81, git z vklopljenimi dolgimi potmi.
-- Vpis v koren `Apps` (`.gitignore`, `CLAUDE.md`, `README.md`, pravilo za Cursor), odprte naloge v `Apps/TODO.md`.
+- Vpis v koren `Apps` (`.gitignore`, `CLAUDE.md`, `README.md`, pravilo za Cursor), odprte naloge v `Apps/TODO.md`,
+  vrata 3020 v `Photolandia-Apps/ports.json`.
+- `lastno/splet`: dokaz koncepta spletnega pogleda (strežnik v FreeCAD-u in stran s three.js/WebGPU).
 
 ## Koraki
 
@@ -18,8 +22,25 @@ mapa `Desktop/Apps/FreeCAD`, javen fork `juskolaric/FreeCAD`.
 4. [x] Prva gradnja 2026-09-29: `configure-release` 1 min, `build-release` 6756 korakov v 31 min brez napak, `install-release` 10 s
 5. [x] Dokaz zanke 2026-09-29: oznaka »[lastna gradnja]« v naslovu okna (`src/Gui/MainWindow.cpp`); sprememba, gradnja (29 s), namestitev (30 s) in preverjanje z `lastno/preveri-naslov.py`
 6. [x] Način dela zapisan v `CLAUDE.md`: veja na spremembo, gradnja le spremenjenega, občasni `git fetch upstream`
+7. [x] Ukazna vrstica v slogu SolidWorksa (C++, `src/Gui/RibbonBar.*`): v1 prevedena in preverjena v Part Designu, v2 napisana in neprevedena; **ustavljeno 2026-09-29** na željo uporabnika, ostaja na veji `ukazna-vrstica`
+8. [x] Dokaz koncepta spletnega pogleda 2026-09-29: model iz FreeCAD-a v brskalniku (three.js 0.186, WebGPU s preklopom na WebGL 2), izbira ploskev in robov v obe smeri, samodejna osvežitev ob spremembi modela, ukazi Python prek žetona; preverjeno v vgrajenem brskalniku
+9. [ ] Pregledovalnik: drevo objektov in lastnosti v brskalniku, več dokumentov, binarni prenos geometrije namesto JSON, robovi z debelino, boljše senčenje (okolje, sence)
+10. [ ] Ukazi Part Design prek spletnega vmesnika (skica, izboklina, ugrez, zaokrožitev ...), zgodovina, razveljavi
+11. [ ] Urejevalnik skic v brskalniku (največji posamezen kos, na koncu)
+12. [ ] Ločen repozitorij za spletni vmesnik (Next.js po vzoru ostalih programov); FreeCAD ostane motor s strežniškim delom v tej mapi
 
-**Naslednji korak:** odločitev uporabnika, kaj v programu spremeniti najprej.
+**Naslednji korak:** odločitev uporabnika, kaj v pregledovalniku najprej: drevo in lastnosti ali ukazi Part Design.
+
+## Zgradba spletnega pogleda (dokaz koncepta)
+
+- `lastno/splet/streznik.py` teče v FreeCAD-u (z oknom ali brez): HTTP strežnik v niti na `127.0.0.1:3020` bere le
+  pripravljen posnetek geometrije, zahteve odloži v vrsto, obdela jih glavna nit (časovnik 50 ms). Posnetek se zgradi
+  ob spremembi dokumenta (opazovalci dokumenta, pogleda in izbire) z zamikom 300 ms: teselirane ploskve z oznakami
+  `Face{n}`, diskretizirani robovi `Edge{n}`, barve iz `ShapeAppearance`.
+- `lastno/splet/index.html`: three.js z WebGPU, izbira z žarkom (ploskve in robovi), dogodki SSE `/events`
+  (`model`, `izbira`), izbira `POST /select`, ukazi `POST /python`; POST zahteva žeton, vpisan v stran.
+- Vir resnice za izbiro je FreeCAD: brskalnik pošlje klik, FreeCAD izbere, opazovalec izbire jo vrne vsem odjemalcem.
+- Zagon: `lastno/splet/ZAZENI-SPLET.bat` (FreeCAD s strežnikom in brskalnik) ali `FreeCAD.exe lastno/splet/streznik.py`.
 
 ## Kje se kaj spreminja
 
@@ -27,6 +48,7 @@ mapa `Desktop/Apps/FreeCAD`, javen fork `juskolaric/FreeCAD`.
   `src/Main` zagon in identiteta programa (ime, ikona, splash).
 - `src/Mod/<Ime>` delovne mize: C++ v `App/` in `Gui/`, Python ob njih. Python del ne potrebuje prevajanja.
 - `CMakeLists.txt`, `cMake/`, `CMakePresets.json`, `pixi.toml` gradnja in okolje.
+- `lastno/` lastne skripte in spletni pogled (Python in HTML, brez prevajanja).
 
 ## Ocene
 
@@ -37,3 +59,4 @@ mapa `Desktop/Apps/FreeCAD`, javen fork `juskolaric/FreeCAD`.
 | Mapa `build/` po gradnji | 3,9 GB |
 | Prva gradnja Release (20 niti) | 31 min |
 | Ponovna gradnja po majhni spremembi | pod 1 min, namestitev 30 s |
+| Posnetek vzorčnega modela za brskalnik | 52 kB, 2 objekta, 1500 trikotnikov |

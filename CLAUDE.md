@@ -36,6 +36,22 @@ pixi run freecad-release     # install-release + zagon .pixi/envs/default/Librar
 - Nastavitve uporabnika si prevedeni program deli z nameščenim 1.1.x (`%APPDATA%\FreeCAD\v1-1`), ker je `ExeName`
   isti (`src/Main/MainGui.cpp`). Sprememba imena bi premaknila tudi mapo nastavitev.
 
+## Spletni pogled (`lastno/splet`), smer od 2026-09-29
+
+FreeCAD je motor, vmesnik in grafika nastajata v brskalniku (plan, korak 8 naprej). Dokaz koncepta:
+
+- Zagon: `lastno\splet\ZAZENI-SPLET.bat` (FreeCAD s strežnikom, odpre brskalnik) ali `FreeCAD.exe lastno/splet/streznik.py`.
+  Naslov `http://127.0.0.1:3020/` (vrata po `Photolandia-Apps/ports.json`). Okolje: `SPLET_VRATA`, `SPLET_BRSKALNIK=0` ne odpre brskalnika.
+- Pravilo niti: nit strežnika **nikoli** ne kliče FreeCAD API-ja. Bere le posnetek (bajti JSON), zahteve daje v vrsto,
+  ki jo obdela glavna nit (QTimer 50 ms; brez okna zanka). Posnetek se zgradi ob spremembi dokumenta z zamikom 300 ms.
+- Končne točke: `GET /` stran, `GET /model` posnetek, `GET /events` SSE (`model`, `izbira`), `GET /stanje`,
+  `POST /select {objekt, element, dodaj}`, `POST /python {koda}`. Vsak POST potrebuje glavo `X-Zeton` (žeton nastane ob
+  zagonu in je vpisan v stran), da tuja spletna stran v brskalniku ne more poganjati kode v FreeCAD-u.
+- Vir resnice za izbiro je FreeCAD (`Gui.Selection`): brskalnik pošlje klik, obarva pa šele to, kar FreeCAD javi.
+- Preverjanje: `curl http://127.0.0.1:3020/stanje`, stran (napis v kotu: dokument, izbira, izris WebGPU ali WebGL 2).
+  Vgrajeni brskalnik aplikacije Claude klika v CSS slikovnih pikah strani, ne v merilu posnetka zaslona.
+- Veja `ukazna-vrstica`: ustavljeno delo na C++ ukazni vrstici v slogu SolidWorksa; ne razvijaj naprej brez naročila.
+
 ## Način dela
 
 - Vsaka sprememba na svoji veji iz `moje-spremembe`; po preverjeni gradnji združi nazaj. Commit sporočila v slovenščini.
