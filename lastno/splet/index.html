@@ -443,8 +443,10 @@ function osveziHud() {
     ? stanje.izbira.map(s => { const z = objekti.get(s.objekt); const ime = z ? z.podatki.oznaka : s.objekt; return s.elementi.length ? s.elementi.map(el => ime + '.' + el).join(', ') : ime; }).join('; ')
     : 'nič';
   const urejanje = stanje.okolje.urejanje ? ' · urejanje: ' + stanje.okolje.urejanje.split('::').pop() : '';
+  const povezava = stanje.povezava === false
+    ? ' · <b style="color:#b00">povezava s FreeCAD-om prekinjena, poskušam znova …</b>' : '';
   hud.innerHTML = 'Dokument: <b>' + (stanje.dokument || '–') + '</b> · objektov: ' + objekti.size + ' · posnetek ' + stanje.verzija + urejanje + '<br>'
-    + 'Izbira: <b>' + izbrano + '</b> · izris: ' + izris + ' · three.js ' + THREE.REVISION;
+    + 'Izbira: <b>' + izbrano + '</b> · izris: ' + izris + ' · three.js ' + THREE.REVISION + povezava;
 }
 
 const dogodki = new EventSource('/events');
@@ -452,7 +454,8 @@ dogodki.addEventListener('model', () => { naloziModel().catch(pokaziNapako); });
 dogodki.addEventListener('izbira', e => { oznaciIzbiro(JSON.parse(e.data)); });
 dogodki.addEventListener('aktivni', e => { uporabiAktivne(JSON.parse(e.data)); });
 dogodki.addEventListener('okolje', e => { uporabiOkolje(JSON.parse(e.data)); });
-dogodki.onerror = () => { hud.innerHTML = '<b>Povezava s FreeCAD-om je prekinjena.</b> Zaženi strežnik in osveži stran.'; };
+dogodki.onopen = () => { stanje.povezava = true; osveziHud(); };
+dogodki.onerror = () => { stanje.povezava = false; osveziHud(); };
 
 new ResizeObserver(() => {
   const w = pogled.clientWidth, h = pogled.clientHeight;
