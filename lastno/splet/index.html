@@ -53,6 +53,16 @@
   .gumb.velik .puscica { margin: 0; }
   .gumb .puscica:hover { color: var(--poudarek); }
 
+  /* Trak skice */
+  #skicaTrak { display: flex; align-items: center; gap: 4px; padding: 6px 8px; background: #fffdf5; border-top: 1px solid #e8e0b8; }
+  #skicaTrak .orodjeSkice { border: 1px solid var(--crta); background: #fff; border-radius: 4px; padding: 5px 10px; cursor: pointer; }
+  #skicaTrak .orodjeSkice:hover { background: #eef2f7; }
+  #skicaTrak .orodjeSkice.aktivno { background: #dbe8f8; border-color: var(--poudarek); font-weight: 600; }
+  #skicaTrak .locilo { width: 1px; height: 24px; background: var(--crta); margin: 0 4px; }
+  #skicaNamig { margin-left: 12px; color: #555; font-size: 12px; }
+  #skicaZapri { margin-left: auto; background: #1e88e5; color: #fff; border: none; border-radius: 4px; padding: 6px 14px; cursor: pointer; font-weight: 600; }
+  #skicaZapri:hover { background: #1669b8; }
+
   /* Pogled */
   #pogled { flex: 1 1 auto; position: relative; min-height: 120px; }
   #pogled canvas { display: block; }
@@ -63,14 +73,25 @@
   #pasica button:hover { background: #fdf3cf; }
   #namig { position: absolute; left: 12px; bottom: 12px; font-size: 12px; color: #555;
            background: rgba(255,255,255,.7); padding: 4px 8px; border-radius: 4px; pointer-events: none; }
+  #mere { position: absolute; inset: 0; pointer-events: none; overflow: hidden; }
+  .mera { position: absolute; transform: translate(-50%, -50%); background: rgba(255,255,255,.85); border: 1px solid #b9c3d0;
+          border-radius: 3px; padding: 1px 5px; font-size: 11px; color: #0d47a1; white-space: nowrap; }
 
-  /* Namig ukaza in spustni meni */
+  /* Namig ukaza, spustni meni, pogovorna okna */
   #opis { position: fixed; z-index: 20; max-width: 360px; background: #fffef5; border: 1px solid #c9c39a; border-radius: 4px;
           padding: 6px 9px; font-size: 12px; box-shadow: 0 2px 8px rgba(0,0,0,.18); pointer-events: none; }
   #opis p { margin: 0 0 4px; } #opis p:last-child { margin: 0; }
   #meni { position: fixed; z-index: 30; background: #fff; border: 1px solid var(--crta); border-radius: 4px; padding: 4px;
           box-shadow: 0 4px 14px rgba(0,0,0,.18); display: flex; flex-direction: column; min-width: 180px; }
   #meni .gumb { padding: 4px 8px; }
+  #dialogSkica { position: fixed; inset: 0; z-index: 40; background: rgba(0,0,0,.25); display: flex; align-items: center; justify-content: center; }
+  #dialogSkica .okno { background: #fff; border-radius: 8px; padding: 16px 20px; min-width: 320px; box-shadow: 0 8px 30px rgba(0,0,0,.3); }
+  #dialogSkica h3 { margin: 0 0 10px; font-size: 15px; }
+  #dialogSkica label { display: block; margin: 5px 0; }
+  #dialogSkica input[type=number] { width: 80px; }
+  #dialogSkica .gumbi { display: flex; justify-content: flex-end; gap: 8px; margin-top: 14px; }
+  #dialogSkica .gumbi button { border: 1px solid var(--crta); background: #fff; border-radius: 4px; padding: 5px 12px; cursor: pointer; }
+  #dialogSkica .gumbi button.glavni { background: var(--poudarek); color: #fff; border-color: var(--poudarek); }
   .skrit { display: none !important; }
   #napaka { position: fixed; right: 12px; bottom: 12px; max-width: 40vw; background: #fff3f3; color: #900; padding: 8px 12px;
             border-radius: 6px; font-size: 12px; display: none; white-space: pre-wrap; z-index: 40; }
@@ -96,10 +117,35 @@
     <div id="hud">Povezujem s FreeCAD-om …</div>
   </div>
   <div id="trak"></div>
+  <div id="skicaTrak" class="skrit">
+    <button class="orodjeSkice" data-orodje="izberi" title="Izbira, premikanje točk (vlečenje)">Izberi</button>
+    <span class="locilo"></span>
+    <button class="orodjeSkice" data-orodje="crta" title="Črta ali lomljena črta: klik začetek, klik konec, naprej; Esc konča">Črta</button>
+    <button class="orodjeSkice" data-orodje="pravokotnik" title="Pravokotnik: dva nasprotna ogla">Pravokotnik</button>
+    <button class="orodjeSkice" data-orodje="krog" title="Krog: središče, nato polmer">Krog</button>
+    <button class="orodjeSkice" data-orodje="tocka" title="Točka">Točka</button>
+    <span class="locilo"></span>
+    <button class="orodjeSkice" data-orodje="mera" title="Mera: dolžina črte ali polmer kroga">Mera</button>
+    <button class="orodjeSkice" data-orodje="gradbena" title="Preklopi gradbeno geometrijo (pomožne črte)">Gradbena</button>
+    <button class="orodjeSkice" data-orodje="izbrisi" title="Izbriši element (ali izberi in tipka Delete)">Izbriši</button>
+    <span id="skicaNamig"></span>
+    <button id="skicaZapri" type="button" title="Konča urejanje skice; skica ostane izbrana za naslednji ukaz">Zapri skico</button>
+  </div>
 </div>
 <div id="pogled">
+  <div id="mere"></div>
   <div id="pasica" class="skrit"><span id="pasicaBesedilo"></span><button id="pasicaGumb" type="button">Pokaži FreeCAD</button></div>
   <div id="namig">Levi gumb: vrtenje · kolešček: povečava · desni gumb: premik · klik: izbira ploskve ali roba (Ctrl doda) · F: prilagodi pogled</div>
+</div>
+<div id="dialogSkica" class="skrit">
+  <div class="okno">
+    <h3>Nova skica</h3>
+    <div id="dialogRavnine"></div>
+    <label><input type="checkbox" id="skicaObrni"> Obrni smer pogleda</label>
+    <label>Odmik od ravnine (mm) <input type="number" id="skicaOdmik" value="0" step="0.1"></label>
+    <label><input type="checkbox" id="skicaTelo"> V telesu (Part Design); brez kljukice nastane samostojna skica</label>
+    <div class="gumbi"><button type="button" id="skicaPreklici">Prekliči</button><button type="button" class="glavni" id="skicaOk">V redu</button></div>
+  </div>
 </div>
 <div id="opis" class="skrit"></div>
 <div id="meni" class="skrit"></div>
@@ -108,7 +154,7 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 
-const ZETON = '__ZETON__';
+let ZETON = '__ZETON__';
 const $ = id => document.getElementById(id);
 const hud = $('hud'), trak = $('trak'), zavihki = $('zavihki'), hitri = $('hitri'), opis = $('opis'), meni = $('meni');
 const BARVA_ROBA = new THREE.Color(0x202428);
@@ -157,10 +203,7 @@ function ustvariGumb(u, velik, podukaz) {
   return g;
 }
 
-function posodobiGumb(g, ime) {
-  const a = stanje.aktivni[ime];
-  g.disabled = a === false;
-}
+function posodobiGumb(g, ime) { g.disabled = stanje.aktivni[ime] === false; }
 
 function odpriMeni(gumb, u) {
   meni.innerHTML = '';
@@ -197,9 +240,34 @@ function pokaziOpis(gumb, html) {
 }
 function skrijOpis() { clearTimeout(opisCasovnik); opis.classList.add('skrit'); }
 
+// Ukazi, ki jih izvedemo v brskalniku namesto v FreeCAD-u.
+const NOVA_SKICA = new Set(['Sketcher_NewSketch', 'PartDesign_NewSketch']);
+const UREDI_SKICO = new Set(['Sketcher_EditSketch', 'PartDesign_EditSketch']);
 async function izvedi(ime, indeks) {
   skrijOpis();
+  if (NOVA_SKICA.has(ime) || (ime === 'PartDesign_CompSketches' && indeks === 0)) { odpriDialogSkice(); return; }
+  if (ime === 'Sketcher_LeaveSketch' && skica.posnetek) { zapriSkico(); return; }
+  if (UREDI_SKICO.has(ime) || (ime === 'PartDesign_CompSketches' && indeks === 2)) {
+    const s = stanje.izbira[0];
+    if (s) { objaviSkico({ vrsta: 'odpri', ime: s.objekt }); return; }
+  }
+  // Izboklina in ugrez iz izbrane skice: dolžina se vpraša tukaj, ne v oknu FreeCAD-a.
+  if ((ime === 'PartDesign_Pad' || ime === 'PartDesign_Pocket') && stanje.izbira.length === 1 && jeSkica(stanje.izbira[0].objekt)) {
+    const izboklina = ime === 'PartDesign_Pad';
+    const v = prompt((izboklina ? 'Dolžina izbokline (mm)' : 'Globina ugreza (mm)') + '; negativna vrednost obrne smer:', '10');
+    if (v == null) return;
+    const d = parseFloat(v.replace(',', '.'));
+    if (!isFinite(d) || d === 0) return;
+    try { await objavi('/znacilnost', { vrsta: izboklina ? 'izboklina' : 'ugrez', skica: stanje.izbira[0].objekt, dolzina: Math.abs(d), obrni: d < 0 }); } catch (e) { pokaziNapako(e); }
+    return;
+  }
   try { await objavi('/ukaz', { ime, indeks }); } catch (e) { pokaziNapako(e); }
+}
+// Skice v modelu prepoznamo po tem, da imajo robove brez ploskev (posnetek) ali so bile pravkar zaprte.
+function jeSkica(ime) {
+  const z = objekti.get(ime);
+  if (!z) return stanje.zadnjaSkica === ime;
+  return z.podatki.ploskve.length === 0 && z.podatki.robovi.length > 0;
 }
 
 function narisiZavihke() {
@@ -250,7 +318,7 @@ function narisiTrak(imeOkolja, zgosceno) {
 let casovnikVelikosti = null;
 window.addEventListener('resize', () => {
   clearTimeout(casovnikVelikosti);
-  casovnikVelikosti = setTimeout(() => { if (stanje.zavihek) narisiTrak(stanje.zavihek, false); }, 150);
+  casovnikVelikosti = setTimeout(() => { if (stanje.zavihek && !skica.posnetek) narisiTrak(stanje.zavihek, false); }, 150);
 });
 
 function izberiZavihek(ime, izFreeCADa) {
@@ -262,19 +330,18 @@ function izberiZavihek(ime, izFreeCADa) {
 
 function uporabiOkolje(okolje) {
   stanje.okolje = okolje;
-  // Med urejanjem skice pokažemo zavihek Skica, sicer aktivno delovno okolje FreeCAD-a.
   const urejaSkico = (okolje.urejanje || '').startsWith('Sketcher::');
   const cilj = urejaSkico ? 'SketcherWorkbench' : okolje.delovnaMiza;
   for (const z of zavihki.children) z.classList.toggle('urejanje', urejaSkico && z.dataset.ime === 'SketcherWorkbench');
   if (stanje.ukazi && cilj && stanje.ukazi.delovnaOkolja.some(o => o.ime === cilj) && cilj !== stanje.zavihek) izberiZavihek(cilj, false);
-  // Pasica: FreeCAD čaka na odgovor v svojem oknu (modalno okno) ali ima odprto opravilo (nastavitve ukaza, urejanje skice).
+  // Pasica: FreeCAD potrebuje vnos v svojem oknu (modalno okno, opravilo, urejanje skice v FreeCAD-u).
   const pasica = $('pasica'), besedilo = $('pasicaBesedilo');
   const kje = okolje.oknoVidno ? 'FreeCAD je pokazal svoje okno, ker potrebuje vaš vnos' : 'FreeCAD potrebuje vaš vnos v svojem oknu';
   if (okolje.pogovor) {
     besedilo.textContent = kje + ': »' + okolje.pogovor + '«. Ko končate, se okno spet skrije.';
     pasica.classList.remove('skrit');
   } else if (urejaSkico) {
-    besedilo.textContent = 'Skica se ureja v oknu FreeCAD-a (urejevalnik skic v brskalniku še ni narejen). Ko skico zaprete, se okno spet skrije.';
+    besedilo.textContent = 'Skica se ureja v oknu FreeCAD-a. Ko jo tam zaprete, se okno spet skrije.';
     pasica.classList.remove('skrit');
   } else if (okolje.opravilo) {
     const kaj = okolje.urejanje ? ' (' + okolje.urejanje.split('::').pop() + ')' : '';
@@ -332,6 +399,7 @@ camera.position.set(120, -140, 100);
 const controls = new OrbitControls(camera, renderer.domElement);
 controls.enableDamping = true;
 controls.dampingFactor = 0.12;
+let aktivnaKamera = camera;
 
 scene.add(new THREE.HemisphereLight(0xffffff, 0x8a9099, 0.9));
 const luc = new THREE.DirectionalLight(0xffffff, 1.6); luc.position.set(1, -1.2, 2.2); scene.add(luc);
@@ -393,8 +461,11 @@ async function naloziModel() {
   osveziHud();
 }
 
+function okvirModela() { return new THREE.Box3().setFromObject(koren); }
+
 function prilagodiPogled() {
-  const okvir = new THREE.Box3().setFromObject(koren);
+  if (skica.posnetek) { prilagodiPogledSkice(); return; }
+  const okvir = okvirModela();
   if (okvir.isEmpty()) return;
   const sredisce = okvir.getCenter(new THREE.Vector3());
   const polmer = okvir.getSize(new THREE.Vector3()).length() / 2 || 10;
@@ -435,15 +506,23 @@ function oznaciIzbiro(izbira) {
 
 const raycaster = new THREE.Raycaster();
 const kazalec = new THREE.Vector2();
+function nastaviKazalec(e) {
+  const r = renderer.domElement.getBoundingClientRect();
+  kazalec.set(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1);
+  raycaster.setFromCamera(kazalec, aktivnaKamera);
+}
 let pritisk = null;
-renderer.domElement.addEventListener('pointerdown', e => { pritisk = { x: e.clientX, y: e.clientY, gumb: e.button }; });
+renderer.domElement.addEventListener('pointerdown', e => {
+  if (skica.posnetek) { skicaPointerDown(e); return; }
+  pritisk = { x: e.clientX, y: e.clientY, gumb: e.button };
+});
+renderer.domElement.addEventListener('pointermove', e => { if (skica.posnetek) skicaPointerMove(e); });
 renderer.domElement.addEventListener('pointerup', e => {
+  if (skica.posnetek) { skicaPointerUp(e); return; }
   if (!pritisk || pritisk.gumb !== 0) return;
   const premik = Math.hypot(e.clientX - pritisk.x, e.clientY - pritisk.y); pritisk = null;
   if (premik > 4) return;
-  const r = renderer.domElement.getBoundingClientRect();
-  kazalec.set(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1);
-  raycaster.setFromCamera(kazalec, camera);
+  nastaviKazalec(e);
   raycaster.params.Line.threshold = controls.getDistance() * 0.004;
   const meshi = [], crte = [];
   for (const z of objekti.values()) { if (z.mesh) meshi.push(z.mesh); if (z.crte) crte.push(z.crte); }
@@ -454,7 +533,349 @@ renderer.domElement.addEventListener('pointerup', e => {
   if (objekt) objavi('/select', { objekt, element, dodaj: e.ctrlKey }).catch(pokaziNapako);
   else if (!e.ctrlKey) objavi('/select', { objekt: '', element: '', dodaj: false }).catch(pokaziNapako);
 });
-window.addEventListener('keydown', e => { if ((e.key === 'f' || e.key === 'F') && e.target === document.body) prilagodiPogled(); });
+renderer.domElement.addEventListener('contextmenu', e => { e.preventDefault(); if (skica.posnetek) prekiniRisanje(); });
+window.addEventListener('keydown', e => {
+  if (e.target !== document.body) return;
+  if (e.key === 'f' || e.key === 'F') prilagodiPogled();
+  if (skica.posnetek) {
+    if (e.key === 'Escape') { if (skica.risba) prekiniRisanje(); else nastaviOrodje('izberi'); }
+    if (e.key === 'Delete' && skica.izbrano != null) { objaviSkico({ vrsta: 'izbrisi', ids: [skica.izbrano] }); skica.izbrano = null; }
+  }
+});
+
+// --- skica v brskalniku ------------------------------------------------------
+const skica = { posnetek: null, matrika: null, inverz: null, ravnina: null, normala: null, gor: null,
+                skupina: null, tocke: [], segmenti: [], orodje: 'izberi', risba: null, izbrano: null, vlecenje: null, oznake: [] };
+let ortoKamera = null, ortoControls = null, ortoVisina = 60;
+const matSkica = new THREE.LineBasicMaterial({ vertexColors: true });
+const matGradbena = new THREE.LineDashedMaterial({ color: 0x1e5fb8, dashSize: 1.2, gapSize: 0.8 });
+const matPredogled = new THREE.LineBasicMaterial({ color: 0x1e88e5 });
+const matTocke = new THREE.PointsMaterial({ size: 7, sizeAttenuation: false, color: 0x202428 });
+const matPripenjanje = new THREE.PointsMaterial({ size: 12, sizeAttenuation: false, color: 0xff8c00 });
+const BARVA_SKICE = new THREE.Color(0x151515), BARVA_SKICE_IZBRANO = new THREE.Color(0xff8c00);
+
+async function objaviSkico(op) { try { await objavi('/skica', op); } catch (e) { pokaziNapako(e); } }
+
+function nastaviMatrike(p) {
+  const q = new THREE.Quaternion(p.polozaj.rotacija[0], p.polozaj.rotacija[1], p.polozaj.rotacija[2], p.polozaj.rotacija[3]);
+  const b = new THREE.Vector3(p.polozaj.osnova[0], p.polozaj.osnova[1], p.polozaj.osnova[2]);
+  skica.matrika = new THREE.Matrix4().compose(b, q, new THREE.Vector3(1, 1, 1));
+  skica.inverz = skica.matrika.clone().invert();
+  skica.normala = new THREE.Vector3(0, 0, 1).applyQuaternion(q);
+  skica.gor = new THREE.Vector3(0, 1, 0).applyQuaternion(q);
+  skica.ravnina = new THREE.Plane().setFromNormalAndCoplanarPoint(skica.normala, b);
+  skica.osnova = b; skica.rotacija = q;
+}
+function lokalno(v3) { const l = v3.clone().applyMatrix4(skica.inverz); return [l.x, l.y]; }
+function svetovno(x, y) { return new THREE.Vector3(x, y, 0).applyMatrix4(skica.matrika); }
+function tockaNaRavnini(e) { nastaviKazalec(e); const t = new THREE.Vector3(); return raycaster.ray.intersectPlane(skica.ravnina, t) ? t : null; }
+function naZaslon(v3) {
+  const p = v3.clone().project(aktivnaKamera);
+  const r = renderer.domElement.getBoundingClientRect();
+  return [r.left + (p.x + 1) / 2 * r.width, r.top + (1 - p.y) / 2 * r.height];
+}
+
+function tockeGeometrije(g) {
+  if (g.tip === 'LineSegment') return [g.p1, g.p2];
+  if (g.tip === 'Circle') { const t = []; for (let i = 0; i <= 64; i++) { const a = i / 64 * Math.PI * 2; t.push([g.sredisce[0] + g.r * Math.cos(a), g.sredisce[1] + g.r * Math.sin(a)]); } return t; }
+  if (g.tip === 'ArcOfCircle') { const n = Math.max(8, Math.ceil((g.kot2 - g.kot1) / (Math.PI / 24))); const t = []; for (let i = 0; i <= n; i++) { const a = g.kot1 + (g.kot2 - g.kot1) * i / n; t.push([g.sredisce[0] + g.r * Math.cos(a), g.sredisce[1] + g.r * Math.sin(a)]); } return t; }
+  if (g.tip === 'Point') return [];
+  return g.tocke || [];
+}
+function pripenjalneTocke(p) {
+  const t = [{ id: -1, poz: 1, x: 0, y: 0 }];
+  for (const g of p.geometrija) {
+    if (g.tip === 'LineSegment' || g.tip === 'ArcOfCircle') { t.push({ id: g.id, poz: 1, x: g.p1[0], y: g.p1[1] }); t.push({ id: g.id, poz: 2, x: g.p2[0], y: g.p2[1] }); }
+    if (g.tip === 'Circle' || g.tip === 'ArcOfCircle') t.push({ id: g.id, poz: 3, x: g.sredisce[0], y: g.sredisce[1] });
+    if (g.tip === 'Point') t.push({ id: g.id, poz: 1, x: g.p[0], y: g.p[1] });
+  }
+  return t;
+}
+
+function narisiSkico() {
+  const p = skica.posnetek; if (!p || !skica.skupina) return;
+  for (const c of [...skica.skupina.children]) { if (c.userData.trajno) continue; skica.skupina.remove(c); if (c.geometry) c.geometry.dispose(); }
+  const seg = [], barve = [], segGeo = [], grad = [];
+  for (const g of p.geometrija) {
+    const pts = tockeGeometrije(g);
+    const barva = g.id === skica.izbrano ? BARVA_SKICE_IZBRANO : BARVA_SKICE;
+    for (let i = 0; i < pts.length - 1; i++) {
+      const a = svetovno(pts[i][0], pts[i][1]), b = svetovno(pts[i + 1][0], pts[i + 1][1]);
+      if (g.gradbena) { grad.push(a.x, a.y, a.z, b.x, b.y, b.z); }
+      else { seg.push(a.x, a.y, a.z, b.x, b.y, b.z); barve.push(barva.r, barva.g, barva.b, barva.r, barva.g, barva.b); }
+      skica.segmenti.push({ id: g.id, a, b });
+    }
+  }
+  skica.segmenti = [];
+  for (const g of p.geometrija) { const pts = tockeGeometrije(g); for (let i = 0; i < pts.length - 1; i++) skica.segmenti.push({ id: g.id, a: svetovno(pts[i][0], pts[i][1]), b: svetovno(pts[i + 1][0], pts[i + 1][1]) }); }
+  if (seg.length) {
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.Float32BufferAttribute(seg, 3));
+    geo.setAttribute('color', new THREE.Float32BufferAttribute(barve, 3));
+    skica.skupina.add(new THREE.LineSegments(geo, matSkica));
+  }
+  if (grad.length) {
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.Float32BufferAttribute(grad, 3));
+    const l = new THREE.LineSegments(geo, matGradbena); l.computeLineDistances();
+    skica.skupina.add(l);
+  }
+  skica.tocke = pripenjalneTocke(p);
+  const tp = [];
+  for (const t of skica.tocke) { if (t.id < 0) continue; const w = svetovno(t.x, t.y); tp.push(w.x, w.y, w.z); }
+  if (tp.length) { const geo = new THREE.BufferGeometry(); geo.setAttribute('position', new THREE.Float32BufferAttribute(tp, 3)); skica.skupina.add(new THREE.Points(geo, matTocke)); }
+  narisiMere();
+}
+
+function narisiMere() {
+  const p = skica.posnetek, vsebnik = $('mere');
+  vsebnik.innerHTML = ''; skica.oznake = [];
+  if (!p) return;
+  for (const c of p.omejitve) {
+    if (!['Distance', 'DistanceX', 'DistanceY', 'Radius', 'Diameter', 'Angle'].includes(c.tip)) continue;
+    const g = p.geometrija[c.prvi]; if (!g) continue;
+    let sidro = null;
+    if (g.tip === 'LineSegment') { const mx = (g.p1[0] + g.p2[0]) / 2, my = (g.p1[1] + g.p2[1]) / 2; const dx = g.p2[0] - g.p1[0], dy = g.p2[1] - g.p1[1]; const l = Math.hypot(dx, dy) || 1; sidro = svetovno(mx - dy / l * 3, my + dx / l * 3); }
+    else if (g.tip === 'Circle' || g.tip === 'ArcOfCircle') sidro = svetovno(g.sredisce[0] + g.r * 0.7, g.sredisce[1] + g.r * 0.7);
+    if (!sidro) continue;
+    const el = document.createElement('div'); el.className = 'mera';
+    el.textContent = (c.tip === 'Angle' ? (c.vrednost * 180 / Math.PI).toFixed(1) + '°' : c.vrednost.toFixed(2) + ' mm') + (c.tip === 'Radius' ? ' R' : '');
+    el.title = c.tip; vsebnik.appendChild(el);
+    skica.oznake.push({ el, sidro });
+  }
+}
+function posodobiMere() {
+  const r = renderer.domElement.getBoundingClientRect();
+  for (const o of skica.oznake) { const [x, y] = naZaslon(o.sidro); o.el.style.left = (x - r.left) + 'px'; o.el.style.top = (y - r.top) + 'px'; }
+}
+
+function obsegSkice(p) {
+  const pts = [];
+  for (const g of p.geometrija) for (const t of tockeGeometrije(g)) pts.push(t);
+  for (const g of p.geometrija) if (g.tip === 'Point') pts.push(g.p);
+  if (pts.length < 2) return null;
+  let minx = Infinity, miny = Infinity, maxx = -Infinity, maxy = -Infinity;
+  for (const [x, y] of pts) { minx = Math.min(minx, x); maxx = Math.max(maxx, x); miny = Math.min(miny, y); maxy = Math.max(maxy, y); }
+  return { cx: (minx + maxx) / 2, cy: (miny + maxy) / 2, pol: Math.max(maxx - minx, maxy - miny, 10) / 2 * 1.3 };
+}
+function prilagodiPogledSkice() {
+  const p = skica.posnetek; if (!p || !ortoKamera) return;
+  let o = obsegSkice(p);
+  if (!o) {
+    const okvir = okvirModela();
+    if (!okvir.isEmpty()) { const c = okvir.getCenter(new THREE.Vector3()); const pc = skica.ravnina.projectPoint(c, new THREE.Vector3()); const l = lokalno(pc); o = { cx: l[0], cy: l[1], pol: okvir.getSize(new THREE.Vector3()).length() / 2 * 0.9 || 60 }; }
+    else o = { cx: 0, cy: 0, pol: 60 };
+  }
+  const sredisce = svetovno(o.cx, o.cy);
+  ortoVisina = o.pol; ortoKamera.zoom = 1;
+  const aspect = pogled.clientWidth / Math.max(1, pogled.clientHeight);
+  ortoKamera.left = -o.pol * aspect; ortoKamera.right = o.pol * aspect; ortoKamera.top = o.pol; ortoKamera.bottom = -o.pol;
+  ortoKamera.position.copy(sredisce).addScaledVector(skica.normala, 500);
+  ortoKamera.up.copy(skica.gor); ortoKamera.lookAt(sredisce); ortoKamera.updateProjectionMatrix();
+  ortoControls.target.copy(sredisce); ortoControls.update();
+  const g = skica.skupina.children.find(c => c.userData.mreza);
+  if (g) { g.position.copy(svetovno(o.cx, o.cy)); g.quaternion.copy(skica.rotacija).multiply(new THREE.Quaternion().setFromEuler(new THREE.Euler(Math.PI / 2, 0, 0))); g.scale.setScalar(Math.max(1, Math.ceil(o.pol * 3 / 50))); }
+}
+
+function vstopiVSkico(p) {
+  nastaviMatrike(p);
+  skica.skupina = new THREE.Group(); scene.add(skica.skupina);
+  const g = new THREE.GridHelper(100, 100, 0xc9d0d9, 0xe1e5ea); g.userData = { trajno: true, mreza: true }; skica.skupina.add(g);
+  const predogled = new THREE.LineSegments(new THREE.BufferGeometry(), matPredogled); predogled.userData = { trajno: true, predogled: true }; predogled.frustumCulled = false; skica.skupina.add(predogled);
+  const pripenjanje = new THREE.Points(new THREE.BufferGeometry(), matPripenjanje); pripenjanje.userData = { trajno: true, pripenjanje: true }; pripenjanje.frustumCulled = false; pripenjanje.visible = false; skica.skupina.add(pripenjanje);
+  ortoKamera = new THREE.OrthographicCamera(-60, 60, 60, -60, -5000, 5000);
+  controls.enabled = false;
+  ortoControls = new OrbitControls(ortoKamera, renderer.domElement);
+  ortoControls.enableRotate = false; ortoControls.screenSpacePanning = true; ortoControls.enableDamping = false;
+  ortoControls.mouseButtons = { LEFT: null, MIDDLE: THREE.MOUSE.DOLLY, RIGHT: THREE.MOUSE.PAN };
+  aktivnaKamera = ortoKamera;
+  materialPloskev.transparent = true; materialPloskev.opacity = 0.22; materialPloskev.needsUpdate = true;
+  materialRobov.transparent = true; materialRobov.opacity = 0.35; materialRobov.needsUpdate = true;
+  mreza.visible = false;
+  trak.classList.add('skrit'); $('skicaTrak').classList.remove('skrit');
+  $('namig').textContent = 'Kolešček: povečava · desni gumb: premik · Esc: prekini · Delete: izbriši izbrano · F: prilagodi pogled';
+  skica.posnetek = p; skica.izbrano = null; skica.risba = null;
+  nastaviOrodje('izberi');
+  prilagodiPogledSkice();
+}
+
+function zapriSkicoLokalno() {
+  if (skica.skupina) { skica.skupina.traverse(n => { if (n.geometry) n.geometry.dispose(); }); scene.remove(skica.skupina); skica.skupina = null; }
+  if (ortoControls) { ortoControls.dispose(); ortoControls = null; }
+  ortoKamera = null; aktivnaKamera = camera; controls.enabled = true;
+  materialPloskev.transparent = false; materialPloskev.opacity = 1; materialPloskev.needsUpdate = true;
+  materialRobov.transparent = false; materialRobov.opacity = 1; materialRobov.needsUpdate = true;
+  mreza.visible = true;
+  $('mere').innerHTML = ''; skica.oznake = [];
+  trak.classList.remove('skrit'); $('skicaTrak').classList.add('skrit');
+  $('namig').textContent = 'Levi gumb: vrtenje · kolešček: povečava · desni gumb: premik · klik: izbira ploskve ali roba (Ctrl doda) · F: prilagodi pogled';
+  skica.posnetek = null; skica.risba = null; skica.izbrano = null; skica.vlecenje = null;
+  osveziHud();
+}
+function zapriSkico() { if (skica.posnetek) stanje.zadnjaSkica = skica.posnetek.ime; objaviSkico({ vrsta: 'zapri' }); }
+$('skicaZapri').addEventListener('click', zapriSkico);
+
+function uporabiSkico(p) {
+  if (!p) { if (skica.posnetek) zapriSkicoLokalno(); return; }
+  const prvic = !skica.posnetek || skica.posnetek.ime !== p.ime;
+  if (prvic) { if (skica.posnetek) zapriSkicoLokalno(); vstopiVSkico(p); }
+  else nastaviMatrike(p);
+  skica.posnetek = p;
+  if (skica.risba && skica.risba.cakam && p.novi && p.novi.length) { skica.risba.spoji = [p.novi[0], 2]; skica.risba.cakam = false; }
+  if (skica.izbrano != null && !p.geometrija.some(g => g.id === skica.izbrano)) skica.izbrano = null;
+  narisiSkico();
+  osveziHud();
+}
+
+const NAMIGI = {
+  izberi: 'Klik izbere element, vlečenje točke jo premakne (reševalnik obdrži omejitve).',
+  crta: 'Klik: začetek črte, klik: konec; naslednji klik nadaljuje lomljeno črto. Esc ali desni gumb konča.',
+  pravokotnik: 'Klik: prvi ogal, klik: nasprotni ogal.',
+  krog: 'Klik: središče, klik: točka na obodu.',
+  tocka: 'Klik postavi točko.',
+  mera: 'Klik na črto vpraša po dolžini, klik na krog po polmeru.',
+  gradbena: 'Klik na element preklopi med običajno in gradbeno geometrijo.',
+  izbrisi: 'Klik izbriše element.',
+};
+function nastaviOrodje(o) {
+  skica.orodje = o; skica.risba = null; pocistiPredogled();
+  for (const b of document.querySelectorAll('#skicaTrak .orodjeSkice')) b.classList.toggle('aktivno', b.dataset.orodje === o);
+  $('skicaNamig').textContent = NAMIGI[o] || '';
+}
+for (const b of document.querySelectorAll('#skicaTrak .orodjeSkice')) b.addEventListener('click', () => nastaviOrodje(b.dataset.orodje));
+function prekiniRisanje() { skica.risba = null; pocistiPredogled(); }
+function pocistiPredogled() {
+  if (!skica.skupina) return;
+  const pr = skica.skupina.children.find(c => c.userData.predogled);
+  if (pr) pr.geometry.setAttribute('position', new THREE.Float32BufferAttribute([], 3));
+}
+function nastaviPredogled(segmenti) {
+  const pr = skica.skupina.children.find(c => c.userData.predogled);
+  if (pr) { pr.geometry.setAttribute('position', new THREE.Float32BufferAttribute(segmenti, 3)); pr.geometry.attributes.position.needsUpdate = true; }
+}
+function kroznica(cx, cy, r) { const s = []; for (let i = 0; i < 48; i++) { const a = i / 48 * Math.PI * 2, b = (i + 1) / 48 * Math.PI * 2; const p1 = svetovno(cx + r * Math.cos(a), cy + r * Math.sin(a)), p2 = svetovno(cx + r * Math.cos(b), cy + r * Math.sin(b)); s.push(p1.x, p1.y, p1.z, p2.x, p2.y, p2.z); } return s; }
+function pravokotnikSeg(x1, y1, x2, y2) { const k = [[x1, y1], [x2, y1], [x2, y2], [x1, y2]]; const s = []; for (let i = 0; i < 4; i++) { const a = svetovno(...k[i]), b = svetovno(...k[(i + 1) % 4]); s.push(a.x, a.y, a.z, b.x, b.y, b.z); } return s; }
+
+function najdiTocko(e) {
+  let naj = null, najd = 10;
+  for (const t of skica.tocke) {
+    const [sx, sy] = naZaslon(svetovno(t.x, t.y));
+    const d = Math.hypot(sx - e.clientX, sy - e.clientY);
+    if (d < najd) { najd = d; naj = t; }
+  }
+  return naj;
+}
+function najdiElement(e) {
+  let naj = null, najd = 8;
+  for (const s of skica.segmenti) {
+    const [ax, ay] = naZaslon(s.a), [bx, by] = naZaslon(s.b);
+    const dx = bx - ax, dy = by - ay, l2 = dx * dx + dy * dy;
+    let t = l2 ? ((e.clientX - ax) * dx + (e.clientY - ay) * dy) / l2 : 0; t = Math.max(0, Math.min(1, t));
+    const d = Math.hypot(ax + t * dx - e.clientX, ay + t * dy - e.clientY);
+    if (d < najd) { najd = d; naj = s.id; }
+  }
+  return naj;
+}
+function pokaziPripenjanje(t) {
+  const pr = skica.skupina.children.find(c => c.userData.pripenjanje);
+  if (!pr) return;
+  if (!t) { pr.visible = false; return; }
+  const w = svetovno(t.x, t.y);
+  pr.geometry.setAttribute('position', new THREE.Float32BufferAttribute([w.x, w.y, w.z], 3)); pr.geometry.attributes.position.needsUpdate = true; pr.visible = true;
+}
+
+function skicaPointerDown(e) {
+  if (e.button !== 0) return;
+  const t = tockaNaRavnini(e); if (!t) return;
+  const snap = najdiTocko(e);
+  const [x, y] = snap ? [snap.x, snap.y] : lokalno(t);
+  const spoj = snap ? [snap.id, snap.poz] : null;
+  switch (skica.orodje) {
+    case 'crta':
+      if (!skica.risba) { skica.risba = { zacetek: [x, y], spoji: spoj, cakam: false }; }
+      else {
+        const r = skica.risba;
+        if (Math.hypot(x - r.zacetek[0], y - r.zacetek[1]) < 1e-6) return;
+        objaviSkico({ vrsta: 'crta', p1: r.zacetek, p2: [x, y], spoji1: r.spoji, spoji2: spoj });
+        skica.risba = { zacetek: [x, y], spoji: spoj, cakam: !spoj };
+      }
+      break;
+    case 'pravokotnik':
+      if (!skica.risba) skica.risba = { zacetek: [x, y] };
+      else { objaviSkico({ vrsta: 'pravokotnik', p1: skica.risba.zacetek, p2: [x, y] }); prekiniRisanje(); }
+      break;
+    case 'krog':
+      if (!skica.risba) skica.risba = { zacetek: [x, y], spoji: spoj };
+      else { const r = Math.hypot(x - skica.risba.zacetek[0], y - skica.risba.zacetek[1]); if (r > 1e-6) objaviSkico({ vrsta: 'krog', sredisce: skica.risba.zacetek, r, spoji1: skica.risba.spoji }); prekiniRisanje(); }
+      break;
+    case 'tocka': objaviSkico({ vrsta: 'tocka', p: [x, y] }); break;
+    case 'izbrisi': { const id = najdiElement(e); if (id != null) objaviSkico({ vrsta: 'izbrisi', ids: [id] }); break; }
+    case 'gradbena': { const id = najdiElement(e); if (id != null) objaviSkico({ vrsta: 'gradbena', id }); break; }
+    case 'mera': {
+      const id = najdiElement(e); if (id == null) return;
+      const g = skica.posnetek.geometrija.find(x => x.id === id); if (!g) return;
+      if (g.tip === 'LineSegment') { const d = Math.hypot(g.p2[0] - g.p1[0], g.p2[1] - g.p1[1]); const v = prompt('Dolžina črte (mm):', d.toFixed(2)); if (v) objaviSkico({ vrsta: 'mera', tip: 'Distance', id, vrednost: parseFloat(v.replace(',', '.')) }); }
+      else if (g.tip === 'Circle' || g.tip === 'ArcOfCircle') { const v = prompt('Polmer (mm):', g.r.toFixed(2)); if (v) objaviSkico({ vrsta: 'mera', tip: 'Radius', id, vrednost: parseFloat(v.replace(',', '.')) }); }
+      break;
+    }
+    default: { // izberi
+      if (snap && snap.id >= 0) { skica.vlecenje = { id: snap.id, poz: snap.poz, zacetek: [e.clientX, e.clientY] }; }
+      else { skica.izbrano = najdiElement(e); narisiSkico(); osveziHud(); }
+    }
+  }
+}
+function skicaPointerMove(e) {
+  if (!skica.skupina) return;
+  const t = tockaNaRavnini(e); if (!t) return;
+  const snap = (skica.orodje !== 'izberi' || skica.vlecenje) ? najdiTocko(e) : null;
+  pokaziPripenjanje(snap && !(skica.vlecenje && snap.id === skica.vlecenje.id && snap.poz === skica.vlecenje.poz) ? snap : null);
+  const [x, y] = snap ? [snap.x, snap.y] : lokalno(t);
+  if (skica.vlecenje) {
+    const w = svetovno(x, y), g = skica.posnetek.geometrija.find(q => q.id === skica.vlecenje.id);
+    if (g && g.tip === 'LineSegment') { const drugi = skica.vlecenje.poz === 1 ? g.p2 : g.p1; const o = svetovno(drugi[0], drugi[1]); nastaviPredogled([o.x, o.y, o.z, w.x, w.y, w.z]); }
+    return;
+  }
+  const r = skica.risba; if (!r) return;
+  if (skica.orodje === 'crta') { const a = svetovno(r.zacetek[0], r.zacetek[1]), b = svetovno(x, y); nastaviPredogled([a.x, a.y, a.z, b.x, b.y, b.z]); }
+  else if (skica.orodje === 'pravokotnik') nastaviPredogled(pravokotnikSeg(r.zacetek[0], r.zacetek[1], x, y));
+  else if (skica.orodje === 'krog') nastaviPredogled(kroznica(r.zacetek[0], r.zacetek[1], Math.hypot(x - r.zacetek[0], y - r.zacetek[1])));
+}
+function skicaPointerUp(e) {
+  if (!skica.vlecenje) return;
+  const v = skica.vlecenje; skica.vlecenje = null; pocistiPredogled(); pokaziPripenjanje(null);
+  if (Math.hypot(e.clientX - v.zacetek[0], e.clientY - v.zacetek[1]) < 3) return;
+  const t = tockaNaRavnini(e); if (!t) return;
+  const snap = najdiTocko(e);
+  const [x, y] = snap && !(snap.id === v.id && snap.poz === v.poz) ? [snap.x, snap.y] : lokalno(t);
+  objaviSkico({ vrsta: 'premakni', id: v.id, poz: v.poz, x, y });
+  if (snap && snap.id !== v.id) objaviSkico({ vrsta: 'omejitev', tip: 'Coincident', a: [v.id, v.poz], b: [snap.id, snap.poz] });
+}
+
+// Pogovorno okno za novo skico (namesto FreeCAD-ovega vprašanja o ravnini).
+function odpriDialogSkice() {
+  const d = $('dialogSkica'), r = $('dialogRavnine');
+  r.innerHTML = '';
+  const izbrana = stanje.izbira.find(s => s.elementi && s.elementi.some(el => el.startsWith('Face')));
+  const moznosti = [];
+  if (izbrana) { const el = izbrana.elementi.find(x => x.startsWith('Face')); const z = objekti.get(izbrana.objekt); moznosti.push({ v: 'ploskev', b: 'Na izbrano ploskev: ' + (z ? z.podatki.oznaka : izbrana.objekt) + '.' + el, objekt: izbrana.objekt, element: el }); }
+  moznosti.push({ v: 'XY', b: 'Ravnina XY (tloris)' }, { v: 'XZ', b: 'Ravnina XZ (naris)' }, { v: 'YZ', b: 'Ravnina YZ (stranski ris)' });
+  moznosti.forEach((m, i) => {
+    const l = document.createElement('label');
+    const i1 = document.createElement('input'); i1.type = 'radio'; i1.name = 'ravnina'; i1.value = m.v; i1.checked = i === 0; i1.dataset.objekt = m.objekt || ''; i1.dataset.element = m.element || '';
+    l.appendChild(i1); l.appendChild(document.createTextNode(' ' + m.b)); r.appendChild(l);
+  });
+  $('skicaTelo').checked = stanje.zavihek === 'PartDesignWorkbench';
+  $('skicaObrni').checked = false; $('skicaOdmik').value = '0';
+  d.classList.remove('skrit');
+}
+$('skicaPreklici').addEventListener('click', () => $('dialogSkica').classList.add('skrit'));
+$('skicaOk').addEventListener('click', () => {
+  const i = document.querySelector('#dialogRavnine input:checked'); if (!i) return;
+  const op = { vrsta: 'nova', ravnina: i.value === 'ploskev' ? 'XY' : i.value, obrni: $('skicaObrni').checked, odmik: parseFloat($('skicaOdmik').value || '0'), telo: $('skicaTelo').checked };
+  if (i.value === 'ploskev') op.ploskev = { objekt: i.dataset.objekt, element: i.dataset.element };
+  $('dialogSkica').classList.add('skrit');
+  objaviSkico(op);
+});
 
 // --- HUD in dogodki ---------------------------------------------------------
 function osveziHud() {
@@ -462,17 +883,25 @@ function osveziHud() {
     ? stanje.izbira.map(s => { const z = objekti.get(s.objekt); const ime = z ? z.podatki.oznaka : s.objekt; return s.elementi.length ? s.elementi.map(el => ime + '.' + el).join(', ') : ime; }).join('; ')
     : 'nič';
   const urejanje = stanje.okolje.urejanje ? ' · urejanje: ' + stanje.okolje.urejanje.split('::').pop() : '';
-  const povezava = stanje.povezava === false
-    ? ' · <b style="color:#b00">povezava s FreeCAD-om prekinjena, poskušam znova …</b>' : '';
+  const povezava = stanje.povezava === false ? ' · <b style="color:#b00">povezava s FreeCAD-om prekinjena, poskušam znova …</b>' : '';
+  if (skica.posnetek) {
+    const p = skica.posnetek;
+    const resitev = p.resitev === 0 ? 'rešljiva' : 'reševalnik javlja napako (' + p.resitev + ')';
+    hud.innerHTML = 'Skica: <b>' + p.oznaka + '</b> · geometrij ' + p.geometrija.length + ' · omejitev ' + p.omejitve.length + ' · ' + resitev
+      + (skica.izbrano != null ? ' · izbrano: ' + skica.izbrano : '') + '<br>Dokument: <b>' + (stanje.dokument || '–') + '</b> · izris: ' + izris + povezava;
+    return;
+  }
   hud.innerHTML = 'Dokument: <b>' + (stanje.dokument || '–') + '</b> · objektov: ' + objekti.size + ' · posnetek ' + stanje.verzija + urejanje + '<br>'
     + 'Izbira: <b>' + izbrano + '</b> · izris: ' + izris + ' · three.js ' + THREE.REVISION + povezava;
 }
 
 const dogodki = new EventSource('/events');
+dogodki.addEventListener('zeton', e => { ZETON = JSON.parse(e.data).zeton; });
 dogodki.addEventListener('model', () => { naloziModel().catch(pokaziNapako); });
 dogodki.addEventListener('izbira', e => { oznaciIzbiro(JSON.parse(e.data)); });
 dogodki.addEventListener('aktivni', e => { uporabiAktivne(JSON.parse(e.data)); });
 dogodki.addEventListener('okolje', e => { uporabiOkolje(JSON.parse(e.data)); });
+dogodki.addEventListener('skica', e => { try { uporabiSkico(JSON.parse(e.data)); } catch (err) { pokaziNapako(err); } });
 dogodki.onopen = () => { stanje.povezava = true; osveziHud(); };
 dogodki.onerror = () => {
   if (stanje.zaprto) { hud.innerHTML = '<b>FreeCAD je zaprt.</b> Za nov zagon uporabite ZAZENI-SPLET.bat in osvežite stran.'; return; }
@@ -483,11 +912,13 @@ new ResizeObserver(() => {
   const w = pogled.clientWidth, h = pogled.clientHeight;
   if (w < 1 || h < 1) return;
   camera.aspect = w / h; camera.updateProjectionMatrix();
+  if (ortoKamera) { const a = w / h; ortoKamera.left = -ortoVisina * a; ortoKamera.right = ortoVisina * a; ortoKamera.top = ortoVisina; ortoKamera.bottom = -ortoVisina; ortoKamera.updateProjectionMatrix(); }
   renderer.setSize(w, h);
 }).observe(pogled);
 renderer.setAnimationLoop(() => {
-  controls.update();
-  if (renderer.domElement.clientWidth > 0 && renderer.domElement.clientHeight > 0) renderer.render(scene, camera);
+  if (ortoControls) ortoControls.update(); else controls.update();
+  if (skica.oznake.length) posodobiMere();
+  if (renderer.domElement.clientWidth > 0 && renderer.domElement.clientHeight > 0) renderer.render(scene, aktivnaKamera);
 });
 naloziUkaze().catch(pokaziNapako);
 naloziModel().catch(pokaziNapako);

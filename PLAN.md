@@ -27,11 +27,11 @@ mapa `Desktop/Apps/FreeCAD`, javen fork `juskolaric/FreeCAD`.
 9a. [x] Okno FreeCAD-a skrito 2026-09-29: teče v ozadju, pokaže se samo, ko potrebuje vnos, gumba Pokaži/Skrij in Izhod v brskalniku; ukazi se sprožijo prek Qt vrste dogodkov, zato strežnik odgovarja tudi med modalnimi okni
 9. [x] Ukazna vrstica v brskalniku 2026-09-29: vsi ukazi okolij Snovanje delov (28), Skica (52) in Del (34) ter hitri dostop, po zavihkih in skupinah kot v SolidWorksu (veliki in majhni gumbi, zgoščeni način, spustni meniji skupin, namigi, ikone iz FreeCAD-a), stanje »na voljo« v živo, klik izvede ukaz v FreeCAD-u (okno z nastavitvami se odpre v FreeCAD-u), zavihek Skica se pokaže sam med urejanjem skice; preverjeno: Kocka, Izboklina iz izbrane skice
 10. [ ] Pregledovalnik: drevo objektov in lastnosti v brskalniku, več dokumentov, binarni prenos geometrije namesto JSON, robovi z debelino, boljše senčenje (okolje, sence)
-11. [ ] Okna z nastavitvami ukazov v brskalniku (dolžina izbokline, polmer zaokrožitve ...) namesto v FreeCAD-u; zgodovina, razveljavi
-12. [ ] Urejevalnik skic v brskalniku (največji posamezen kos, na koncu)
+11. [~] Okna z nastavitvami ukazov v brskalniku: Izboklina in Ugrez iz izbrane skice 2026-09-29 (dolžina, smer); ostali ukazi še v FreeCAD-u
+12. [x] Urejevalnik skic v brskalniku, 1. različica 2026-09-29: nova skica na ravnini ali izbrani ploskvi (spletno okno), pravokotna kamera, črta in lomljena črta, pravokotnik, krog, točka, pripenjanje na točke s sovpadanjem, vlečenje točk z reševalnikom, mera (dolžina, polmer), gradbena, brisanje, napisi mer; preverjeno: ploskev → skica → pravokotnik + krog → zapri → izboklina, vse brez okna FreeCAD-a
 13. [ ] Ločen repozitorij za spletni vmesnik (Next.js po vzoru ostalih programov); FreeCAD ostane motor s strežniškim delom v tej mapi
 
-**Naslednji korak:** odločitev uporabnika: drevo objektov z lastnostmi (korak 10) ali okna z nastavitvami ukazov v brskalniku (korak 11).
+**Naslednji korak:** drevo objektov z lastnostmi (korak 10) ali nadaljevanje skice (loki, omejitve, kote, simetrija) in okna ostalih ukazov (zaokrožitev, vrtenina ...).
 
 ## Zgradba spletnega pogleda (dokaz koncepta)
 

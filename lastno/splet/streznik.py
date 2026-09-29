@@ -129,6 +129,8 @@ def _vidni_objekti(doc):
     for obj in doc.Objects:
         if not hasattr(obj, "Shape"):
             continue
+        if STANJE.skica and obj.Name == STANJE.skica:
+            continue  # skico, ki se ureja v brskalniku, brskalnik riše sam
         if obj.isDerivedFrom("PartDesign::Body") or obj.isDerivedFrom("App::Part"):
             continue  # vsebnika prikazujemo prek njunih vidnih elementov
         if _je_izhodisce(obj):
@@ -394,6 +396,233 @@ def _nalozi_okolja():
 
 
 # ---------------------------------------------------------------------------
+# Skica v brskalniku: geometrijo in omejitve urejamo prek Python API-ja skice, reševalnik
+# je FreeCAD-ov; FreeCAD-ov lastni način urejanja skice (okno) pri tem ni potreben.
+
+def _v2(v):
+    return [round(v.x, 4), round(v.y, 4)]
+
+
+def _posnetek_skice(sk, novi=None):
+    """Geometrija in omejitve skice v koordinatah skice ter lega skice v prostoru."""
+    geometrija = []
+    for i, g in enumerate(sk.Geometry):
+        tip = type(g).__name__
+        try:
+            gradbena = bool(sk.getConstruction(i))
+        except Exception:  # noqa: BLE001
+            gradbena = bool(getattr(g, "Construction", False))
+        e = {"id": i, "tip": tip, "gradbena": gradbena}
+        if tip == "LineSegment":
+            e["p1"], e["p2"] = _v2(g.StartPoint), _v2(g.EndPoint)
+        elif tip == "Circle":
+            e["sredisce"], e["r"] = _v2(g.Center), round(g.Radius, 4)
+        elif tip == "ArcOfCircle":
+            e["sredisce"], e["r"] = _v2(g.Center), round(g.Radius, 4)
+            e["p1"], e["p2"] = _v2(g.StartPoint), _v2(g.EndPoint)
+            e["kot1"], e["kot2"] = round(g.FirstParameter, 6), round(g.LastParameter, 6)
+        elif tip == "Point":
+            e["p"] = [round(g.X, 4), round(g.Y, 4)]
+        else:
+            try:
+                e["tocke"] = [_v2(p) for p in g.toShape().discretize(Deflection=0.05)]
+            except Exception:  # noqa: BLE001
+                e["tocke"] = []
+        geometrija.append(e)
+    omejitve = []
+    for i, c in enumerate(sk.Constraints):
+        omejitve.append({
+            "id": i, "tip": c.Type, "prvi": c.First, "prviPoz": c.FirstPos,
+            "drugi": c.Second, "drugiPoz": c.SecondPos, "vrednost": round(c.Value, 4),
+            "ime": c.Name, "gonilna": bool(c.Driving),
+        })
+    try:
+        pl = sk.getGlobalPlacement()
+    except Exception:  # noqa: BLE001
+        pl = sk.Placement
+    q = pl.Rotation.Q
+    try:
+        resitev = int(sk.solve())
+    except Exception:  # noqa: BLE001
+        resitev = -99
+    return {
+        "ime": sk.Name, "oznaka": sk.Label,
+        "polozaj": {"osnova": [round(pl.Base.x, 4), round(pl.Base.y, 4), round(pl.Base.z, 4)],
+                    "rotacija": [q[0], q[1], q[2], q[3]]},
+        "geometrija": geometrija, "omejitve": omejitve, "resitev": resitev, "novi": novi or [],
+    }
+
+
+def _aktivno_telo(doc):
+    try:
+        telo = Gui.ActiveDocument.ActiveView.getActiveObject("pdbody")
+        if telo is not None and telo.Document.Name == doc.Name:
+            return telo
+    except Exception:  # noqa: BLE001
+        pass
+    telesa = [o for o in doc.Objects if o.isDerivedFrom("PartDesign::Body")]
+    return telesa[-1] if telesa else None
+
+
+def _v_telesu(obj):
+    try:
+        skupina = obj.getParentGeoFeatureGroup()
+        return skupina is not None and skupina.isDerivedFrom("PartDesign::Body")
+    except Exception:  # noqa: BLE001
+        return False
+
+
+def _nova_skica(podatki):
+    """Ustvari skico na ravnini izhodišča ali na izbrani ploskvi; v telesu (Part Design) ali samostojno."""
+    doc = App.ActiveDocument or App.newDocument("Neimenovan")
+    ploskev = podatki.get("ploskev") or {}
+    obj_ploskve = doc.getObject(ploskev.get("objekt", "")) if ploskev.get("objekt") else None
+    v_telesu = bool(podatki.get("telo", True))
+    if obj_ploskve is not None and not _v_telesu(obj_ploskve):
+        v_telesu = False  # ploskev objekta zunaj telesa: samostojna skica (kot v okolju Del)
+    odmik = float(podatki.get("odmik", 0) or 0)
+    obrni = bool(podatki.get("obrni"))
+    ravnina = podatki.get("ravnina", "XY")
+    if ravnina not in ("XY", "XZ", "YZ"):
+        ravnina = "XY"
+
+    doc.openTransaction("Nova skica")
+    telo = None
+    if v_telesu:
+        telo = _aktivno_telo(doc)
+        if telo is None:
+            telo = doc.addObject("PartDesign::Body", "Telo")
+        try:
+            Gui.ActiveDocument.ActiveView.setActiveObject("pdbody", telo)
+        except Exception:  # noqa: BLE001
+            pass
+        sk = telo.newObject("Sketcher::SketchObject", "Skica")
+    else:
+        sk = doc.addObject("Sketcher::SketchObject", "Skica")
+
+    if obj_ploskve is not None:
+        sk.AttachmentSupport = (obj_ploskve, [ploskev.get("element", "")])
+        sk.MapMode = "FlatFace"
+        sk.MapReversed = obrni
+        sk.AttachmentOffset = App.Placement(App.Vector(0, 0, odmik), App.Rotation())
+    elif telo is not None:
+        osnovne = [f for f in telo.Origin.OriginFeatures if f.Role == ravnina + "_Plane"]
+        if osnovne:
+            sk.AttachmentSupport = (osnovne[0], [""])
+            sk.MapMode = "FlatFace"
+            sk.MapReversed = obrni
+            sk.AttachmentOffset = App.Placement(App.Vector(0, 0, odmik), App.Rotation())
+    else:
+        rot = {
+            "XY": App.Rotation(0, 0, 0, 1),
+            "XZ": App.Rotation(-0.7071068, 0, 0, -0.7071068),
+            "YZ": App.Rotation(0.5, 0.5, 0.5, 0.5),
+        }[ravnina]
+        if obrni:
+            rot = rot.multiply(App.Rotation(App.Vector(1, 0, 0), 180))
+        normala = rot.multVec(App.Vector(0, 0, 1))
+        sk.Placement = App.Placement(normala.multiply(odmik), rot)
+    doc.commitTransaction()
+    doc.recompute()
+    return sk
+
+
+def _skica_dodaj(sk, op):
+    """Doda geometrijo (črta, pravokotnik, krog, točka) s samodejnimi omejitvami; vrne nove indekse."""
+    import Part
+    import Sketcher
+    V = App.Vector
+    vrsta = op.get("vrsta")
+    gradbena = bool(op.get("gradbena"))
+    novi = []
+    if vrsta == "crta":
+        p1, p2 = op["p1"], op["p2"]
+        if abs(p1[0] - p2[0]) < 1e-7 and abs(p1[1] - p2[1]) < 1e-7:
+            raise ValueError("črta brez dolžine")
+        i = sk.addGeometry(Part.LineSegment(V(p1[0], p1[1], 0), V(p2[0], p2[1], 0)), gradbena)
+        novi.append(i)
+        for kljuc, poz in (("spoji1", 1), ("spoji2", 2)):
+            s = op.get(kljuc)
+            if s:
+                sk.addConstraint(Sketcher.Constraint("Coincident", i, poz, int(s[0]), int(s[1])))
+    elif vrsta == "pravokotnik":
+        (x1, y1), (x2, y2) = op["p1"], op["p2"]
+        if abs(x2 - x1) < 1e-6 or abs(y2 - y1) < 1e-6:
+            raise ValueError("pravokotnik brez površine")
+        tocke = [V(x1, y1, 0), V(x2, y1, 0), V(x2, y2, 0), V(x1, y2, 0)]
+        ids = [sk.addGeometry(Part.LineSegment(tocke[k], tocke[(k + 1) % 4]), gradbena) for k in range(4)]
+        for k in range(4):
+            sk.addConstraint(Sketcher.Constraint("Coincident", ids[k], 2, ids[(k + 1) % 4], 1))
+        sk.addConstraint(Sketcher.Constraint("Horizontal", ids[0]))
+        sk.addConstraint(Sketcher.Constraint("Horizontal", ids[2]))
+        sk.addConstraint(Sketcher.Constraint("Vertical", ids[1]))
+        sk.addConstraint(Sketcher.Constraint("Vertical", ids[3]))
+        novi = ids
+    elif vrsta == "krog":
+        c, r = op["sredisce"], float(op["r"])
+        if r <= 1e-6:
+            raise ValueError("krog brez polmera")
+        i = sk.addGeometry(Part.Circle(V(c[0], c[1], 0), V(0, 0, 1), r), gradbena)
+        novi.append(i)
+        s = op.get("spoji1")
+        if s:
+            sk.addConstraint(Sketcher.Constraint("Coincident", i, 3, int(s[0]), int(s[1])))
+    elif vrsta == "tocka":
+        p = op["p"]
+        novi.append(sk.addGeometry(Part.Point(V(p[0], p[1], 0)), False))
+    else:
+        raise ValueError("neznana vrsta: %s" % vrsta)
+    return novi
+
+
+def _skica_izvedi(sk, op):
+    """Ena sprememba skice znotraj transakcije (deluje Razveljavi); vrne nove indekse geometrije."""
+    import Sketcher
+    vrsta = op.get("vrsta")
+    doc = sk.Document
+    doc.openTransaction("Skica: " + str(vrsta))
+    novi = []
+    try:
+        if vrsta in ("crta", "pravokotnik", "krog", "tocka"):
+            novi = _skica_dodaj(sk, op)
+        elif vrsta == "premakni":
+            cilj = App.Vector(float(op["x"]), float(op["y"]), 0)
+            try:
+                sk.movePoint(int(op["id"]), int(op["poz"]), cilj, False)
+            except AttributeError:
+                sk.moveGeometry(int(op["id"]), int(op["poz"]), cilj, False)
+        elif vrsta == "izbrisi":
+            ids = sorted({int(i) for i in op.get("ids", [])}, reverse=True)
+            if ids:
+                sk.delGeometries(ids)
+        elif vrsta == "mera":
+            tip, i, vr = op["tip"], int(op["id"]), float(op["vrednost"])
+            if tip in ("Radius", "Distance", "Diameter"):
+                sk.addConstraint(Sketcher.Constraint(tip, i, vr))
+            elif tip in ("DistanceX", "DistanceY"):
+                sk.addConstraint(Sketcher.Constraint(tip, i, 1, i, 2, vr))
+        elif vrsta == "omejitev":
+            tip = op["tip"]
+            if tip in ("Horizontal", "Vertical"):
+                sk.addConstraint(Sketcher.Constraint(tip, int(op["id"])))
+            elif tip == "Coincident":
+                a, b = op["a"], op["b"]
+                sk.addConstraint(Sketcher.Constraint("Coincident", int(a[0]), int(a[1]), int(b[0]), int(b[1])))
+        elif vrsta == "gradbena":
+            sk.toggleConstruction(int(op["id"]))
+        elif vrsta == "izbrisiOmejitev":
+            sk.delConstraint(int(op["id"]))
+        else:
+            raise ValueError("neznana vrsta: %s" % vrsta)
+        doc.commitTransaction()
+    except Exception:
+        doc.abortTransaction()
+        raise
+    doc.recompute()
+    return novi
+
+
+# ---------------------------------------------------------------------------
 # Stanje, deljeno med nitmi
 
 class Stanje:
@@ -412,6 +641,7 @@ class Stanje:
         self.zadnja_gradnja = 0.0
         self.zadnji_pregled = 0.0
         self.napaka = ""
+        self.skica = ""                    # ime skice, ki se ureja v brskalniku
         self.samodejno_prikazano = False   # okno smo pokazali sami zaradi vnosa; po koncu ga spet skrijemo
         self.okno_na_zahtevo = False       # uporabnik je z gumbom zahteval vidno okno
         self.zapiranje_okna = False        # uporabnik je zaprl okno (X); ko ni več vprašanj, program konča
@@ -561,6 +791,22 @@ class Stanje:
             self.okolje = okolje
             self.oddaj("okolje", okolje)
 
+    def skica_objekt(self):
+        doc = App.ActiveDocument
+        if not self.skica or doc is None:
+            return None
+        sk = doc.getObject(self.skica)
+        if sk is None or not sk.isDerivedFrom("Sketcher::SketchObject"):
+            self.skica = ""
+            return None
+        return sk
+
+    def oddaj_skico(self, novi=None):
+        sk = self.skica_objekt()
+        posnetek = _posnetek_skice(sk, novi) if sk is not None else None
+        self.oddaj("skica", posnetek)
+        return posnetek
+
     def posodobi_izbiro(self):
         if not IMA_OKNO:
             return
@@ -614,6 +860,79 @@ class Stanje:
             if IMA_OKNO and podatki.get("ime") in Gui.listWorkbenches():
                 Gui.activateWorkbench(podatki.get("ime"))
                 self.zadnji_pregled = 0.0
+        elif ukaz == "znacilnost":
+            # Izboklina ali ugrez iz skice brez FreeCAD-ovega okna z nastavitvami.
+            doc = App.ActiveDocument
+            sk = doc.getObject(podatki.get("skica", "")) if doc else None
+            if sk is None or not sk.isDerivedFrom("Sketcher::SketchObject"):
+                _log("značilnost: %s ni skica" % podatki.get("skica"))
+                return
+            vrsta = podatki.get("vrsta", "izboklina")
+            tip = "PartDesign::Pad" if vrsta == "izboklina" else "PartDesign::Pocket"
+            doc.openTransaction("Izboklina" if vrsta == "izboklina" else "Ugrez")
+            try:
+                telo = sk.getParentGeoFeatureGroup()
+                if telo is None or not telo.isDerivedFrom("PartDesign::Body"):
+                    telo = _aktivno_telo(doc) or doc.addObject("PartDesign::Body", "Telo")
+                    telo.addObject(sk)
+                try:
+                    Gui.ActiveDocument.ActiveView.setActiveObject("pdbody", telo)
+                except Exception:  # noqa: BLE001
+                    pass
+                zn = telo.newObject(tip, "Pad" if vrsta == "izboklina" else "Pocket")
+                zn.Profile = sk
+                zn.Length = float(podatki.get("dolzina", 10) or 10)
+                zn.Reversed = bool(podatki.get("obrni"))
+                zn.Midplane = bool(podatki.get("simetricno"))
+                sk.Visibility = False
+                for o in telo.Group:
+                    if o is not zn and o.isDerivedFrom("PartDesign::Feature"):
+                        o.Visibility = False
+                zn.Visibility = True
+                doc.commitTransaction()
+            except Exception:
+                doc.abortTransaction()
+                raise
+            doc.recompute()
+            self.umazano = True
+            if IMA_OKNO:
+                Gui.Selection.clearSelection()
+        elif ukaz == "skica-posnetek":
+            if self.skica:
+                self.oddaj_skico()
+        elif ukaz == "skica":
+            vrsta = podatki.get("vrsta")
+            doc = App.ActiveDocument
+            if vrsta == "nova":
+                sk = _nova_skica(podatki)
+                self.skica = sk.Name
+                self.umazano = True
+                self.oddaj_skico()
+            elif vrsta == "odpri":
+                obj = doc.getObject(podatki.get("ime", "")) if doc else None
+                if obj is not None and obj.isDerivedFrom("Sketcher::SketchObject"):
+                    self.skica = obj.Name
+                    self.umazano = True
+                    self.oddaj_skico()
+                else:
+                    _log("odpri skico: %s ni skica" % podatki.get("ime"))
+            elif vrsta == "zapri":
+                ime = self.skica
+                self.skica = ""
+                self.umazano = True
+                if doc is not None:
+                    doc.recompute()
+                self.oddaj("skica", None)
+                if IMA_OKNO and doc is not None and ime and doc.getObject(ime) is not None:
+                    Gui.Selection.clearSelection()
+                    Gui.Selection.addSelection(doc.Name, ime)
+            else:
+                sk = self.skica_objekt()
+                if sk is None:
+                    return
+                novi = _skica_izvedi(sk, podatki)
+                self.umazano = True
+                self.oddaj_skico(novi)
         elif ukaz == "python":
             exec(podatki.get("koda", ""), {"App": App, "FreeCAD": App, "Gui": Gui, "FreeCADGui": Gui})
             self.umazano = True
@@ -724,7 +1043,7 @@ class Zahteva(http.server.BaseHTTPRequestHandler):
             return
         pot = self.path.split("?")[0]
         poti = {"/select": "izbira", "/ukaz": "ukaz", "/okolje": "okolje", "/okno": "okno",
-                "/izhod": "izhod", "/python": "python"}
+                "/izhod": "izhod", "/skica": "skica", "/znacilnost": "znacilnost", "/python": "python"}
         if pot in poti:
             STANJE.vrsta.put((poti[pot], podatki))
             self._odgovor(b'{"ok":true}')
@@ -744,10 +1063,13 @@ class Zahteva(http.server.BaseHTTPRequestHandler):
         self.send_header("Connection", "keep-alive")
         self.end_headers()
         try:
+            # Žeton ob vsaki povezavi: zavihek, odprt pred ponovnim zagonom FreeCAD-a, dobi novega.
+            self._poslji_sse("zeton", {"zeton": ZETON})
             self._poslji_sse("model", {"verzija": STANJE.verzija})
             self._poslji_sse("izbira", STANJE.izbira)
             self._poslji_sse("aktivni", dict(STANJE.aktivni))
             self._poslji_sse("okolje", dict(STANJE.okolje))
+            STANJE.vrsta.put(("skica-posnetek", {}))
             while True:
                 try:
                     dogodek, podatki = q.get(timeout=15)
