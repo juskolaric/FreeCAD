@@ -9,7 +9,8 @@ na veji `moje-spremembe`. Samostojen projekt v `Desktop/Apps`; ni del Photolandi
 ## Gradnja (pixi, Windows)
 
 Orodja: VS Build Tools 2022 z »Desktop development with C++« (MSVC 14.44, Windows SDK 10.0.26100) in pixi
-(`C:\Users\Uporabnik\AppData\Local\pixi\bin\pixi.exe`; v terminalih, odprtih po namestitvi, je `pixi` v PATH).
+(`C:\Users\Uporabnik\AppData\Local\pixi\bin\pixi.exe`; v PATH je le v terminalih, odprtih po namestitvi; v terminalu znotraj
+aplikacije Claude ga ni, dokler se aplikacija ne zažene znova, zato tam uporabi `ZAZENI.bat` ali polno pot).
 Vse knjižnice (Qt 6.8, OCCT 7.8, Python 3.11, Boost, Coin3D …) prinese pixi v `.pixi/` (približno 9 GB);
 sistem ostane nedotaknjen.
 
@@ -19,9 +20,11 @@ Vedno gradi **Release**. Privzeti `pixi run configure` / `build` / `freecad` na 
 pixi run configure-release   # enkrat: posodobi podmodule, pripravi build/release (Ninja, preset conda-windows-release)
 pixi run build-release       # prevajanje; prvič 30–90 min, potem le spremenjene datoteke
 pixi run install-release     # kopira v .pixi/envs/default/Library (od tam se na Windows zaganja)
-pixi run freecad-release     # install-release + zagon .pixi/envs/default/Library/bin/FreeCAD.exe
+pixi run freecad-release     # install-release + zagon .pixi/envs/default/Library/bin/FreeCAD.exe (NE prevaja; prej build-release)
 ```
 
+- Najenostavnejši zagon: `ZAZENI.bat` v korenu mape (dvoklik ali iz terminala od koderkoli): prevede spremenjeno, namesti
+  in zažene; uporablja polno pot do pixi, ob prvem zagonu sam požene `configure-release`.
 - Prevedeni program zaganjaj **samo** prek `pixi run freecad-release` ali iz `pixi shell` (sicer manjkajo DLL-ji).
 - `build/` in `.pixi/` sta izven gita. **Ne briši ju** brez naročila: polna gradnja traja do uro in pol.
 - Dnevniki gradnje gredo v `build/` (npr. `build/build-release.log`), ne v koren repozitorija.
