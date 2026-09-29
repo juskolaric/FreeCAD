@@ -27,6 +27,9 @@ pixi run freecad-release     # install-release + zagon .pixi/envs/default/Librar
 - Dnevniki gradnje gredo v `build/` (npr. `build/build-release.log`), ne v koren repozitorija.
 - Preverjanje spremembe: prevedi, namesti, zaženi in preveri v oknu. Konzolna različica:
   `.pixi\envs\default\Library\bin\FreeCADCmd.exe --version`.
+- Hitri preizkus, da prevedeni program teče: `pixi run -- .pixi/envs/default/Library/bin/FreeCAD.exe lastno/preveri-naslov.py`
+  zapiše naslov okna in verzijo v `build/naslov-okna.txt` in program zapre. Naslov nosi oznako »[lastna gradnja]«.
+- Opozorilo pixi o starem formatu `pixi.lock` (v6) ignoriraj; `pixi lock` ne poganjaj, da se datoteka ne razide z upstream.
 - Nastavitve uporabnika si prevedeni program deli z nameščenim 1.1.x (`%APPDATA%\FreeCAD\v1-1`), ker je `ExeName`
   isti (`src/Main/MainGui.cpp`). Sprememba imena bi premaknila tudi mapo nastavitev.
 

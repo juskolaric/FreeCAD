@@ -2631,6 +2631,9 @@ void MainWindow::setWindowTitle(const QString& string)
         title = QStringLiteral("%1 (%2)").arg(title, tr("Safe Mode"));
     }
 
+    // Lastna gradnja (juskolaric/FreeCAD): oznaka v naslovu, da se loci od namescenega FreeCAD-a
+    title = QStringLiteral("%1 [lastna gradnja]").arg(title);
+
     if (!string.isEmpty()) {
         title = QStringLiteral("[*] %1 - %2").arg(string, title);
     }
