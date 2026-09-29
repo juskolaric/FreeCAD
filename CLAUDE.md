@@ -4,7 +4,7 @@ Fork uradnega FreeCAD-a: `origin` = `juskolaric/FreeCAD` (**javen** repozitorij)
 Osnova je veja `releases/FreeCAD-1-1` (nameščen FreeCAD v Program Files je 1.1.3, veja je pri 1.1.4), delo poteka
 na veji `moje-spremembe`. Samostojen projekt v `Desktop/Apps`; ni del Photolandie, veljajo pa splošna pravila iz
 `Apps/CLAUDE.md` (slovenščina, ne briši podatkov, zaključni povzetki v naravnem jeziku, odprte naloge v
-`Apps/TODO.md` pod »FreeCAD«). Plan in stanje: `PLAN.md`.
+`Apps/TODO.md` pod »FreeCAD«). Plan in stanje: `PLAN.md`. **Predaja za prevzem na drugem računalniku: `PREDAJA.md`** (postavitev `POSTAVI.bat`).
 
 ## Gradnja (pixi, Windows)
 

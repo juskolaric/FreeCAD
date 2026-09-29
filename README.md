@@ -1,3 +1,6 @@
+> **Lastna kopija (juskolaric).** Delovna veja `moje-spremembe`: FreeCAD kot motor, vmesnik v brskalniku.
+> Predaja in postavitev: [PREDAJA.md](PREDAJA.md) · plan in stanje: [PLAN.md](PLAN.md) · pravila: [CLAUDE.md](CLAUDE.md).
+
 <a href="https://freecad.org"><img src="/src/Gui/Icons/freecad.svg" height="100px" width="100px"></a>
 
 ### Your own 3D Parametric Modeler
