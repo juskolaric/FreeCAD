@@ -566,7 +566,7 @@ class OpazovalecIzbire:
 
 class Streznik(http.server.ThreadingHTTPServer):
     daemon_threads = True
-    allow_reuse_address = True
+    allow_reuse_address = False  # Windows bi sicer dovolil dva strežnika na istih vratih
 
     def handle_error(self, request, client_address):
         vrsta = sys.exc_info()[0]
@@ -708,10 +708,15 @@ def zazeni():
         except Exception:  # noqa: BLE001
             _log("ukazov ni bilo mogoče zgraditi: %s" % traceback.format_exc())
 
-    streznik = Streznik(("127.0.0.1", VRATA), Zahteva)
+    naslov = "http://127.0.0.1:%d/" % VRATA
+    try:
+        streznik = Streznik(("127.0.0.1", VRATA), Zahteva)
+    except OSError as e:
+        _log("vrata %d so že zasedena (%s): spletni strežnik že teče v drugem FreeCAD-u; ta primerek ostane brez njega. "
+             "Zapri drugega ali nastavi SPLET_VRATA." % (VRATA, e))
+        return
     nit = threading.Thread(target=streznik.serve_forever, name="splet-streznik", daemon=True)
     nit.start()
-    naslov = "http://127.0.0.1:%d/" % VRATA
     _log("strežnik teče na %s (okno: %s)" % (naslov, "da" if IMA_OKNO else "ne"))
 
     STANJE.zgradi()
