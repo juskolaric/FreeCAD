@@ -332,6 +332,42 @@ def zgradi_ukaze():
     return {"delovnaOkolja": okolja, "hitriDostop": hitri}, sorted(set(imena_ukazov))
 
 
+def _sprozi_ukaz(ime, indeks):
+    """Sproži ukaz tako kot klik na gumb v orodni vrstici: prek Qt-jeve vrste dogodkov, brez
+    Python okvirja na skladu. Če ukaz odpre modalno okno, to ne zadrži GIL-a in strežnik
+    med njim naprej odgovarja (z Gui.runCommand bi vse niti Pythona obstale)."""
+    from PySide6 import QtCore
+    cmd = Gui.Command.get(ime)
+    akcije = []
+    if cmd is not None:
+        try:
+            akcije = cmd.getAction()
+        except Exception:  # noqa: BLE001
+            akcije = []
+        if not isinstance(akcije, list):
+            akcije = [akcije] if akcije else []
+    if akcije:
+        akcija = akcije[indeks] if 0 <= indeks < len(akcije) else akcije[0]
+        QtCore.QMetaObject.invokeMethod(akcija, "trigger", QtCore.Qt.ConnectionType.QueuedConnection)
+    else:
+        Gui.runCommand(ime, indeks)
+
+
+def _pokazi_okno():
+    """Postavi okno FreeCAD-a (in morebitno modalno okno) v ospredje ali vsaj utripne v opravilni vrstici."""
+    from PySide6 import QtWidgets
+    mw = Gui.getMainWindow()
+    if mw.isMinimized():
+        mw.showNormal()
+    mw.raise_()
+    mw.activateWindow()
+    modalno = QtWidgets.QApplication.activeModalWidget()
+    if modalno is not None:
+        modalno.raise_()
+        modalno.activateWindow()
+    QtWidgets.QApplication.alert(mw, 0)
+
+
 def _nalozi_okolja():
     """Aktivira vsa potrebna delovna okolja, da nastanejo njihovi ukazi in orodne vrstice."""
     aktivno = Gui.activeWorkbench().name()
@@ -471,7 +507,20 @@ class Stanje:
                 urejanje = vp.Object.TypeId
         except Exception:  # noqa: BLE001
             urejanje = ""
-        okolje = {"delovnaMiza": Gui.activeWorkbench().name(), "urejanje": urejanje}
+        pogovor = ""
+        try:
+            from PySide6 import QtWidgets
+            modalno = QtWidgets.QApplication.activeModalWidget()
+            if modalno is not None:
+                pogovor = modalno.windowTitle() or "pogovorno okno"
+        except Exception:  # noqa: BLE001
+            pogovor = ""
+        try:
+            opravilo = bool(Gui.Control.activeDialog())
+        except Exception:  # noqa: BLE001
+            opravilo = False
+        okolje = {"delovnaMiza": Gui.activeWorkbench().name(), "urejanje": urejanje,
+                  "pogovor": pogovor, "opravilo": opravilo}
         if okolje != self.okolje:
             self.okolje = okolje
             self.oddaj("okolje", okolje)
@@ -503,8 +552,11 @@ class Stanje:
             ime = podatki.get("ime", "")
             indeks = int(podatki.get("indeks", 0) or 0)
             if ime in self.imena_ukazov or ime.startswith("Std_"):
-                Gui.runCommand(ime, indeks)
+                _sprozi_ukaz(ime, indeks)
                 self.zadnji_pregled = 0.0  # stanje ukazov preveri takoj
+        elif ukaz == "okno":
+            if IMA_OKNO:
+                _pokazi_okno()
         elif ukaz == "okolje":
             if IMA_OKNO and podatki.get("ime") in Gui.listWorkbenches():
                 Gui.activateWorkbench(podatki.get("ime"))
@@ -618,7 +670,7 @@ class Zahteva(http.server.BaseHTTPRequestHandler):
             self._odgovor(b'{"napaka":"json"}', koda=400)
             return
         pot = self.path.split("?")[0]
-        poti = {"/select": "izbira", "/ukaz": "ukaz", "/okolje": "okolje", "/python": "python"}
+        poti = {"/select": "izbira", "/ukaz": "ukaz", "/okolje": "okolje", "/okno": "okno", "/python": "python"}
         if pot in poti:
             STANJE.vrsta.put((poti[pot], podatki))
             self._odgovor(b'{"ok":true}')

@@ -53,6 +53,11 @@
   /* Pogled */
   #pogled { flex: 1 1 auto; position: relative; min-height: 120px; }
   #pogled canvas { display: block; }
+  #pasica { position: absolute; top: 10px; left: 50%; transform: translateX(-50%); z-index: 5; max-width: 80%;
+            background: #fff8e1; border: 1px solid #e0c36a; border-radius: 6px; padding: 6px 10px; font-size: 13px;
+            display: flex; gap: 12px; align-items: center; box-shadow: 0 2px 8px rgba(0,0,0,.15); }
+  #pasica button { border: 1px solid #c9b25a; background: #fff; border-radius: 4px; padding: 3px 9px; cursor: pointer; white-space: nowrap; }
+  #pasica button:hover { background: #fdf3cf; }
   #namig { position: absolute; left: 12px; bottom: 12px; font-size: 12px; color: #555;
            background: rgba(255,255,255,.7); padding: 4px 8px; border-radius: 4px; pointer-events: none; }
 
@@ -86,6 +91,7 @@
   <div id="trak"></div>
 </div>
 <div id="pogled">
+  <div id="pasica" class="skrit"><span id="pasicaBesedilo"></span><button id="pasicaGumb" type="button">Pokaži FreeCAD</button></div>
   <div id="namig">Levi gumb: vrtenje · kolešček: povečava · desni gumb: premik · klik: izbira ploskve ali roba (Ctrl doda) · F: prilagodi pogled</div>
 </div>
 <div id="opis" class="skrit"></div>
@@ -254,8 +260,24 @@ function uporabiOkolje(okolje) {
   const cilj = urejaSkico ? 'SketcherWorkbench' : okolje.delovnaMiza;
   for (const z of zavihki.children) z.classList.toggle('urejanje', urejaSkico && z.dataset.ime === 'SketcherWorkbench');
   if (stanje.ukazi && cilj && stanje.ukazi.delovnaOkolja.some(o => o.ime === cilj) && cilj !== stanje.zavihek) izberiZavihek(cilj, false);
+  // Pasica: FreeCAD čaka na odgovor v svojem oknu (modalno okno) ali ima odprto opravilo (nastavitve ukaza, urejanje skice).
+  const pasica = $('pasica'), besedilo = $('pasicaBesedilo');
+  if (okolje.pogovor) {
+    besedilo.textContent = 'FreeCAD čaka na vaš odgovor v svojem oknu: »' + okolje.pogovor + '«';
+    pasica.classList.remove('skrit');
+  } else if (urejaSkico) {
+    besedilo.textContent = 'Skica se ureja v oknu FreeCAD-a (urejevalnik skic v brskalniku še ni narejen).';
+    pasica.classList.remove('skrit');
+  } else if (okolje.opravilo) {
+    const kaj = okolje.urejanje ? ' (' + okolje.urejanje.split('::').pop() + ')' : '';
+    besedilo.textContent = 'V oknu FreeCAD-a je odprto opravilo' + kaj + ': tam vnesite nastavitve in potrdite ali prekličite.';
+    pasica.classList.remove('skrit');
+  } else {
+    pasica.classList.add('skrit');
+  }
   osveziHud();
 }
+$('pasicaGumb').addEventListener('click', () => objavi('/okno', {}).catch(pokaziNapako));
 
 function uporabiAktivne(spremembe) {
   Object.assign(stanje.aktivni, spremembe);
