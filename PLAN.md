@@ -24,12 +24,13 @@ mapa `Desktop/Apps/FreeCAD`, javen fork `juskolaric/FreeCAD`.
 6. [x] Način dela zapisan v `CLAUDE.md`: veja na spremembo, gradnja le spremenjenega, občasni `git fetch upstream`
 7. [x] Ukazna vrstica v slogu SolidWorksa (C++, `src/Gui/RibbonBar.*`): v1 prevedena in preverjena v Part Designu, v2 napisana in neprevedena; **ustavljeno 2026-09-29** na željo uporabnika, ostaja na veji `ukazna-vrstica`
 8. [x] Dokaz koncepta spletnega pogleda 2026-09-29: model iz FreeCAD-a v brskalniku (three.js 0.186, WebGPU s preklopom na WebGL 2), izbira ploskev in robov v obe smeri, samodejna osvežitev ob spremembi modela, ukazi Python prek žetona; preverjeno v vgrajenem brskalniku
-9. [ ] Pregledovalnik: drevo objektov in lastnosti v brskalniku, več dokumentov, binarni prenos geometrije namesto JSON, robovi z debelino, boljše senčenje (okolje, sence)
-10. [ ] Ukazi Part Design prek spletnega vmesnika (skica, izboklina, ugrez, zaokrožitev ...), zgodovina, razveljavi
-11. [ ] Urejevalnik skic v brskalniku (največji posamezen kos, na koncu)
-12. [ ] Ločen repozitorij za spletni vmesnik (Next.js po vzoru ostalih programov); FreeCAD ostane motor s strežniškim delom v tej mapi
+9. [x] Ukazna vrstica v brskalniku 2026-09-29: vsi ukazi okolij Snovanje delov (28), Skica (52) in Del (34) ter hitri dostop, po zavihkih in skupinah kot v SolidWorksu (veliki in majhni gumbi, zgoščeni način, spustni meniji skupin, namigi, ikone iz FreeCAD-a), stanje »na voljo« v živo, klik izvede ukaz v FreeCAD-u (okno z nastavitvami se odpre v FreeCAD-u), zavihek Skica se pokaže sam med urejanjem skice; preverjeno: Kocka, Izboklina iz izbrane skice
+10. [ ] Pregledovalnik: drevo objektov in lastnosti v brskalniku, več dokumentov, binarni prenos geometrije namesto JSON, robovi z debelino, boljše senčenje (okolje, sence)
+11. [ ] Okna z nastavitvami ukazov v brskalniku (dolžina izbokline, polmer zaokrožitve ...) namesto v FreeCAD-u; zgodovina, razveljavi
+12. [ ] Urejevalnik skic v brskalniku (največji posamezen kos, na koncu)
+13. [ ] Ločen repozitorij za spletni vmesnik (Next.js po vzoru ostalih programov); FreeCAD ostane motor s strežniškim delom v tej mapi
 
-**Naslednji korak:** odločitev uporabnika, kaj v pregledovalniku najprej: drevo in lastnosti ali ukazi Part Design.
+**Naslednji korak:** odločitev uporabnika: drevo objektov z lastnostmi (korak 10) ali okna z nastavitvami ukazov v brskalniku (korak 11).
 
 ## Zgradba spletnega pogleda (dokaz koncepta)
 
@@ -38,7 +39,9 @@ mapa `Desktop/Apps/FreeCAD`, javen fork `juskolaric/FreeCAD`.
   ob spremembi dokumenta (opazovalci dokumenta, pogleda in izbire) z zamikom 300 ms: teselirane ploskve z oznakami
   `Face{n}`, diskretizirani robovi `Edge{n}`, barve iz `ShapeAppearance`.
 - `lastno/splet/index.html`: three.js z WebGPU, izbira z žarkom (ploskve in robovi), dogodki SSE `/events`
-  (`model`, `izbira`), izbira `POST /select`, ukazi `POST /python`; POST zahteva žeton, vpisan v stran.
+  (`model`, `izbira`, `aktivni`, `okolje`), izbira `POST /select`, ukazi `POST /ukaz`, okolje `POST /okolje`, Python `POST /python`;
+  POST zahteva žeton, vpisan v stran. Seznam ukazov `GET /ukazi` nastane iz orodnih vrstic okolij (prevedena imena, namigi,
+  ikone kot PNG, podukazi skupin); ob zagonu strežnik enkrat aktivira okolja Snovanje delov, Skica in Del, da ukazi obstajajo.
 - Vir resnice za izbiro je FreeCAD: brskalnik pošlje klik, FreeCAD izbere, opazovalec izbire jo vrne vsem odjemalcem.
 - Zagon: `lastno/splet/ZAZENI-SPLET.bat` (FreeCAD s strežnikom in brskalnik) ali `FreeCAD.exe lastno/splet/streznik.py`.
 

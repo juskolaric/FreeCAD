@@ -1,26 +1,27 @@
 # -*- coding: utf-8 -*-
-"""Spletni pogled FreeCAD-a (dokaz koncepta): FreeCAD je motor, prikaz je v brskalniku.
+"""Spletni pogled FreeCAD-a: FreeCAD je motor, prikaz in ukazi so v brskalniku.
 
 Zagon (v oknu ali brez okna):
     FreeCAD.exe lastno/splet/streznik.py          (ali ZAZENI-SPLET.bat v tej mapi)
-    FreeCADCmd.exe lastno/splet/streznik.py       (brez okna; ni izbire v 3D pogledu)
+    FreeCADCmd.exe lastno/splet/streznik.py       (brez okna: samo prikaz, brez izbire in ukazov)
     v Python konzoli FreeCAD-a: exec(open(r"...\\lastno\\splet\\streznik.py", encoding="utf-8").read())
-Nato v brskalniku: http://127.0.0.1:3020/
+Nato v brskalniku: http://127.0.0.1:3020/    (vrata: okoljska spremenljivka SPLET_VRATA)
 
 Zgradba:
   - HTTP strežnik teče v svoji niti in FreeCAD-ovega API-ja NIKOLI ne kliče sam. Bere le
-    pripravljen posnetek geometrije (bajti JSON), zahteve iz brskalnika pa odloži v vrsto.
+    pripravljene posnetke (bajti JSON), zahteve iz brskalnika pa odloži v vrsto.
   - Glavna nit (časovnik v oknu ali zanka brez okna) obdela vrsto, ob spremembi dokumenta
-    znova zgradi posnetek in odjemalcem pošlje dogodek (Server-Sent Events).
-  - Izbira: klik v brskalniku -> POST /select -> Gui.Selection v FreeCAD-u -> opazovalec
-    izbire -> dogodek "izbira" -> brskalnik obarva ploskev ali rob. Vir resnice je FreeCAD.
-  - Ukazi: POST /python izvede Python na glavni niti (le z žetonom, ki ga pozna stran).
+    znova zgradi posnetek geometrije, vsakih 500 ms preveri stanje ukazov (na voljo ali ne),
+    aktivno delovno okolje in urejanje skice ter odjemalcem pošlje dogodke (Server-Sent Events).
+  - Izbira: klik v brskalniku -> POST /select -> Gui.Selection -> opazovalec izbire -> dogodek
+    "izbira" -> brskalnik obarva ploskev ali rob. Vir resnice je FreeCAD.
+  - Ukazi: seznam ukazov (GET /ukazi) nastane iz orodnih vrstic delovnih okolij Snovanje delov,
+    Skica in Del (prevedena imena, namigi, ikone, podukazi skupin). Klik v brskalniku
+    -> POST /ukaz -> Gui.runCommand na glavni niti; okna z nastavitvami ukaza se odprejo v FreeCAD-u.
+  - Varnost: vsak POST potrebuje žeton (glava X-Zeton), ki nastane ob zagonu in ga pozna le stran.
 
-Oblika posnetka (/model): {"dokument", "verzija", "objekti": [ {"ime", "oznaka",
-  "tocke": [x,y,z,...], "trikotniki": [i,j,k,...],
-  "ploskve": [[zacetekTock, steviloTock, zacetekTrikotnikov, steviloTrikotnikov, r, g, b], ...],
-  "robTocke": [x1,y1,z1,x2,y2,z2,...] (pari za odseke), "robovi": [[zacetekOdsekov, steviloOdsekov], ...] } ] }
-Ploskev i ustreza FreeCAD-ovi oznaki "Face{i+1}", rob j oznaki "Edge{j+1}".
+Dogodki SSE (GET /events): model {verzija}, izbira [...], aktivni {ime: bool}, okolje {delovnaMiza, urejanje}.
+Oblika posnetka geometrije (GET /model): glej _geometrija().
 """
 
 import http.server
@@ -28,6 +29,7 @@ import json
 import os
 import queue
 import secrets
+import sys
 import threading
 import time
 import traceback
@@ -51,6 +53,18 @@ try:
 except NameError:
     MAPA = os.path.join(App.getHomePath(), "lastno", "splet")
 ZETON = secrets.token_hex(16)
+
+# Delovna okolja, katerih ukazi so na voljo v brskalniku (ime, slovenski naslov, če ga FreeCAD nima).
+DELOVNA_OKOLJA = [
+    ("PartDesignWorkbench", "Snovanje delov"),
+    ("SketcherWorkbench", "Skica"),
+    ("PartWorkbench", "Del"),
+]
+# Splošne orodne vrstice (niso del zavihkov okolij).
+SPLOSNE_ORODNE = {"File", "Edit", "Clipboard", "Workbench", "Macro", "View", "Individual Views", "Structure", "Help"}
+# Vrstica hitrega dostopa (kot v SolidWorksu zgoraj levo).
+HITRI_DOSTOP = ["Std_New", "Std_Open", "Std_Save", "Std_Undo", "Std_Redo", "Std_Refresh",
+                "Std_ViewFitAll", "Std_ViewFitSelection", "Std_ViewIsometric"]
 
 
 def _log(besedilo):
@@ -85,14 +99,42 @@ def _barve(obj, stevilo_ploskev):
     return osnovna, po_ploskvah
 
 
+def _je_izhodisce(obj):
+    """Izhodišče telesa (osi, ravnine, koordinatni sistem) in podobni pomožni objekti."""
+    for tip in ("App::Origin", "App::OriginFeature", "App::Plane", "App::Line", "App::Point",
+                "App::LocalCoordinateSystem", "App::DatumElement", "PartDesign::CoordinateSystem"):
+        try:
+            if obj.isDerivedFrom(tip):
+                return True
+        except Exception:  # noqa: BLE001
+            pass
+    return "Origin" in obj.TypeId
+
+
+def _objekt_v_urejanju(doc):
+    """Ime objekta, ki ga FreeCAD trenutno ureja (predogled značilnosti), sicer ''."""
+    if not IMA_OKNO:
+        return ""
+    try:
+        vp = Gui.getDocument(doc.Name).getInEdit()
+        return vp.Object.Name if vp is not None else ""
+    except Exception:  # noqa: BLE001
+        return ""
+
+
 def _vidni_objekti(doc):
+    v_urejanju = _objekt_v_urejanju(doc)
     for obj in doc.Objects:
         if not hasattr(obj, "Shape"):
             continue
         if obj.isDerivedFrom("PartDesign::Body") or obj.isDerivedFrom("App::Part"):
             continue  # vsebnika prikazujemo prek njunih vidnih elementov
+        if _je_izhodisce(obj):
+            continue  # osi in ravnine izhodišča (neskončne pomožne oblike)
         try:
-            if not obj.Visibility:
+            # Med urejanjem značilnosti (npr. Izboklina z odprtim oknom) je objekt v FreeCAD-u
+            # viden kot predogled, čeprav je Visibility še False; pokažemo ga tudi tukaj.
+            if not obj.Visibility and obj.Name != v_urejanju:
                 continue
         except Exception:  # noqa: BLE001
             pass
@@ -109,6 +151,7 @@ def _z3(v):
 
 
 def _geometrija(obj):
+    """Posnetek enega objekta: teselirane ploskve (Face{i+1}) in diskretizirani robovi (Edge{j+1})."""
     oblika = obj.Shape.copy()
     try:
         oblika.Placement = obj.getGlobalPlacement()
@@ -156,6 +199,156 @@ def _geometrija(obj):
 
 
 # ---------------------------------------------------------------------------
+# Ukazi (samo glavna nit, samo z oknom)
+
+_IKONE = {}
+
+
+def _ikona_uri(ikona, kljuc):
+    """QIcon -> PNG kot data URI (64 px), z medpomnilnikom po ključu."""
+    if kljuc in _IKONE:
+        return _IKONE[kljuc]
+    uri = ""
+    try:
+        from PySide6 import QtCore
+        if ikona is not None and not ikona.isNull():
+            pm = ikona.pixmap(64, 64)
+            ba = QtCore.QByteArray()
+            buf = QtCore.QBuffer(ba)
+            buf.open(QtCore.QIODevice.OpenModeFlag.WriteOnly)
+            pm.save(buf, "PNG")
+            buf.close()
+            uri = "data:image/png;base64," + bytes(ba.toBase64().data()).decode("ascii")
+    except Exception:  # noqa: BLE001
+        uri = ""
+    _IKONE[kljuc] = uri
+    return uri
+
+
+def _besedilo(qt_besedilo):
+    b = (qt_besedilo or "").replace("&", "").strip()
+    while b.endswith("...") or b.endswith("…"):
+        b = b[:-1] if b.endswith("…") else b[:-3]
+        b = b.strip()
+    return b
+
+
+def _ukaz(ime, akcija_orodne):
+    """Opis ukaza za brskalnik: prevedeno ime, namig (HTML), ikona, stanje, podukazi skupine."""
+    cmd = Gui.Command.get(ime)
+    if cmd is None:
+        return None
+    try:
+        seznam = cmd.getAction()
+    except Exception:  # noqa: BLE001
+        seznam = []
+    if not isinstance(seznam, list):
+        seznam = [seznam] if seznam else []
+    glavna = akcija_orodne or (seznam[0] if seznam else None)
+    if glavna is None:
+        return None
+    info = cmd.getInfo()
+    try:
+        aktiven = bool(cmd.isActive())
+    except Exception:  # noqa: BLE001
+        aktiven = False
+    u = {
+        "ime": ime,
+        "naslov": _besedilo(glavna.text()) or info.get("menuText", ime),
+        "namig": glavna.toolTip() or info.get("toolTip", ""),
+        "ikona": _ikona_uri(glavna.icon(), ime),
+        "aktiven": aktiven,
+        "podukazi": [],
+    }
+    if len(seznam) > 1:
+        u["podukazi"] = [
+            {"indeks": i, "naslov": _besedilo(a.text()), "namig": a.toolTip(), "ikona": _ikona_uri(a.icon(), "%s#%d" % (ime, i))}
+            for i, a in enumerate(seznam)
+        ]
+    return u
+
+
+def _naslov_okolja(ime, privzeto):
+    """Prevedeno ime delovnega okolja iz dejanj izbirnika, sicer privzeto."""
+    try:
+        for a in Gui.Command.get("Std_Workbench").getAction():
+            if a.objectName() == ime or a.data() == ime:
+                return _besedilo(a.text()) or privzeto
+    except Exception:  # noqa: BLE001
+        pass
+    return privzeto
+
+
+def zgradi_ukaze():
+    """Seznam ukazov po delovnih okoljih in orodnih vrsticah (skupine ločene z ločili)."""
+    from PySide6 import QtWidgets
+    mw = Gui.getMainWindow()
+    okolja = []
+    imena_ukazov = []
+    for ime, privzeti_naslov in DELOVNA_OKOLJA:
+        if ime not in Gui.listWorkbenches():
+            continue
+        wb = Gui.getWorkbench(ime)
+        try:
+            predmeti = wb.getToolbarItems()
+        except Exception:  # noqa: BLE001
+            predmeti = {}
+        try:
+            vrstni_red = wb.listToolbars()
+        except Exception:  # noqa: BLE001
+            vrstni_red = list(predmeti.keys())
+        orodne = []
+        for ime_orodne in vrstni_red:
+            if ime_orodne in SPLOSNE_ORODNE:
+                continue
+            tb = mw.findChild(QtWidgets.QToolBar, ime_orodne)
+            naslov = tb.windowTitle() if tb else ime_orodne
+            akcije = {}
+            if tb:
+                for a in tb.actions():
+                    d = a.data()
+                    if isinstance(d, str) and d:
+                        akcije[d] = a
+            skupine = [[]]
+            for ime_ukaza in predmeti.get(ime_orodne, []):
+                if ime_ukaza == "Separator":
+                    if skupine[-1]:
+                        skupine.append([])
+                    continue
+                u = _ukaz(ime_ukaza, akcije.get(ime_ukaza))
+                if u:
+                    skupine[-1].append(u)
+                    imena_ukazov.append(ime_ukaza)
+            skupine = [s for s in skupine if s]
+            if skupine:
+                orodne.append({"ime": ime_orodne, "naslov": naslov, "skupine": skupine})
+        okolja.append({"ime": ime, "naslov": _naslov_okolja(ime, privzeti_naslov), "orodneVrstice": orodne})
+    hitri = []
+    for ime_ukaza in HITRI_DOSTOP:
+        u = _ukaz(ime_ukaza, None)
+        if u:
+            hitri.append(u)
+            imena_ukazov.append(ime_ukaza)
+    return {"delovnaOkolja": okolja, "hitriDostop": hitri}, sorted(set(imena_ukazov))
+
+
+def _nalozi_okolja():
+    """Aktivira vsa potrebna delovna okolja, da nastanejo njihovi ukazi in orodne vrstice."""
+    aktivno = Gui.activeWorkbench().name()
+    for ime, _ in DELOVNA_OKOLJA:
+        if ime in Gui.listWorkbenches():
+            try:
+                Gui.activateWorkbench(ime)
+            except Exception:  # noqa: BLE001
+                _log("okolja %s ni bilo mogoče naložiti: %s" % (ime, traceback.format_exc()))
+    cilj = "PartDesignWorkbench" if "PartDesignWorkbench" in Gui.listWorkbenches() else aktivno
+    try:
+        Gui.activateWorkbench(cilj)
+    except Exception:  # noqa: BLE001
+        pass
+
+
+# ---------------------------------------------------------------------------
 # Stanje, deljeno med nitmi
 
 class Stanje:
@@ -164,10 +357,15 @@ class Stanje:
         self.odjemalci = []                 # vrste SSE odjemalcev
         self.kljuc = threading.Lock()
         self._posnetek = b'{"dokument":"","verzija":0,"objekti":[]}'
+        self._ukazi = b'{"delovnaOkolja":[],"hitriDostop":[]}'
+        self.imena_ukazov = []
+        self.aktivni = {}
+        self.okolje = {"delovnaMiza": "", "urejanje": ""}
         self.verzija = 0
         self.izbira = []
         self.umazano = True
         self.zadnja_gradnja = 0.0
+        self.zadnji_pregled = 0.0
         self.napaka = ""
 
     # -- niti strežnika --
@@ -190,13 +388,18 @@ class Stanje:
     def posnetek(self):
         return self._posnetek
 
+    def ukazi(self):
+        return self._ukazi
+
     def stanje(self):
         return {
             "verzija": self.verzija,
             "izbira": self.izbira,
+            "okolje": self.okolje,
             "vrata": VRATA,
             "okno": IMA_OKNO,
             "odjemalcev": len(self.odjemalci),
+            "ukazov": len(self.imena_ukazov),
             "napaka": self.napaka,
         }
 
@@ -212,8 +415,15 @@ class Stanje:
             except Exception:  # noqa: BLE001
                 self.napaka = traceback.format_exc()
                 _log("napaka pri ukazu %s: %s" % (ukaz, self.napaka))
-        if self.umazano and time.time() - self.zadnja_gradnja > 0.3:
+        zdaj = time.time()
+        if self.umazano and zdaj - self.zadnja_gradnja > 0.3:
             self.zgradi()
+        if IMA_OKNO and zdaj - self.zadnji_pregled > 0.5:
+            self.zadnji_pregled = zdaj
+            try:
+                self.preveri_okolje()
+            except Exception:  # noqa: BLE001
+                self.napaka = traceback.format_exc()
 
     def zgradi(self):
         doc = App.ActiveDocument
@@ -223,7 +433,7 @@ class Stanje:
                 try:
                     objekti.append(_geometrija(obj))
                 except Exception:  # noqa: BLE001
-                    _log("objekt %s preskocen: %s" % (obj.Name, traceback.format_exc()))
+                    _log("objekt %s preskočen: %s" % (obj.Name, traceback.format_exc()))
         self.verzija += 1
         self._posnetek = json.dumps(
             {"dokument": doc.Label if doc else "", "verzija": self.verzija, "objekti": objekti},
@@ -233,6 +443,38 @@ class Stanje:
         self.zadnja_gradnja = time.time()
         self.oddaj("model", {"verzija": self.verzija})
         _log("posnetek %d: %d objektov, %.1f kB" % (self.verzija, len(objekti), len(self._posnetek) / 1024.0))
+
+    def zgradi_ukaze(self):
+        podatki, self.imena_ukazov = zgradi_ukaze()
+        self._ukazi = json.dumps(podatki, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
+        self.aktivni = {}
+        _log("ukazov: %d, %.0f kB" % (len(self.imena_ukazov), len(self._ukazi) / 1024.0))
+
+    def preveri_okolje(self):
+        """Stanje ukazov (na voljo), aktivno delovno okolje in urejanje skice; pošlje le spremembe."""
+        spremembe = {}
+        for ime in self.imena_ukazov:
+            cmd = Gui.Command.get(ime)
+            try:
+                a = bool(cmd.isActive()) if cmd else False
+            except Exception:  # noqa: BLE001
+                a = False
+            if self.aktivni.get(ime) != a:
+                self.aktivni[ime] = a
+                spremembe[ime] = a
+        if spremembe:
+            self.oddaj("aktivni", spremembe)
+        urejanje = ""
+        try:
+            vp = Gui.ActiveDocument.getInEdit() if Gui.ActiveDocument else None
+            if vp is not None:
+                urejanje = vp.Object.TypeId
+        except Exception:  # noqa: BLE001
+            urejanje = ""
+        okolje = {"delovnaMiza": Gui.activeWorkbench().name(), "urejanje": urejanje}
+        if okolje != self.okolje:
+            self.okolje = okolje
+            self.oddaj("okolje", okolje)
 
     def posodobi_izbiro(self):
         if not IMA_OKNO:
@@ -255,6 +497,18 @@ class Stanje:
             obj = doc.getObject(podatki.get("objekt", ""))
             if obj is not None:
                 Gui.Selection.addSelection(doc.Name, obj.Name, podatki.get("element", ""))
+        elif ukaz == "ukaz":
+            if not IMA_OKNO:
+                return
+            ime = podatki.get("ime", "")
+            indeks = int(podatki.get("indeks", 0) or 0)
+            if ime in self.imena_ukazov or ime.startswith("Std_"):
+                Gui.runCommand(ime, indeks)
+                self.zadnji_pregled = 0.0  # stanje ukazov preveri takoj
+        elif ukaz == "okolje":
+            if IMA_OKNO and podatki.get("ime") in Gui.listWorkbenches():
+                Gui.activateWorkbench(podatki.get("ime"))
+                self.zadnji_pregled = 0.0
         elif ukaz == "python":
             exec(podatki.get("koda", ""), {"App": App, "FreeCAD": App, "Gui": Gui, "FreeCADGui": Gui})
             self.umazano = True
@@ -314,6 +568,12 @@ class Streznik(http.server.ThreadingHTTPServer):
     daemon_threads = True
     allow_reuse_address = True
 
+    def handle_error(self, request, client_address):
+        vrsta = sys.exc_info()[0]
+        if vrsta and issubclass(vrsta, (ConnectionAbortedError, ConnectionResetError, BrokenPipeError)):
+            return  # brskalnik je zaprl povezavo (osvežitev strani), ni napaka
+        super().handle_error(request, client_address)
+
 
 class Zahteva(http.server.BaseHTTPRequestHandler):
     protocol_version = "HTTP/1.1"
@@ -337,6 +597,8 @@ class Zahteva(http.server.BaseHTTPRequestHandler):
             self._odgovor(stran, "text/html; charset=utf-8")
         elif pot == "/model":
             self._odgovor(STANJE.posnetek())
+        elif pot == "/ukazi":
+            self._odgovor(STANJE.ukazi())
         elif pot == "/stanje":
             self._odgovor(json.dumps(STANJE.stanje(), ensure_ascii=False).encode("utf-8"))
         elif pot == "/events":
@@ -356,11 +618,9 @@ class Zahteva(http.server.BaseHTTPRequestHandler):
             self._odgovor(b'{"napaka":"json"}', koda=400)
             return
         pot = self.path.split("?")[0]
-        if pot == "/select":
-            STANJE.vrsta.put(("izbira", podatki))
-            self._odgovor(b'{"ok":true}')
-        elif pot == "/python":
-            STANJE.vrsta.put(("python", podatki))
+        poti = {"/select": "izbira", "/ukaz": "ukaz", "/okolje": "okolje", "/python": "python"}
+        if pot in poti:
+            STANJE.vrsta.put((poti[pot], podatki))
             self._odgovor(b'{"ok":true}')
         else:
             self._odgovor(b"ni", "text/plain", 404)
@@ -380,6 +640,8 @@ class Zahteva(http.server.BaseHTTPRequestHandler):
         try:
             self._poslji_sse("model", {"verzija": STANJE.verzija})
             self._poslji_sse("izbira", STANJE.izbira)
+            self._poslji_sse("aktivni", dict(STANJE.aktivni))
+            self._poslji_sse("okolje", dict(STANJE.okolje))
             while True:
                 try:
                     dogodek, podatki = q.get(timeout=15)
@@ -440,6 +702,11 @@ def zazeni():
     if IMA_OKNO:
         Gui.addDocumentObserver(OpazovalecPogleda())
         Gui.Selection.addObserver(OpazovalecIzbire())
+        _nalozi_okolja()
+        try:
+            STANJE.zgradi_ukaze()
+        except Exception:  # noqa: BLE001
+            _log("ukazov ni bilo mogoče zgraditi: %s" % traceback.format_exc())
 
     streznik = Streznik(("127.0.0.1", VRATA), Zahteva)
     nit = threading.Thread(target=streznik.serve_forever, name="splet-streznik", daemon=True)
