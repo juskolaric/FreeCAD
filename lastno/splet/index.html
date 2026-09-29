@@ -23,7 +23,10 @@
   .zavihek:hover { background: #e6eaf0; }
   .zavihek.aktiven { background: #fff; border-color: var(--crta); border-top: 2px solid var(--poudarek); font-weight: 600; }
   .zavihek.urejanje { color: var(--poudarek); }
-  #hud { margin-left: auto; font-size: 12px; line-height: 1.4; text-align: right; color: #444; padding-bottom: 4px; }
+  #orodja { margin-left: auto; display: flex; gap: 4px; padding-bottom: 5px; }
+  #orodja button { border: 1px solid var(--crta); background: #fff; border-radius: 4px; padding: 3px 9px; cursor: pointer; font-size: 12px; }
+  #orodja button:hover { background: #e6eaf0; }
+  #hud { font-size: 12px; line-height: 1.4; text-align: right; color: #444; padding-bottom: 4px; }
   #hud b { font-weight: 600; color: var(--besedilo); }
 
   /* Trak z ukazi */
@@ -86,6 +89,10 @@
   <div id="vrstica1">
     <div id="hitri"></div>
     <div id="zavihki"></div>
+    <div id="orodja">
+      <button id="gumbOkno" type="button" title="Pokaže ali skrije okno namiznega FreeCAD-a">Pokaži FreeCAD</button>
+      <button id="gumbIzhod" type="button" title="Zapre FreeCAD in spletni strežnik">Izhod</button>
+    </div>
     <div id="hud">Povezujem s FreeCAD-om …</div>
   </div>
   <div id="trak"></div>
@@ -262,22 +269,34 @@ function uporabiOkolje(okolje) {
   if (stanje.ukazi && cilj && stanje.ukazi.delovnaOkolja.some(o => o.ime === cilj) && cilj !== stanje.zavihek) izberiZavihek(cilj, false);
   // Pasica: FreeCAD čaka na odgovor v svojem oknu (modalno okno) ali ima odprto opravilo (nastavitve ukaza, urejanje skice).
   const pasica = $('pasica'), besedilo = $('pasicaBesedilo');
+  const kje = okolje.oknoVidno ? 'FreeCAD je pokazal svoje okno, ker potrebuje vaš vnos' : 'FreeCAD potrebuje vaš vnos v svojem oknu';
   if (okolje.pogovor) {
-    besedilo.textContent = 'FreeCAD čaka na vaš odgovor v svojem oknu: »' + okolje.pogovor + '«';
+    besedilo.textContent = kje + ': »' + okolje.pogovor + '«. Ko končate, se okno spet skrije.';
     pasica.classList.remove('skrit');
   } else if (urejaSkico) {
-    besedilo.textContent = 'Skica se ureja v oknu FreeCAD-a (urejevalnik skic v brskalniku še ni narejen).';
+    besedilo.textContent = 'Skica se ureja v oknu FreeCAD-a (urejevalnik skic v brskalniku še ni narejen). Ko skico zaprete, se okno spet skrije.';
     pasica.classList.remove('skrit');
   } else if (okolje.opravilo) {
     const kaj = okolje.urejanje ? ' (' + okolje.urejanje.split('::').pop() + ')' : '';
-    besedilo.textContent = 'V oknu FreeCAD-a je odprto opravilo' + kaj + ': tam vnesite nastavitve in potrdite ali prekličite.';
+    besedilo.textContent = kje + kaj + ': tam vnesite nastavitve in potrdite ali prekličite. Potem se okno spet skrije.';
     pasica.classList.remove('skrit');
   } else {
     pasica.classList.add('skrit');
   }
+  $('gumbOkno').textContent = okolje.oknoVidno ? 'Skrij FreeCAD' : 'Pokaži FreeCAD';
   osveziHud();
 }
-$('pasicaGumb').addEventListener('click', () => objavi('/okno', {}).catch(pokaziNapako));
+$('pasicaGumb').addEventListener('click', () => objavi('/okno', { prikazi: true }).catch(pokaziNapako));
+$('gumbOkno').addEventListener('click', () => objavi('/okno', { prikazi: !stanje.okolje.oknoVidno }).catch(pokaziNapako));
+$('gumbIzhod').addEventListener('click', () => {
+  const vprasanje = stanje.okolje.spremenjeno
+    ? 'Zapreti FreeCAD? Dokumenti imajo neshranjene spremembe, ki bodo izgubljene. (Za shranjevanje najprej uporabite gumb Shrani.)'
+    : 'Zapreti FreeCAD in spletni strežnik?';
+  if (!confirm(vprasanje)) return;
+  stanje.zaprto = true;
+  objavi('/izhod', {}).catch(() => {});
+  hud.innerHTML = '<b>FreeCAD se zapira.</b> Za nov zagon uporabite ZAZENI-SPLET.bat.';
+});
 
 function uporabiAktivne(spremembe) {
   Object.assign(stanje.aktivni, spremembe);
@@ -455,7 +474,10 @@ dogodki.addEventListener('izbira', e => { oznaciIzbiro(JSON.parse(e.data)); });
 dogodki.addEventListener('aktivni', e => { uporabiAktivne(JSON.parse(e.data)); });
 dogodki.addEventListener('okolje', e => { uporabiOkolje(JSON.parse(e.data)); });
 dogodki.onopen = () => { stanje.povezava = true; osveziHud(); };
-dogodki.onerror = () => { stanje.povezava = false; osveziHud(); };
+dogodki.onerror = () => {
+  if (stanje.zaprto) { hud.innerHTML = '<b>FreeCAD je zaprt.</b> Za nov zagon uporabite ZAZENI-SPLET.bat in osvežite stran.'; return; }
+  stanje.povezava = false; osveziHud();
+};
 
 new ResizeObserver(() => {
   const w = pogled.clientWidth, h = pogled.clientHeight;

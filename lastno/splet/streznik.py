@@ -48,6 +48,8 @@ VRATA = int(os.environ.get("SPLET_VRATA", "3020"))
 TOLERANCA_PLOSKEV = 0.1   # mm, teselacija
 ODMIK_ROBOV = 0.05        # mm, diskretizacija robov
 ODPRI_BRSKALNIK = os.environ.get("SPLET_BRSKALNIK", "1") == "1"
+# Okno FreeCAD-a: "skrito" (privzeto; pokaže se le, ko potrebuje vnos) ali "vidno".
+OKNO_SKRITO = os.environ.get("SPLET_OKNO", "skrito") != "vidno"
 try:
     MAPA = os.path.dirname(os.path.abspath(__file__))
 except NameError:
@@ -354,10 +356,10 @@ def _sprozi_ukaz(ime, indeks):
 
 
 def _pokazi_okno():
-    """Postavi okno FreeCAD-a (in morebitno modalno okno) v ospredje ali vsaj utripne v opravilni vrstici."""
+    """Pokaže okno FreeCAD-a (in morebitno modalno okno) in ga postavi v ospredje ali vsaj utripne v opravilni vrstici."""
     from PySide6 import QtWidgets
     mw = Gui.getMainWindow()
-    if mw.isMinimized():
+    if not mw.isVisible() or mw.isMinimized():
         mw.showNormal()
     mw.raise_()
     mw.activateWindow()
@@ -366,6 +368,13 @@ def _pokazi_okno():
         modalno.raise_()
         modalno.activateWindow()
     QtWidgets.QApplication.alert(mw, 0)
+
+
+def _skrij_okno():
+    """Skrije okno FreeCAD-a; program teče naprej in streže brskalniku."""
+    mw = Gui.getMainWindow()
+    if mw.isVisible():
+        mw.hide()
 
 
 def _nalozi_okolja():
@@ -403,6 +412,9 @@ class Stanje:
         self.zadnja_gradnja = 0.0
         self.zadnji_pregled = 0.0
         self.napaka = ""
+        self.samodejno_prikazano = False   # okno smo pokazali sami zaradi vnosa; po koncu ga spet skrijemo
+        self.okno_na_zahtevo = False       # uporabnik je z gumbom zahteval vidno okno
+        self.zapiranje_okna = False        # uporabnik je zaprl okno (X); ko ni več vprašanj, program konča
 
     # -- niti strežnika --
     def nov_odjemalec(self):
@@ -519,8 +531,32 @@ class Stanje:
             opravilo = bool(Gui.Control.activeDialog())
         except Exception:  # noqa: BLE001
             opravilo = False
+        from PySide6 import QtWidgets
+        mw = Gui.getMainWindow()
+        potrebuje_vnos = bool(pogovor) or opravilo
+        if OKNO_SKRITO and not self.zapiranje_okna:
+            # Skrito okno pokažemo, ko FreeCAD potrebuje vnos (izbira ravnine, nastavitve, urejanje skice),
+            # in ga po koncu spet skrijemo. Če ga FreeCAD sam pokaže (npr. ob novem dokumentu), ga skrijemo,
+            # razen če ga je uporabnik zahteval z gumbom.
+            if potrebuje_vnos and not mw.isVisible():
+                _pokazi_okno()
+                self.samodejno_prikazano = True
+            elif not potrebuje_vnos and mw.isVisible() and not self.okno_na_zahtevo:
+                _skrij_okno()
+                self.samodejno_prikazano = False
+        if self.zapiranje_okna and not pogovor:
+            if mw.isVisible():
+                self.zapiranje_okna = False  # zapiranje preklicano (npr. pri vprašanju o shranjevanju)
+            else:
+                _log("okno zaprto, program se konča")
+                QtWidgets.QApplication.instance().quit()
+        try:
+            spremenjeno = any(d.Modified for d in App.listDocuments().values())
+        except Exception:  # noqa: BLE001
+            spremenjeno = False
         okolje = {"delovnaMiza": Gui.activeWorkbench().name(), "urejanje": urejanje,
-                  "pogovor": pogovor, "opravilo": opravilo}
+                  "pogovor": pogovor, "opravilo": opravilo, "oknoVidno": mw.isVisible(),
+                  "spremenjeno": spremenjeno}
         if okolje != self.okolje:
             self.okolje = okolje
             self.oddaj("okolje", okolje)
@@ -556,7 +592,24 @@ class Stanje:
                 self.zadnji_pregled = 0.0  # stanje ukazov preveri takoj
         elif ukaz == "okno":
             if IMA_OKNO:
-                _pokazi_okno()
+                self.samodejno_prikazano = False
+                self.okno_na_zahtevo = bool(podatki.get("prikazi", True))
+                if self.okno_na_zahtevo:
+                    _pokazi_okno()
+                else:
+                    _skrij_okno()
+                self.zadnji_pregled = 0.0
+        elif ukaz == "izhod":
+            if IMA_OKNO:
+                # Brskalnik je že vprašal za potrditev; neshranjene spremembe se zavržejo.
+                from PySide6 import QtCore, QtWidgets
+                _log("izhod na zahtevo iz brskalnika")
+                for d in list(App.listDocuments().values()):
+                    try:
+                        App.closeDocument(d.Name)
+                    except Exception:  # noqa: BLE001
+                        pass
+                QtCore.QTimer.singleShot(200, QtWidgets.QApplication.instance().quit)
         elif ukaz == "okolje":
             if IMA_OKNO and podatki.get("ime") in Gui.listWorkbenches():
                 Gui.activateWorkbench(podatki.get("ime"))
@@ -670,7 +723,8 @@ class Zahteva(http.server.BaseHTTPRequestHandler):
             self._odgovor(b'{"napaka":"json"}', koda=400)
             return
         pot = self.path.split("?")[0]
-        poti = {"/select": "izbira", "/ukaz": "ukaz", "/okolje": "okolje", "/okno": "okno", "/python": "python"}
+        poti = {"/select": "izbira", "/ukaz": "ukaz", "/okolje": "okolje", "/okno": "okno",
+                "/izhod": "izhod", "/python": "python"}
         if pot in poti:
             STANJE.vrsta.put((poti[pot], podatki))
             self._odgovor(b'{"ok":true}')
@@ -736,10 +790,11 @@ def _vzorcni_dokument():
             o2.ViewObject.ShapeAppearance = (v2,)
         except Exception:  # noqa: BLE001
             pass
-        try:
-            Gui.SendMsgToActiveView("ViewFit")
-        except Exception:  # noqa: BLE001
-            pass
+        if Gui.getMainWindow().isVisible():
+            try:
+                Gui.SendMsgToActiveView("ViewFit")
+            except Exception:  # noqa: BLE001
+                pass
     return doc
 
 
@@ -747,6 +802,28 @@ def _vzorcni_dokument():
 # Zagon
 
 def zazeni():
+    global _FILTER
+    if IMA_OKNO:
+        # Najprej skrijemo okno (možnost --hidden ni uporabna: FreeCAD se z njo po skripti konča).
+        from PySide6 import QtCore, QtWidgets
+        mw = Gui.getMainWindow()
+
+        class ZapiranjeOkna(QtCore.QObject):
+            """Ko uporabnik zapre okno FreeCAD-a (X), program konča, ko ni več odprtih vprašanj."""
+            def eventFilter(self, obj, dogodek):
+                if obj is mw and dogodek.type() == QtCore.QEvent.Type.Close:
+                    STANJE.zapiranje_okna = True
+                    STANJE.zadnji_pregled = 0.0
+                return False
+
+        # Skrito glavno okno ne sme pomeniti, da se program konča ob zaprtju zadnjega pogovornega okna.
+        QtWidgets.QApplication.instance().setQuitOnLastWindowClosed(False)
+        _FILTER = ZapiranjeOkna()
+        mw.installEventFilter(_FILTER)
+        if OKNO_SKRITO:
+            _skrij_okno()
+            _log("okno FreeCAD-a je skrito; pokaže se, ko potrebuje vnos, ali z gumbom v brskalniku")
+
     if App.ActiveDocument is None:
         _vzorcni_dokument()
 
@@ -800,4 +877,5 @@ def zazeni():
 
 
 _CASOVNIK = None
+_FILTER = None
 zazeni()
