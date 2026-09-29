@@ -44,6 +44,7 @@
 #include "Command.h"
 #include "MainWindow.h"
 #include "OverlayWidgets.h"
+#include "RibbonBar.h"
 #include "WidgetFactory.h"
 
 
@@ -739,6 +740,13 @@ void ToolBarManager::setup(ToolBarItem* toolBarItems)
             toolbar->toggleViewAction()->setVisible(false);
         }
 
+        // Ukazna vrstica (RibbonBar) prikazuje orodne vrstice delovne mize sama;
+        // klasicne ostanejo skrite in brez vnosa v kontekstnem meniju.
+        if (RibbonBar::isEnabled() && !RibbonBar::isGlobalToolBar(name)) {
+            visible = false;
+            toolbar->toggleViewAction()->setVisible(false);
+        }
+
         // Initialise toolbar item visibility
         toolbar->setVisible(visible);
 
@@ -792,6 +800,12 @@ void ToolBarManager::setup(ToolBarItem* toolBarItems)
     }
 
     setMovable(!areToolBarsLocked());
+
+    if (RibbonBar::isEnabled()) {
+        if (auto ribbon = RibbonBar::instance()) {
+            ribbon->rebuild(this->toolbarNames);
+        }
+    }
 }
 
 void ToolBarManager::setup(ToolBarItem* item, QToolBar* toolbar) const
@@ -869,6 +883,10 @@ void ToolBarManager::restoreState() const
     for (const QString& it : toolbarNames) {
         QToolBar* toolbar = findToolBar(toolbars, it);
         if (toolbar) {
+            if (RibbonBar::isEnabled() && !RibbonBar::isGlobalToolBar(it)) {
+                toolbar->hide();  // nadomesca jo ukazna vrstica
+                continue;
+            }
             QByteArray toolbarName = toolbar->objectName().toUtf8();
             if (getToolbarPolicy(toolbar) != ToolBarItem::DefaultVisibility::Unavailable) {
                 toolbar->setVisible(hPref->GetBool(toolbarName.constData(), toolbar->isVisible()));
@@ -1265,6 +1283,23 @@ void ToolBarManager::setState(const QList<QString>& names, State state)
 
 void ToolBarManager::setState(const QString& name, State state)
 {
+    if (RibbonBar::isEnabled() && !RibbonBar::isGlobalToolBar(name)) {
+        // Klasicna orodna vrstica ostane skrita in njene nastavitve nedotaknjene;
+        // prikaz v ukazni vrstici sledi zahtevanemu stanju.
+        if (auto ribbon = RibbonBar::instance()) {
+            if (state == State::ForceAvailable) {
+                ribbon->setToolBarShown(name, true);
+            }
+            else if (state == State::ForceHidden) {
+                ribbon->setToolBarShown(name, false);
+            }
+            else if (state == State::RestoreDefault) {
+                ribbon->resetToolBarShown(name);
+            }
+        }
+        return;
+    }
+
     auto visibility = [this, name](bool defaultvalue) {
         return hPref->GetBool(name.toStdString().c_str(), defaultvalue);
     };

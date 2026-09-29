@@ -5,6 +5,13 @@ rem Deluje od koderkoli (dvoklik ali iz terminala), ker uporablja polno pot do p
 cd /d "%~dp0"
 set "PIXI=%LOCALAPPDATA%\pixi\bin\pixi.exe"
 if not exist "%PIXI%" set "PIXI=pixi"
+rem Odprti FreeCAD iz te mape zaklepa knjiznice, zato namestitev ne bi uspela.
+powershell -NoProfile -Command "if (Get-Process -Name FreeCAD -ErrorAction SilentlyContinue | Where-Object { $_.Path -like '*Apps\FreeCAD\.pixi*' }) { exit 1 } else { exit 0 }"
+if errorlevel 1 (
+  echo Lastna gradnja FreeCAD-a ze tece. Zapri jo in zazeni znova.
+  pause
+  exit /b 1
+)
 if not exist "build\release\build.ninja" (
   echo [0/3] Prva konfiguracija gradnje ...
   "%PIXI%" run configure-release

@@ -49,6 +49,7 @@
 #include <QThread>
 #include <QTimer>
 #include <QToolBar>
+#include <QVBoxLayout>
 #include <QUrlQuery>
 #include <QWhatsThis>
 #include <QWindow>
@@ -101,6 +102,7 @@
 #include "PropertyView.h"
 #include "PythonConsole.h"
 #include "ReportView.h"
+#include "RibbonBar.h"
 #include "SelectionView.h"
 #include "SplashScreen.h"
 #include "StatusBarLabel.h"
@@ -407,7 +409,19 @@ MainWindow::MainWindow(QWidget* parent, Qt::WindowFlags f)
     d->mdiArea->setActivationOrder(QMdiArea::ActivationHistoryOrder);
 #endif
     d->mdiArea->setBackground(QBrush(QColor(160, 160, 160)));
-    setCentralWidget(d->mdiArea);
+    if (RibbonBar::isEnabled()) {
+        // Ukazna vrstica v slogu SolidWorksa nad MDI podrocjem (glej RibbonBar.h).
+        auto central = new QWidget(this);
+        auto centralLayout = new QVBoxLayout(central);
+        centralLayout->setContentsMargins(0, 0, 0, 0);
+        centralLayout->setSpacing(0);
+        centralLayout->addWidget(RibbonBar::create(central));
+        centralLayout->addWidget(d->mdiArea);
+        setCentralWidget(central);
+    }
+    else {
+        setCentralWidget(d->mdiArea);
+    }
 
     statusBar()->setObjectName(QStringLiteral("statusBar"));
     connect(statusBar(), &QStatusBar::messageChanged, this, &MainWindow::statusMessageChanged);
@@ -2014,6 +2028,11 @@ void MainWindowP::restoreWindowState(const QByteArray& windowState)
     }
     else {
         getMainWindow()->restoreState(windowState);
+    }
+
+    // Shranjeno stanje okna lahko spet pokaze orodne vrstice delovne mize.
+    if (auto ribbon = RibbonBar::instance()) {
+        ribbon->hideWorkbenchToolBars();
     }
 
     Base::ConnectionBlocker block(connParam);
