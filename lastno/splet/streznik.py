@@ -1676,6 +1676,9 @@ class Zahteva(http.server.BaseHTTPRequestHandler):
             with open(os.path.join(MAPA, "index.html"), "rb") as f:
                 stran = f.read().replace(b"__ZETON__", ZETON.encode("ascii"))
             self._odgovor(stran, "text/html; charset=utf-8")
+        elif pot in ("/ikona.svg", "/favicon.ico"):
+            with open(os.path.join(MAPA, "ikona.svg"), "rb") as f:
+                self._odgovor(f.read(), "image/svg+xml")
         elif pot == "/model":
             self._odgovor(STANJE.posnetek())
         elif pot == "/ukazi":
