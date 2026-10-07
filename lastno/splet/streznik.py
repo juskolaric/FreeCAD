@@ -191,7 +191,7 @@ def _geometrija(obj):
         ploskve.append([zacetek_tock, len(v), zacetek_trik, len(t),
                         round(barva[0], 3), round(barva[1], 3), round(barva[2], 3)])
 
-    rob_tocke, robovi = [], []
+    rob_tocke, robovi, rob_info = [], [], []
     for rob in oblika.Edges:
         try:
             pts = rob.discretize(Deflection=ODMIK_ROBOV)
@@ -202,6 +202,7 @@ def _geometrija(obj):
             rob_tocke.extend(_z3(a))
             rob_tocke.extend(_z3(b))
         robovi.append([zacetek, max(len(pts) - 1, 0)])
+        rob_info.append(_rob_info(rob))
 
     return {
         "ime": obj.Name,
@@ -211,7 +212,27 @@ def _geometrija(obj):
         "ploskve": ploskve,
         "robTocke": rob_tocke,
         "robovi": robovi,
+        "robInfo": rob_info,
     }
+
+
+def _rob_info(rob):
+    """Analitični podatki roba za pripenjanje v skici (kot v SolidWorksu): krajišči, razpolovišče,
+    pri krogih središče, polmer in os. Vse v svetovnih koordinatah."""
+    info = {"tip": type(rob.Curve).__name__}
+    try:
+        if rob.Vertexes:
+            info["p1"] = _z3(rob.Vertexes[0].Point)
+            info["p2"] = _z3(rob.Vertexes[-1].Point)
+        info["sredina"] = _z3(rob.valueAt((rob.FirstParameter + rob.LastParameter) / 2.0))
+        info["zaprt"] = bool(rob.isClosed())
+        if info["tip"] == "Circle":
+            info["sredisce"] = _z3(rob.Curve.Center)
+            info["r"] = round(rob.Curve.Radius, 4)
+            info["os"] = _z3(rob.Curve.Axis)
+    except Exception:  # noqa: BLE001
+        pass
+    return info
 
 
 # ---------------------------------------------------------------------------
@@ -433,32 +454,46 @@ def _v2(v):
     return [round(v.x, 4), round(v.y, 4)]
 
 
+def _geo_json(i, g, gradbena):
+    tip = type(g).__name__
+    e = {"id": i, "tip": tip, "gradbena": gradbena}
+    if tip == "LineSegment":
+        e["p1"], e["p2"] = _v2(g.StartPoint), _v2(g.EndPoint)
+    elif tip == "Circle":
+        e["sredisce"], e["r"] = _v2(g.Center), round(g.Radius, 4)
+    elif tip == "ArcOfCircle":
+        e["sredisce"], e["r"] = _v2(g.Center), round(g.Radius, 4)
+        e["p1"], e["p2"] = _v2(g.StartPoint), _v2(g.EndPoint)
+        e["kot1"], e["kot2"] = round(g.FirstParameter, 6), round(g.LastParameter, 6)
+    elif tip == "Point":
+        e["p"] = [round(g.X, 4), round(g.Y, 4)]
+    else:
+        try:
+            e["tocke"] = [_v2(p) for p in g.toShape().discretize(Deflection=0.05)]
+        except Exception:  # noqa: BLE001
+            e["tocke"] = []
+    return e
+
+
 def _posnetek_skice(sk, novi=None):
     """Geometrija in omejitve skice v koordinatah skice ter lega skice v prostoru."""
     geometrija = []
     for i, g in enumerate(sk.Geometry):
-        tip = type(g).__name__
         try:
             gradbena = bool(sk.getConstruction(i))
         except Exception:  # noqa: BLE001
             gradbena = bool(getattr(g, "Construction", False))
-        e = {"id": i, "tip": tip, "gradbena": gradbena}
-        if tip == "LineSegment":
-            e["p1"], e["p2"] = _v2(g.StartPoint), _v2(g.EndPoint)
-        elif tip == "Circle":
-            e["sredisce"], e["r"] = _v2(g.Center), round(g.Radius, 4)
-        elif tip == "ArcOfCircle":
-            e["sredisce"], e["r"] = _v2(g.Center), round(g.Radius, 4)
-            e["p1"], e["p2"] = _v2(g.StartPoint), _v2(g.EndPoint)
-            e["kot1"], e["kot2"] = round(g.FirstParameter, 6), round(g.LastParameter, 6)
-        elif tip == "Point":
-            e["p"] = [round(g.X, 4), round(g.Y, 4)]
-        else:
-            try:
-                e["tocke"] = [_v2(p) for p in g.toShape().discretize(Deflection=0.05)]
-            except Exception:  # noqa: BLE001
-                e["tocke"] = []
-        geometrija.append(e)
+        geometrija.append(_geo_json(i, g, gradbena))
+    # Zunanja geometrija (robovi modela, projicirani v ravnino skice): GeoId -3, -4, ...; prva dva sta osi.
+    zunanji = []
+    try:
+        sklici = [[o.Name, sub] for o, subs in sk.ExternalGeometry for sub in subs]
+        for k, g in enumerate(list(sk.ExternalGeo)[2:]):
+            e = _geo_json(-3 - k, g, True)
+            e["sklic"] = sklici[k] if k < len(sklici) else None
+            zunanji.append(e)
+    except Exception:  # noqa: BLE001
+        pass
     omejitve = []
     for i, c in enumerate(sk.Constraints):
         omejitve.append({
@@ -479,7 +514,7 @@ def _posnetek_skice(sk, novi=None):
         "ime": sk.Name, "oznaka": sk.Label,
         "polozaj": {"osnova": [round(pl.Base.x, 4), round(pl.Base.y, 4), round(pl.Base.z, 4)],
                     "rotacija": [q[0], q[1], q[2], q[3]]},
-        "geometrija": geometrija, "omejitve": omejitve, "resitev": resitev, "novi": novi or [],
+        "geometrija": geometrija, "zunanji": zunanji, "omejitve": omejitve, "resitev": resitev, "novi": novi or [],
     }
 
 
@@ -557,6 +592,53 @@ def _nova_skica(podatki):
     return sk
 
 
+def _zunanji_geoid(sk, objekt, element):
+    """GeoId zunanje geometrije za rob modela; če je še ni, jo doda (addExternal). None, če ni mogoče
+    (npr. rob zunaj telesa v Part Designu)."""
+    sklici = [(o.Name, sub) for o, subs in sk.ExternalGeometry for sub in subs]
+    if (objekt, element) in sklici:
+        return -3 - sklici.index((objekt, element))
+    try:
+        sk.addExternal(objekt, element)
+    except Exception as ex:  # noqa: BLE001
+        _log("zunanja geometrija %s.%s ni mogoča: %s" % (objekt, element, ex))
+        return None
+    sklici = [(o.Name, sub) for o, subs in sk.ExternalGeometry for sub in subs]
+    if (objekt, element) not in sklici:
+        return None
+    return -3 - sklici.index((objekt, element))
+
+
+def _spoji(sk, geo, poz, s):
+    """Omejitev točke (geo, poz) na: [id, poz] točko skice, ali {"zunanji": [objekt, element], "poz", "nacin"}
+    rob modela. Načini kot v SolidWorksu: Coincident (krajišče/središče), Sredina (razpolovišče, Symmetric),
+    NaRobu (PointOnObject). Vrne True, če je bila omejitev dodana."""
+    import Sketcher
+    if not s:
+        return False
+    if isinstance(s, dict):
+        z = s.get("zunanji") or []
+        if len(z) != 2:
+            return False
+        gid = _zunanji_geoid(sk, str(z[0]), str(z[1]))
+        if gid is None:
+            return False
+        zun = sk.ExternalGeo[-gid - 1] if len(sk.ExternalGeo) >= -gid else None
+        tip_zun = type(zun).__name__ if zun is not None else ""
+        nacin = s.get("nacin", "Coincident")
+        if tip_zun == "Point":
+            sk.addConstraint(Sketcher.Constraint("Coincident", geo, poz, gid, 1))
+        elif nacin == "Sredina" and tip_zun in ("LineSegment", "ArcOfCircle"):
+            sk.addConstraint(Sketcher.Constraint("Symmetric", gid, 1, gid, 2, geo, poz))
+        elif nacin == "NaRobu":
+            sk.addConstraint(Sketcher.Constraint("PointOnObject", geo, poz, gid))
+        else:
+            sk.addConstraint(Sketcher.Constraint("Coincident", geo, poz, gid, int(s.get("poz", 1))))
+        return True
+    sk.addConstraint(Sketcher.Constraint("Coincident", geo, poz, int(s[0]), int(s[1])))
+    return True
+
+
 def _skica_dodaj(sk, op):
     """Doda geometrijo (črta, pravokotnik, krog, točka) s samodejnimi omejitvami; vrne nove indekse."""
     import Part
@@ -572,9 +654,7 @@ def _skica_dodaj(sk, op):
         i = sk.addGeometry(Part.LineSegment(V(p1[0], p1[1], 0), V(p2[0], p2[1], 0)), gradbena)
         novi.append(i)
         for kljuc, poz in (("spoji1", 1), ("spoji2", 2)):
-            s = op.get(kljuc)
-            if s:
-                sk.addConstraint(Sketcher.Constraint("Coincident", i, poz, int(s[0]), int(s[1])))
+            _spoji(sk, i, poz, op.get(kljuc))
     elif vrsta == "pravokotnik":
         (x1, y1), (x2, y2) = op["p1"], op["p2"]
         if abs(x2 - x1) < 1e-6 or abs(y2 - y1) < 1e-6:
@@ -587,6 +667,8 @@ def _skica_dodaj(sk, op):
         sk.addConstraint(Sketcher.Constraint("Horizontal", ids[2]))
         sk.addConstraint(Sketcher.Constraint("Vertical", ids[1]))
         sk.addConstraint(Sketcher.Constraint("Vertical", ids[3]))
+        _spoji(sk, ids[0], 1, op.get("spoji1"))  # prvi ogal (x1, y1)
+        _spoji(sk, ids[2], 1, op.get("spoji2"))  # nasprotni ogal (x2, y2)
         novi = ids
     elif vrsta == "krog":
         c, r = op["sredisce"], float(op["r"])
@@ -594,12 +676,12 @@ def _skica_dodaj(sk, op):
             raise ValueError("krog brez polmera")
         i = sk.addGeometry(Part.Circle(V(c[0], c[1], 0), V(0, 0, 1), r), gradbena)
         novi.append(i)
-        s = op.get("spoji1")
-        if s:
-            sk.addConstraint(Sketcher.Constraint("Coincident", i, 3, int(s[0]), int(s[1])))
+        _spoji(sk, i, 3, op.get("spoji1"))
     elif vrsta == "tocka":
         p = op["p"]
-        novi.append(sk.addGeometry(Part.Point(V(p[0], p[1], 0)), False))
+        i = sk.addGeometry(Part.Point(V(p[0], p[1], 0)), False)
+        novi.append(i)
+        _spoji(sk, i, 1, op.get("spoji"))
     else:
         raise ValueError("neznana vrsta: %s" % vrsta)
     return novi
@@ -636,8 +718,8 @@ def _skica_izvedi(sk, op):
             if tip in ("Horizontal", "Vertical"):
                 sk.addConstraint(Sketcher.Constraint(tip, int(op["id"])))
             elif tip == "Coincident":
-                a, b = op["a"], op["b"]
-                sk.addConstraint(Sketcher.Constraint("Coincident", int(a[0]), int(a[1]), int(b[0]), int(b[1])))
+                a = op["a"]
+                _spoji(sk, int(a[0]), int(a[1]), op["b"])
         elif vrsta == "gradbena":
             sk.toggleConstruction(int(op["id"]))
         elif vrsta == "izbrisiOmejitev":
