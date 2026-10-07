@@ -707,7 +707,10 @@ async function naloziModel() {
   const model = await odziv.json();
   pocisti();
   for (const o of model.objekti) { const z = zgradiObjekt(o); koren.add(z.skupina); objekti.set(o.ime, z); }
+  // nov dokument ima lahko čisto drugačno velikost: pogled se mu prilagodi znova
+  if (model.dokument !== stanje.dokument) prviNalozen = false;
   stanje.dokument = model.dokument; stanje.verzija = model.verzija;
+  sferaModela = okvirModela().getBoundingSphere(new THREE.Sphere());
   if (skica.posnetek) zgradiPripenjanjeModela();
   if (!prviNalozen && model.objekti.length) { prilagodiPogled(); prviNalozen = true; }
   oznaciIzbiro(stanje.izbira);
@@ -715,6 +718,20 @@ async function naloziModel() {
 }
 
 function okvirModela() { return new THREE.Box3().setFromObject(koren); }
+
+// Bližnja in daljna ravnina sledita kameri: pri povečavi bi stalna bližnja ravnina odrezala bližnje dele,
+// prevelik razpon pa pokvari globinsko natančnost (lise na vzporednih ploskvah).
+let sferaModela = new THREE.Sphere();
+function prilagodiRavnini() {
+  const r = sferaModela.isEmpty() ? 100 : Math.max(sferaModela.radius, 1);
+  const doSredisca = camera.position.distanceTo(sferaModela.isEmpty() ? controls.target : sferaModela.center);
+  const doCilja = camera.position.distanceTo(controls.target);
+  const far = doSredisca + r * 3;   // mreža sega do dvojnega polmera
+  const near = Math.max(doSredisca - r * 1.05, doCilja / 200, far / 20000);
+  if (Math.abs(camera.near - near) > near * 0.01 || Math.abs(camera.far - far) > far * 0.01) {
+    camera.near = near; camera.far = far; camera.updateProjectionMatrix();
+  }
+}
 
 function prilagodiPogled() {
   if (skica.posnetek) { prilagodiPogledSkice(); return; }
@@ -1290,7 +1307,7 @@ new ResizeObserver(() => {
   renderer.setSize(w, h);
 }).observe(pogled);
 renderer.setAnimationLoop(() => {
-  if (ortoControls) ortoControls.update(); else controls.update();
+  if (ortoControls) ortoControls.update(); else { controls.update(); prilagodiRavnini(); }
   if (skica.oznake.length) posodobiMere();
   if (renderer.domElement.clientWidth > 0 && renderer.domElement.clientHeight > 0) renderer.render(scene, aktivnaKamera);
 });
