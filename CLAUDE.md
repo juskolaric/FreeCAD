@@ -63,6 +63,7 @@ FreeCAD je motor, vmesnik in grafika nastajata v brskalniku (plan, korak 8 napre
   `krog`, `tocka`, `premakni` (movePoint, reševalnik), `izbrisi`, `mera` (Distance/Radius), `omejitev`, `gradbena`.
   Vse v transakcijah (Razveljavi dela). FreeCAD-ov način urejanja skice se ne uporablja; brskalnik riše skico sam
   (pravokotna kamera, pripenjanje na točke, vlečenje točk), posnetek skice ne vključuje skice v urejanju.
+  Orodja skice v brskalniku nosijo FreeCAD-ove ikone (`IKONE_SKICE` v strežniku, `Gui.getIcon`, slovar `skica` v `/ukazi`).
   Brskalnik prestreže ukaze Nov očrt / Edit Sketch / Leave Sketch ter Izboklino in Ugrez iz izbrane skice
   (`POST /znacilnost`, dolžina se vpraša v brskalniku). Ostala okna z nastavitvami so še v FreeCAD-u.
 - Vgrajeni brskalnik aplikacije Claude: gumbe klikaj prek `find` in `ref` (v zgoščenem traku so napisi skriti, zato raje
