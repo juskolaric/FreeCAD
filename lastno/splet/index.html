@@ -55,12 +55,14 @@
 
   /* Trak skice */
   #skicaTrak { display: flex; align-items: center; gap: 4px; padding: 6px 8px; background: #fffdf5; border-top: 1px solid #e8e0b8; }
-  #skicaTrak .orodjeSkice { border: 1px solid var(--crta); background: #fff; border-radius: 4px; padding: 5px 10px; cursor: pointer; }
+  #skicaTrak .orodjeSkice { display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--crta); background: #fff; border-radius: 4px; padding: 4px 10px 4px 7px; cursor: pointer; }
+  #skicaTrak button img { width: 20px; height: 20px; flex: none; }
+  #skicaTrak button img[src=""] { display: none; }
   #skicaTrak .orodjeSkice:hover { background: #eef2f7; }
   #skicaTrak .orodjeSkice.aktivno { background: #dbe8f8; border-color: var(--poudarek); font-weight: 600; }
   #skicaTrak .locilo { width: 1px; height: 24px; background: var(--crta); margin: 0 4px; }
   #skicaNamig { margin-left: 12px; color: #555; font-size: 12px; }
-  #skicaZapri { margin-left: auto; background: #1e88e5; color: #fff; border: none; border-radius: 4px; padding: 6px 14px; cursor: pointer; font-weight: 600; }
+  #skicaZapri { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; margin-left: auto; background: #1e88e5; color: #fff; border: none; border-radius: 4px; padding: 5px 14px 5px 10px; cursor: pointer; font-weight: 600; }
   #skicaZapri:hover { background: #1669b8; }
 
   /* Pogled */
@@ -380,11 +382,23 @@ async function naloziUkaze() {
   stanje.ukazi = await r.json();
   for (const o of stanje.ukazi.delovnaOkolja) for (const t of o.orodneVrstice) for (const s of t.skupine) for (const u of s) if (!(u.ime in stanje.aktivni)) stanje.aktivni[u.ime] = u.aktiven;
   for (const u of stanje.ukazi.hitriDostop) if (!(u.ime in stanje.aktivni)) stanje.aktivni[u.ime] = u.aktiven;
+  narisiIkoneSkice(stanje.ukazi.skica || {});
   narisiZavihke();
   const prvi = stanje.okolje.delovnaMiza && stanje.ukazi.delovnaOkolja.some(o => o.ime === stanje.okolje.delovnaMiza)
     ? stanje.okolje.delovnaMiza : (stanje.ukazi.delovnaOkolja[0] || {}).ime;
   if (prvi) izberiZavihek(prvi, false);
   uporabiOkolje(stanje.okolje);
+}
+
+// Ikone orodij skice so FreeCAD-ove (iste kot v njegovi orodni vrstici); brez ikone ostane samo napis.
+function narisiIkoneSkice(ikone) {
+  for (const b of document.querySelectorAll('#skicaTrak button')) {
+    const kljuc = b.dataset.orodje || (b.id === 'skicaZapri' ? 'zapri' : '');
+    const uri = ikone[kljuc]; if (!uri) continue;
+    let img = b.querySelector('img');
+    if (!img) { img = document.createElement('img'); img.alt = ''; b.insertBefore(img, b.firstChild); }
+    img.src = uri;
+  }
 }
 
 // --- 3D pogled --------------------------------------------------------------
