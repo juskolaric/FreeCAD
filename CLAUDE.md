@@ -63,6 +63,11 @@ FreeCAD je motor, vmesnik in grafika nastajata v brskalniku (plan, korak 8 napre
   `krog`, `tocka`, `premakni` (movePoint, reševalnik), `izbrisi`, `mera` (Distance/Radius), `omejitev`, `gradbena`.
   Vse v transakcijah (Razveljavi dela). FreeCAD-ov način urejanja skice se ne uporablja; brskalnik riše skico sam
   (pravokotna kamera, pripenjanje na točke, vlečenje točk), posnetek skice ne vključuje skice v urejanju.
+  Pripenjanje na model (kot v SolidWorksu): pri Črti, Pravokotniku, Krogu in Točki se kazalec pripne na krajišča,
+  razpolovišča, središča in kvadrante robov modela ali na poljubno točko roba (zelena oznaka z imenom roba). Ob kliku
+  strežnik rob doda kot zunanjo geometrijo (`addExternal`, GeoId -3 ...) in točko veže z Coincident / Symmetric /
+  PointOnObject. Posnetek modela nosi `robInfo` (analitika robov), posnetek skice `zunanji`. Skrite robove (za ploskvami)
+  stran izloči z žarkom. Rob objekta zunaj telesa v skici telesa ni mogoč: točka nastane brez vezave (zapis v dnevnik).
   Orodja skice v brskalniku nosijo FreeCAD-ove ikone (`IKONE_SKICE` v strežniku, `Gui.getIcon`, slovar `skica` v `/ukazi`).
   Brskalnik prestreže ukaze Nov očrt / Edit Sketch / Leave Sketch ter Izboklino in Ugrez iz izbrane skice
   (`POST /znacilnost`, dolžina se vpraša v brskalniku). Ostala okna z nastavitvami so še v FreeCAD-u.

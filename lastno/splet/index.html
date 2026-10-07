@@ -76,6 +76,8 @@
   #namig { position: absolute; left: 12px; bottom: 12px; font-size: 12px; color: #555;
            background: rgba(255,255,255,.7); padding: 4px 8px; border-radius: 4px; pointer-events: none; }
   #mere { position: absolute; inset: 0; pointer-events: none; overflow: hidden; }
+  #pripenjanjeNapis { position: absolute; pointer-events: none; background: #2e7d32; color: #fff; font-size: 11px; padding: 1px 6px;
+                      border-radius: 3px; white-space: nowrap; z-index: 5; }
   .mera { position: absolute; transform: translate(-50%, -50%); background: rgba(255,255,255,.85); border: 1px solid #b9c3d0;
           border-radius: 3px; padding: 1px 5px; font-size: 11px; color: #0d47a1; white-space: nowrap; }
 
@@ -140,6 +142,7 @@
 </div>
 <div id="pogled">
   <div id="mere"></div>
+  <div id="pripenjanjeNapis" class="skrit"></div>
   <div id="pasica" class="skrit"><span id="pasicaBesedilo"></span><button id="pasicaGumb" type="button">Pokaži FreeCAD</button></div>
   <div id="namig">Levi gumb: vrtenje · kolešček: povečava · desni gumb: premik · klik: izbira ploskve ali roba (Ctrl doda) · F: prilagodi pogled</div>
 </div>
@@ -475,6 +478,7 @@ async function naloziModel() {
   pocisti();
   for (const o of model.objekti) { const z = zgradiObjekt(o); koren.add(z.skupina); objekti.set(o.ime, z); }
   stanje.dokument = model.dokument; stanje.verzija = model.verzija;
+  if (skica.posnetek) zgradiPripenjanjeModela();
   if (!prviNalozen && model.objekti.length) { prilagodiPogled(); prviNalozen = true; }
   oznaciIzbiro(stanje.izbira);
   osveziHud();
@@ -566,13 +570,15 @@ window.addEventListener('keydown', e => {
 
 // --- skica v brskalniku ------------------------------------------------------
 const skica = { posnetek: null, matrika: null, inverz: null, ravnina: null, normala: null, gor: null,
-                skupina: null, tocke: [], segmenti: [], orodje: 'izberi', risba: null, izbrano: null, vlecenje: null, oznake: [] };
+                skupina: null, tocke: [], segmenti: [], orodje: 'izberi', risba: null, izbrano: null, vlecenje: null, oznake: [],
+                modelTocke: [], modelRobovi: [] };
 let ortoKamera = null, ortoControls = null, ortoVisina = 60;
 const matSkica = new THREE.LineBasicMaterial({ vertexColors: true });
 const matGradbena = new THREE.LineDashedMaterial({ color: 0x1e5fb8, dashSize: 1.2, gapSize: 0.8 });
 const matPredogled = new THREE.LineBasicMaterial({ color: 0x1e88e5 });
 const matTocke = new THREE.PointsMaterial({ size: 7, sizeAttenuation: false, color: 0x202428 });
 const matPripenjanje = new THREE.PointsMaterial({ size: 12, sizeAttenuation: false, color: 0xff8c00 });
+const matZunanja = new THREE.LineBasicMaterial({ color: 0x8e24aa });  // zunanja geometrija (robovi modela v skici), kot v FreeCAD-u
 const BARVA_SKICE = new THREE.Color(0x151515), BARVA_SKICE_IZBRANO = new THREE.Color(0xff8c00);
 
 async function objaviSkico(op) { try { await objavi('/skica', op); } catch (e) { pokaziNapako(e); } }
@@ -605,7 +611,7 @@ function tockeGeometrije(g) {
 }
 function pripenjalneTocke(p) {
   const t = [{ id: -1, poz: 1, x: 0, y: 0 }];
-  for (const g of p.geometrija) {
+  for (const g of p.geometrija.concat(p.zunanji || [])) {
     if (g.tip === 'LineSegment' || g.tip === 'ArcOfCircle') { t.push({ id: g.id, poz: 1, x: g.p1[0], y: g.p1[1] }); t.push({ id: g.id, poz: 2, x: g.p2[0], y: g.p2[1] }); }
     if (g.tip === 'Circle' || g.tip === 'ArcOfCircle') t.push({ id: g.id, poz: 3, x: g.sredisce[0], y: g.sredisce[1] });
     if (g.tip === 'Point') t.push({ id: g.id, poz: 1, x: g.p[0], y: g.p[1] });
@@ -641,6 +647,9 @@ function narisiSkico() {
     const l = new THREE.LineSegments(geo, matGradbena); l.computeLineDistances();
     skica.skupina.add(l);
   }
+  const zun = [];
+  for (const g of (p.zunanji || [])) { const pts = tockeGeometrije(g); for (let i = 0; i < pts.length - 1; i++) { const a = svetovno(pts[i][0], pts[i][1]), b = svetovno(pts[i + 1][0], pts[i + 1][1]); zun.push(a.x, a.y, a.z, b.x, b.y, b.z); } }
+  if (zun.length) { const geo = new THREE.BufferGeometry(); geo.setAttribute('position', new THREE.Float32BufferAttribute(zun, 3)); skica.skupina.add(new THREE.LineSegments(geo, matZunanja)); }
   skica.tocke = pripenjalneTocke(p);
   const tp = [];
   for (const t of skica.tocke) { if (t.id < 0) continue; const w = svetovno(t.x, t.y); tp.push(w.x, w.y, w.z); }
@@ -700,6 +709,7 @@ function prilagodiPogledSkice() {
 
 function vstopiVSkico(p) {
   nastaviMatrike(p);
+  skica.posnetek = p; zgradiPripenjanjeModela();
   skica.skupina = new THREE.Group(); scene.add(skica.skupina);
   const g = new THREE.GridHelper(100, 100, 0xc9d0d9, 0xe1e5ea); g.userData = { trajno: true, mreza: true }; skica.skupina.add(g);
   const predogled = new THREE.LineSegments(new THREE.BufferGeometry(), matPredogled); predogled.userData = { trajno: true, predogled: true }; predogled.frustumCulled = false; skica.skupina.add(predogled);
@@ -721,6 +731,7 @@ function vstopiVSkico(p) {
 }
 
 function zapriSkicoLokalno() {
+  skica.modelTocke = []; skica.modelRobovi = []; $('pripenjanjeNapis').classList.add('skrit');
   if (skica.skupina) { skica.skupina.traverse(n => { if (n.geometry) n.geometry.dispose(); }); scene.remove(skica.skupina); skica.skupina = null; }
   if (ortoControls) { ortoControls.dispose(); ortoControls = null; }
   ortoKamera = null; aktivnaKamera = camera; controls.enabled = true;
@@ -740,7 +751,7 @@ function uporabiSkico(p) {
   if (!p) { if (skica.posnetek) zapriSkicoLokalno(); return; }
   const prvic = !skica.posnetek || skica.posnetek.ime !== p.ime;
   if (prvic) { if (skica.posnetek) zapriSkicoLokalno(); vstopiVSkico(p); }
-  else nastaviMatrike(p);
+  else { nastaviMatrike(p); zgradiPripenjanjeModela(); }
   skica.posnetek = p;
   if (skica.risba && skica.risba.cakam && p.novi && p.novi.length) { skica.risba.spoji = [p.novi[0], 2]; skica.risba.cakam = false; }
   if (skica.izbrano != null && !p.geometrija.some(g => g.id === skica.izbrano)) skica.izbrano = null;
@@ -750,10 +761,10 @@ function uporabiSkico(p) {
 
 const NAMIGI = {
   izberi: 'Klik izbere element, vlečenje točke jo premakne (reševalnik obdrži omejitve).',
-  crta: 'Klik: začetek črte, klik: konec; naslednji klik nadaljuje lomljeno črto. Esc ali desni gumb konča.',
-  pravokotnik: 'Klik: prvi ogal, klik: nasprotni ogal.',
-  krog: 'Klik: središče, klik: točka na obodu.',
-  tocka: 'Klik postavi točko.',
+  crta: 'Klik: začetek črte, klik: konec; naslednji klik nadaljuje lomljeno črto. Esc ali desni gumb konča. Pripne se na točke skice in robove modela (zeleno).',
+  pravokotnik: 'Klik: prvi ogal, klik: nasprotni ogal. Ogla se pripneta na točke skice in robove modela.',
+  krog: 'Klik: središče, klik: točka na obodu. Središče se pripne na točke skice in robove modela.',
+  tocka: 'Klik postavi točko; pripne se na točke skice in robove modela (krajišče, razpolovišče, središče, kvadrant, na robu).',
   mera: 'Klik na črto vpraša po dolžini, klik na krog po polmeru.',
   gradbena: 'Klik na element preklopi med običajno in gradbeno geometrijo.',
   izbrisi: 'Klik izbriše element.',
@@ -786,6 +797,90 @@ function najdiTocko(e) {
   }
   return naj;
 }
+// --- pripenjanje na robove modela (kot v SolidWorksu: krajišče, razpolovišče, središče, kvadrant, točka na robu) ---
+// Robovi vseh teles v dokumentu se projicirajo v ravnino skice; ob kliku strežnik rob doda kot zunanjo geometrijo
+// in točko nanj veže z omejitvijo (Coincident / Symmetric za razpolovišče / PointOnObject).
+function zgradiPripenjanjeModela() {
+  skica.modelTocke = []; skica.modelRobovi = [];
+  if (!skica.posnetek || !skica.matrika) return;
+  const n = skica.normala, v3 = a => new THREE.Vector3(a[0], a[1], a[2]);
+  const osX = new THREE.Vector3(1, 0, 0).applyQuaternion(skica.rotacija), osY = new THREE.Vector3(0, 1, 0).applyQuaternion(skica.rotacija);
+  const dodaj = (objekt, element, svet, poz, nacin, napis) => { const [x, y] = lokalno(svet); skica.modelTocke.push({ model: true, objekt, element, x, y, svet, poz, nacin, napis }); };
+  for (const [ime, z] of objekti) {
+    if (ime === skica.posnetek.ime || jeSkica(ime)) continue;
+    const o = z.podatki; if (!o.robInfo) continue;
+    for (let k = 0; k < o.robovi.length; k++) {
+      const info = o.robInfo[k] || {}, element = 'Edge' + (k + 1);
+      const krog = info.tip === 'Circle' && info.sredisce;
+      const vzporeden = !!krog && Math.abs(v3(info.os).normalize().dot(n)) > 0.999;
+      if (!(krog && info.zaprt)) {
+        if (info.p1) dodaj(ime, element, v3(info.p1), 1, 'Coincident', 'Krajišče');
+        if (info.p2) dodaj(ime, element, v3(info.p2), 2, 'Coincident', 'Krajišče');
+        if (info.sredina && (info.tip === 'Line' || krog)) dodaj(ime, element, v3(info.sredina), 0, 'Sredina', 'Razpolovišče');
+      }
+      if (krog) {
+        const c = v3(info.sredisce);
+        dodaj(ime, element, c, 3, 'Coincident', 'Središče');
+        if (vzporeden && info.zaprt) for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) dodaj(ime, element, c.clone().addScaledVector(osX, dx * info.r).addScaledVector(osY, dy * info.r), 0, 'NaRobu', 'Kvadrant');
+      }
+      const [zac, st] = o.robovi[k], odseki = [];
+      for (let i = 0; i < st; i++) {
+        const b = (zac + i) * 6;
+        const a3 = new THREE.Vector3(o.robTocke[b], o.robTocke[b + 1], o.robTocke[b + 2]), b3 = new THREE.Vector3(o.robTocke[b + 3], o.robTocke[b + 4], o.robTocke[b + 5]);
+        odseki.push({ a: lokalno(a3), b: lokalno(b3), a3, b3 });
+      }
+      if (!odseki.length) continue;
+      skica.modelRobovi.push({ objekt: ime, element, odseki,
+        krog: vzporeden ? { c: lokalno(v3(info.sredisce)), r: info.r } : null,
+        crta: info.tip === 'Line' && info.p1 && info.p2 ? { a: lokalno(v3(info.p1)), b: lokalno(v3(info.p2)) } : null });
+    }
+  }
+}
+// Točka modela je vidna, če leži v ravnini skice ali je pred njo ni nobene ploskve (pogled skice je pravokoten).
+function jeVidnaTocka(w) {
+  if (Math.abs(skica.ravnina.distanceToPoint(w)) < 1e-3) return true;
+  const p = w.clone().project(aktivnaKamera);
+  if (p.x < -1 || p.x > 1 || p.y < -1 || p.y > 1) return false;
+  raycaster.setFromCamera(new THREE.Vector2(p.x, p.y), aktivnaKamera);
+  const meshi = []; for (const z of objekti.values()) if (z.mesh) meshi.push(z.mesh);
+  const zad = raycaster.intersectObjects(meshi, false);
+  if (!zad.length) return true;
+  return zad[0].distance >= raycaster.ray.origin.distanceTo(w) - Math.max(0.2, ortoVisina * 0.004);
+}
+function najdiTockoModela(e) {
+  let naj = null, najd = 10;
+  for (const t of skica.modelTocke) {
+    const [sx, sy] = naZaslon(svetovno(t.x, t.y));
+    const d = Math.hypot(sx - e.clientX, sy - e.clientY);
+    if (d < najd && jeVidnaTocka(t.svet)) { najd = d; naj = t; }
+  }
+  return naj;
+}
+function najdiRobModela(e) {
+  const t = tockaNaRavnini(e); if (!t) return null;
+  const [mx, my] = lokalno(t);
+  let naj = null, najd = 8;
+  for (const r of skica.modelRobovi) {
+    let najO = null, najOd = Infinity;
+    for (const o of r.odseki) {
+      const dx = o.b[0] - o.a[0], dy = o.b[1] - o.a[1], l2 = dx * dx + dy * dy;
+      let u = l2 ? ((mx - o.a[0]) * dx + (my - o.a[1]) * dy) / l2 : 0; u = Math.max(0, Math.min(1, u));
+      const qx = o.a[0] + u * dx, qy = o.a[1] + u * dy, d = Math.hypot(qx - mx, qy - my);
+      if (d < najOd) { najOd = d; najO = { x: qx, y: qy, svet: o.a3.clone().lerp(o.b3, u) }; }
+    }
+    if (!najO) continue;
+    let kand = [najO.x, najO.y];  // lomljenka; pri črti in krogu natančneje analitično
+    if (r.crta) { const [ax, ay] = r.crta.a, [bx, by] = r.crta.b, dx = bx - ax, dy = by - ay, l2 = dx * dx + dy * dy; if (l2 > 1e-12) { let u = ((mx - ax) * dx + (my - ay) * dy) / l2; u = Math.max(0, Math.min(1, u)); kand = [ax + u * dx, ay + u * dy]; } }
+    else if (r.krog) { const dx = mx - r.krog.c[0], dy = my - r.krog.c[1], l = Math.hypot(dx, dy); if (l > 1e-9) { const k = [r.krog.c[0] + dx / l * r.krog.r, r.krog.c[1] + dy / l * r.krog.r]; const [k1, k2] = naZaslon(svetovno(k[0], k[1])), [o1, o2] = naZaslon(svetovno(najO.x, najO.y)); if (Math.hypot(k1 - o1, k2 - o2) < 6) kand = k; } }
+    const [sx, sy] = naZaslon(svetovno(kand[0], kand[1]));
+    const d = Math.hypot(sx - e.clientX, sy - e.clientY);
+    if (d < najd && jeVidnaTocka(najO.svet)) { najd = d; naj = { model: true, objekt: r.objekt, element: r.element, x: kand[0], y: kand[1], svet: najO.svet, poz: 0, nacin: 'NaRobu', napis: 'Na robu' }; }
+  }
+  return naj;
+}
+function najdiPripenjanje(e) { return najdiTocko(e) || najdiTockoModela(e) || najdiRobModela(e); }
+function spojIz(snap) { return !snap ? null : snap.model ? { zunanji: [snap.objekt, snap.element], poz: snap.poz, nacin: snap.nacin } : [snap.id, snap.poz]; }
+
 function najdiElement(e) {
   let naj = null, najd = 8;
   for (const s of skica.segmenti) {
@@ -798,19 +893,27 @@ function najdiElement(e) {
   return naj;
 }
 function pokaziPripenjanje(t) {
-  const pr = skica.skupina.children.find(c => c.userData.pripenjanje);
+  const pr = skica.skupina.children.find(c => c.userData.pripenjanje), napis = $('pripenjanjeNapis');
   if (!pr) return;
-  if (!t) { pr.visible = false; return; }
+  if (!t) { pr.visible = false; napis.classList.add('skrit'); return; }
   const w = svetovno(t.x, t.y);
+  matPripenjanje.color.set(t.model ? 0x2e7d32 : 0xff8c00);
   pr.geometry.setAttribute('position', new THREE.Float32BufferAttribute([w.x, w.y, w.z], 3)); pr.geometry.attributes.position.needsUpdate = true; pr.visible = true;
+  if (t.model) {
+    const [sx, sy] = naZaslon(w), r = pogled.getBoundingClientRect();
+    napis.textContent = t.napis + ' · ' + ((objekti.get(t.objekt) || {}).podatki || {}).oznaka + '.' + t.element;
+    napis.style.left = (sx - r.left + 14) + 'px'; napis.style.top = (sy - r.top + 12) + 'px'; napis.classList.remove('skrit');
+  } else napis.classList.add('skrit');
 }
 
+const RISALNA = new Set(['crta', 'pravokotnik', 'krog', 'tocka']);
 function skicaPointerDown(e) {
   if (e.button !== 0) return;
   const t = tockaNaRavnini(e); if (!t) return;
-  const snap = najdiTocko(e);
+  const snap = RISALNA.has(skica.orodje) ? najdiPripenjanje(e) : najdiTocko(e);
   const [x, y] = snap ? [snap.x, snap.y] : lokalno(t);
-  const spoj = snap ? [snap.id, snap.poz] : null;
+  const spoj = spojIz(snap);
+  const skicna = !!snap && !snap.model;  // točka skice: naslednji odsek lomljenke se veže nanjo, sicer na konec nove črte
   switch (skica.orodje) {
     case 'crta':
       if (!skica.risba) { skica.risba = { zacetek: [x, y], spoji: spoj, cakam: false }; }
@@ -818,18 +921,18 @@ function skicaPointerDown(e) {
         const r = skica.risba;
         if (Math.hypot(x - r.zacetek[0], y - r.zacetek[1]) < 1e-6) return;
         objaviSkico({ vrsta: 'crta', p1: r.zacetek, p2: [x, y], spoji1: r.spoji, spoji2: spoj });
-        skica.risba = { zacetek: [x, y], spoji: spoj, cakam: !spoj };
+        skica.risba = { zacetek: [x, y], spoji: skicna ? spoj : null, cakam: !skicna };
       }
       break;
     case 'pravokotnik':
-      if (!skica.risba) skica.risba = { zacetek: [x, y] };
-      else { objaviSkico({ vrsta: 'pravokotnik', p1: skica.risba.zacetek, p2: [x, y] }); prekiniRisanje(); }
+      if (!skica.risba) skica.risba = { zacetek: [x, y], spoji: spoj };
+      else { objaviSkico({ vrsta: 'pravokotnik', p1: skica.risba.zacetek, p2: [x, y], spoji1: skica.risba.spoji, spoji2: spoj }); prekiniRisanje(); }
       break;
     case 'krog':
       if (!skica.risba) skica.risba = { zacetek: [x, y], spoji: spoj };
       else { const r = Math.hypot(x - skica.risba.zacetek[0], y - skica.risba.zacetek[1]); if (r > 1e-6) objaviSkico({ vrsta: 'krog', sredisce: skica.risba.zacetek, r, spoji1: skica.risba.spoji }); prekiniRisanje(); }
       break;
-    case 'tocka': objaviSkico({ vrsta: 'tocka', p: [x, y] }); break;
+    case 'tocka': objaviSkico({ vrsta: 'tocka', p: [x, y], spoji: spoj }); break;
     case 'izbrisi': { const id = najdiElement(e); if (id != null) objaviSkico({ vrsta: 'izbrisi', ids: [id] }); break; }
     case 'gradbena': { const id = najdiElement(e); if (id != null) objaviSkico({ vrsta: 'gradbena', id }); break; }
     case 'mera': {
@@ -848,8 +951,8 @@ function skicaPointerDown(e) {
 function skicaPointerMove(e) {
   if (!skica.skupina) return;
   const t = tockaNaRavnini(e); if (!t) return;
-  const snap = (skica.orodje !== 'izberi' || skica.vlecenje) ? najdiTocko(e) : null;
-  pokaziPripenjanje(snap && !(skica.vlecenje && snap.id === skica.vlecenje.id && snap.poz === skica.vlecenje.poz) ? snap : null);
+  const snap = skica.vlecenje || RISALNA.has(skica.orodje) ? najdiPripenjanje(e) : null;
+  pokaziPripenjanje(snap && !(skica.vlecenje && !snap.model && snap.id === skica.vlecenje.id && snap.poz === skica.vlecenje.poz) ? snap : null);
   const [x, y] = snap ? [snap.x, snap.y] : lokalno(t);
   if (skica.vlecenje) {
     const w = svetovno(x, y), g = skica.posnetek.geometrija.find(q => q.id === skica.vlecenje.id);
@@ -866,10 +969,11 @@ function skicaPointerUp(e) {
   const v = skica.vlecenje; skica.vlecenje = null; pocistiPredogled(); pokaziPripenjanje(null);
   if (Math.hypot(e.clientX - v.zacetek[0], e.clientY - v.zacetek[1]) < 3) return;
   const t = tockaNaRavnini(e); if (!t) return;
-  const snap = najdiTocko(e);
-  const [x, y] = snap && !(snap.id === v.id && snap.poz === v.poz) ? [snap.x, snap.y] : lokalno(t);
+  const snap = najdiPripenjanje(e);
+  const ista = snap && !snap.model && snap.id === v.id && snap.poz === v.poz;
+  const [x, y] = snap && !ista ? [snap.x, snap.y] : lokalno(t);
   objaviSkico({ vrsta: 'premakni', id: v.id, poz: v.poz, x, y });
-  if (snap && snap.id !== v.id) objaviSkico({ vrsta: 'omejitev', tip: 'Coincident', a: [v.id, v.poz], b: [snap.id, snap.poz] });
+  if (snap && (snap.model || snap.id !== v.id)) objaviSkico({ vrsta: 'omejitev', tip: 'Coincident', a: [v.id, v.poz], b: spojIz(snap) });
 }
 
 // Pogovorno okno za novo skico (namesto FreeCAD-ovega vprašanja o ravnini).
