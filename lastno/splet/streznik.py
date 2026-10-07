@@ -21,10 +21,13 @@ Zgradba:
   - Obrazci: okno FreeCAD-a se ne pokaže. Vsako novo okno (pogovor, sporočilo, izbira datoteke) ostane
     nevidno, podokno Opravila je v skritem glavnem oknu; njihovi gradniki gredo v brskalnik kot obrazec
     (dogodek "obrazec"), vrednosti in kliki se vrnejo prek POST /obrazec.
+  - Projekti: stranski meni v brskalniku kaže odprte dokumente, datoteke FCStd iz map projektov
+    (lastno/modeli in SPLET_PROJEKTI) in nedavne datoteke FreeCAD-a (GET /projekti, dogodek "projekti");
+    klik odpre, aktivira ali zapre dokument (POST /projekt).
   - Varnost: vsak POST potrebuje žeton (glava X-Zeton), ki nastane ob zagonu in ga pozna le stran.
 
 Dogodki SSE (GET /events): model {verzija}, izbira [...], aktivni {ime: bool}, okolje {delovnaMiza, urejanje},
-skica {...}, obrazec {vrsta, kljuc, naslov, vrstice | datoteka} ali null.
+skica {...}, obrazec {vrsta, kljuc, naslov, vrstice | datoteka} ali null, projekti {odprti, skupine, nedavne}.
 Oblika posnetka geometrije (GET /model): glej _geometrija().
 """
 
@@ -59,6 +62,11 @@ try:
 except NameError:
     MAPA = os.path.join(App.getHomePath(), "lastno", "splet")
 ZETON = secrets.token_hex(16)
+# Mape s projekti (datoteke FCStd) za stranski meni: lastno/modeli in dodatne mape iz SPLET_PROJEKTI (ločilo ;).
+MAPE_PROJEKTOV = [os.path.normpath(os.path.join(MAPA, "..", "modeli"))]
+MAPE_PROJEKTOV += [os.path.normpath(m.strip()) for m in os.environ.get("SPLET_PROJEKTI", "").split(";") if m.strip()]
+GLOBINA_PROJEKTOV = 4        # podmape pod mapo projektov, ki se še pregledajo
+NEDAVNIH_NAJVEC = 12
 
 # Delovna okolja, katerih ukazi so na voljo v brskalniku (ime, slovenski naslov, če ga FreeCAD nima).
 DELOVNA_OKOLJA = [
@@ -1228,6 +1236,123 @@ def _skica_izvedi(sk, op):
 # ---------------------------------------------------------------------------
 # Stanje, deljeno med nitmi
 
+# ---------------------------------------------------------------------------
+# Projekti: datoteke FCStd v mapah projektov, nedavne datoteke in odprti dokumenti
+
+def _pot(pot):
+    return os.path.normpath(pot).replace("\\", "/")
+
+
+def _ista_pot(a, b):
+    return bool(a) and bool(b) and os.path.normcase(os.path.normpath(a)) == os.path.normcase(os.path.normpath(b))
+
+
+def _datoteka_projekta(pot):
+    try:
+        st = os.stat(pot)
+    except OSError:
+        return None
+    return {"ime": os.path.splitext(os.path.basename(pot))[0], "pot": _pot(pot),
+            "velikost": st.st_size, "spremenjeno": int(st.st_mtime)}
+
+
+def _projekti_v_mapah():
+    skupine = []
+    for mapa in MAPE_PROJEKTOV:
+        if not os.path.isdir(mapa):
+            continue
+        datoteke = []
+        for koren, podmape, imena in os.walk(mapa):
+            globina = 0 if koren == mapa else os.path.relpath(koren, mapa).count(os.sep) + 1
+            podmape[:] = sorted(d for d in podmape if not d.startswith((".", "__")) and globina < GLOBINA_PROJEKTOV)
+            for ime in sorted(imena, key=str.lower):
+                if ime.lower().endswith(".fcstd"):
+                    d = _datoteka_projekta(os.path.join(koren, ime))
+                    if d is not None:
+                        d["projekt"] = "" if koren == mapa else os.path.relpath(koren, mapa).replace("\\", "/")
+                        datoteke.append(d)
+        skupine.append({"mapa": _pot(mapa), "naslov": os.path.basename(mapa), "datoteke": datoteke})
+    return skupine
+
+
+def _nedavne_datoteke(znane):
+    """Nedavne datoteke FreeCAD-a (nastavitve RecentFiles), ki še obstajajo in niso že v mapah projektov."""
+    try:
+        skupina = App.ParamGet("User parameter:BaseApp/Preferences/RecentFiles")
+    except Exception:  # noqa: BLE001
+        return []
+    nedavne = []
+    for i in range(30):
+        pot = skupina.GetString("MRU%d" % i, "")
+        if not pot:
+            break
+        if not pot.lower().endswith(".fcstd") or any(_ista_pot(pot, z) for z in znane):
+            continue
+        d = _datoteka_projekta(pot)
+        if d is not None:
+            nedavne.append(d)
+        if len(nedavne) >= NEDAVNIH_NAJVEC:
+            break
+    return nedavne
+
+
+def _spremenjen(doc):
+    """Neshranjene spremembe pozna le dokument na strani Gui (App.Document nima lastnosti Modified)."""
+    try:
+        return bool(Gui.getDocument(doc.Name).Modified) if IMA_OKNO else False
+    except Exception:  # noqa: BLE001
+        return False
+
+
+def zgradi_projekte():
+    aktivni = App.ActiveDocument.Name if App.ActiveDocument is not None else ""
+    odprti = []
+    for d in App.listDocuments().values():
+        if getattr(d, "Temporary", False):
+            continue
+        odprti.append({"ime": d.Name, "oznaka": d.Label, "pot": _pot(d.FileName) if d.FileName else "",
+                       "spremenjen": _spremenjen(d), "aktiven": d.Name == aktivni})
+    skupine = _projekti_v_mapah()
+    znane = [d["pot"] for s in skupine for d in s["datoteke"]]
+    return {"odprti": odprti, "skupine": skupine, "nedavne": _nedavne_datoteke(znane)}
+
+
+def _projekt_dejanje(stanje, podatki):
+    dejanje = podatki.get("dejanje", "")
+    if dejanje == "odpri":
+        pot = podatki.get("pot", "")
+        for d in App.listDocuments().values():
+            if _ista_pot(d.FileName, pot):
+                App.setActiveDocument(d.Name)
+                break
+        else:
+            if not os.path.isfile(pot):
+                _log("projekt: datoteke ni: %s" % pot)
+                return
+            _log("odpiram %s" % pot)
+            doc = App.openDocument(pot)
+            App.setActiveDocument(doc.Name)
+    elif dejanje == "aktiviraj":
+        ime = podatki.get("ime", "")
+        if ime in App.listDocuments():
+            App.setActiveDocument(ime)
+    elif dejanje == "zapri":
+        # Brskalnik je pri neshranjenih spremembah že vprašal za potrditev.
+        ime = podatki.get("ime", "")
+        if ime in App.listDocuments():
+            if stanje.skica and App.ActiveDocument is not None and App.ActiveDocument.Name == ime:
+                stanje.skica = ""
+                stanje.oddaj("skica", None)
+            _log("zapiram dokument %s" % ime)
+            App.closeDocument(ime)
+    else:
+        return
+    if IMA_OKNO:
+        Gui.Selection.clearSelection()
+    stanje.umazano = True
+    stanje.zadnji_projekti = 0.0
+
+
 class Stanje:
     def __init__(self):
         self.vrsta = queue.Queue()          # zahteve iz brskalnika -> glavna nit
@@ -1252,6 +1377,8 @@ class Stanje:
         self.obrazec = None                # JSON obrazca, ki je trenutno v brskalniku (ali None)
         self.obrazec_mapa = {}             # id -> (gradnik, dodatno) zadnjega zajema
         self.zadnji_obrazec = 0.0
+        self._projekti = b'{"odprti":[],"skupine":[],"nedavne":[]}'
+        self.zadnji_projekti = 0.0
 
     def skrivaj_okna(self):
         """Ali naj nova okna FreeCAD-a ostanejo nevidna (vse se dela v brskalniku)."""
@@ -1280,6 +1407,9 @@ class Stanje:
     def ukazi(self):
         return self._ukazi
 
+    def projekti(self):
+        return self._projekti
+
     def stanje(self):
         return {
             "verzija": self.verzija,
@@ -1291,6 +1421,7 @@ class Stanje:
             "ukazov": len(self.imena_ukazov),
             "napaka": self.napaka,
             "obrazec": self.obrazec is not None,
+            "projektov": sum(len(s["datoteke"]) for s in json.loads(self._projekti)["skupine"]),
         }
 
     # -- glavna nit --
@@ -1319,6 +1450,13 @@ class Stanje:
                 _log("obrazec: %s" % self.napaka)
         if self.umazano and zdaj - self.zadnja_gradnja > 0.3:
             self.zgradi()
+        if zdaj - self.zadnji_projekti > 2.0:
+            self.zadnji_projekti = zdaj
+            try:
+                self.preveri_projekte()
+            except Exception:  # noqa: BLE001
+                self.napaka = traceback.format_exc()
+                _log("projekti: %s" % self.napaka)
         if IMA_OKNO and zdaj - self.zadnji_pregled > 0.5:
             self.zadnji_pregled = zdaj
             try:
@@ -1410,16 +1548,20 @@ class Stanje:
             else:
                 _log("okno zaprto, program se konča")
                 QtWidgets.QApplication.instance().quit()
-        try:
-            spremenjeno = any(d.Modified for d in App.listDocuments().values())
-        except Exception:  # noqa: BLE001
-            spremenjeno = False
+        spremenjeno = any(_spremenjen(d) for d in App.listDocuments().values())
         okolje = {"delovnaMiza": Gui.activeWorkbench().name(), "urejanje": urejanje,
                   "pogovor": pogovor, "opravilo": opravilo, "oknoVidno": mw.isVisible(),
                   "spremenjeno": spremenjeno}
         if okolje != self.okolje:
             self.okolje = okolje
             self.oddaj("okolje", okolje)
+
+    def preveri_projekte(self):
+        """Seznam projektov in odprtih dokumentov; pošlje le ob spremembi."""
+        novi = json.dumps(zgradi_projekte(), ensure_ascii=False, separators=(",", ":")).encode("utf-8")
+        if novi != self._projekti:
+            self._projekti = novi
+            self.oddaj("projekti", json.loads(novi))
 
     def preveri_obrazec(self):
         """Okno, ki čaka na vnos, pošlje brskalniku kot obrazec (le ob spremembi)."""
@@ -1575,6 +1717,8 @@ class Stanje:
                 novi = _skica_izvedi(sk, podatki)
                 self.umazano = True
                 self.oddaj_skico(novi)
+        elif ukaz == "projekt":
+            _projekt_dejanje(self, podatki)
         elif ukaz == "obrazec":
             if IMA_OKNO and self.obrazec is not None and podatki.get("kljuc") == self.obrazec.get("kljuc"):
                 _obrazec_dejanje(self.obrazec_mapa, podatki)
@@ -1614,12 +1758,15 @@ class OpazovalecDokumenta:
 
     def slotActivateDocument(self, doc):
         STANJE.umazano = True
+        STANJE.zadnji_projekti = 0.0
 
     def slotCreatedDocument(self, doc):
         STANJE.umazano = True
+        STANJE.zadnji_projekti = 0.0
 
     def slotDeletedDocument(self, doc):
         STANJE.umazano = True
+        STANJE.zadnji_projekti = 0.0
 
 
 class OpazovalecPogleda:
@@ -1683,6 +1830,8 @@ class Zahteva(http.server.BaseHTTPRequestHandler):
             self._odgovor(STANJE.posnetek())
         elif pot == "/ukazi":
             self._odgovor(STANJE.ukazi())
+        elif pot == "/projekti":
+            self._odgovor(STANJE.projekti())
         elif pot == "/stanje":
             self._odgovor(json.dumps(STANJE.stanje(), ensure_ascii=False).encode("utf-8"))
         elif pot == "/events":
@@ -1703,7 +1852,8 @@ class Zahteva(http.server.BaseHTTPRequestHandler):
             return
         pot = self.path.split("?")[0]
         poti = {"/select": "izbira", "/ukaz": "ukaz", "/okolje": "okolje", "/okno": "okno",
-                "/izhod": "izhod", "/skica": "skica", "/znacilnost": "znacilnost", "/obrazec": "obrazec"}
+                "/izhod": "izhod", "/skica": "skica", "/znacilnost": "znacilnost", "/obrazec": "obrazec",
+                "/projekt": "projekt"}
         if pot == "/python":
             # Počaka na izvedbo na glavni niti in vrne izpis, napako in spremenljivko "rezultat".
             odgovor = {"konec": threading.Event(), "izpis": "", "napaka": "", "rezultat": None}
@@ -1738,6 +1888,7 @@ class Zahteva(http.server.BaseHTTPRequestHandler):
             self._poslji_sse("aktivni", dict(STANJE.aktivni))
             self._poslji_sse("okolje", dict(STANJE.okolje))
             self._poslji_sse("obrazec", STANJE.obrazec)
+            self._poslji_sse("projekti", json.loads(STANJE.projekti()))
             STANJE.vrsta.put(("skica-posnetek", {}, None))
             while True:
                 try:

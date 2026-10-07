@@ -66,8 +66,36 @@
   #skicaZapri { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; margin-left: auto; background: #1e88e5; color: #fff; border: none; border-radius: 4px; padding: 5px 14px 5px 10px; cursor: pointer; font-weight: 600; }
   #skicaZapri:hover { background: #1669b8; }
 
+  /* Telo: stranski meni s projekti in pogled */
+  #telo { flex: 1 1 auto; display: flex; min-height: 120px; }
+  #stranski { flex: none; width: 240px; background: var(--plosca); border-right: 1px solid var(--crta); display: flex; flex-direction: column; user-select: none; }
+  #stranski .glavaStranski { display: flex; align-items: center; gap: 4px; padding: 6px 6px 6px 10px; border-bottom: 1px solid var(--crta); font-weight: 600; }
+  #stranski .glavaStranski span { flex: 1 1 auto; }
+  #stranski .glavaStranski button, #stranskiPokazi { border: 1px solid transparent; background: transparent; border-radius: 4px; padding: 2px 6px; cursor: pointer; color: #555; }
+  #stranski .glavaStranski button:hover, #stranskiPokazi:hover { background: #e3e9f2; border-color: #c5cfdc; color: var(--besedilo); }
+  #stranskiVsebina { overflow-y: auto; flex: 1 1 auto; padding: 4px 0 10px; }
+  #stranski .razdelek { margin-bottom: 8px; }
+  #stranski .naslovRazdelka { font-size: 11px; text-transform: uppercase; letter-spacing: .04em; color: #667; padding: 8px 10px 3px; }
+  #stranski .naslovProjekta { display: flex; align-items: center; gap: 5px; padding: 5px 10px 2px; font-weight: 600; color: #0d47a1; }
+  #stranski .naslovProjekta img { width: 14px; height: 14px; }
+  #stranski .vnos { display: flex; align-items: center; gap: 6px; padding: 3px 8px 3px 10px; cursor: pointer; border-left: 3px solid transparent; }
+  #stranski .vnos.vProjektu { padding-left: 22px; }
+  #stranski .vnos:hover { background: #e6eaf0; }
+  #stranski .vnos.odprt { border-left-color: #9cc7f2; }
+  #stranski .vnos.aktiven { background: #dbe8f8; border-left-color: var(--poudarek); }
+  #stranski .vnos img { width: 16px; height: 16px; flex: none; }
+  #stranski .vnos .ime { flex: 1 1 auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  #stranski .vnos.aktiven .ime { font-weight: 600; }
+  #stranski .vnos .podatek { font-size: 11px; color: #778; white-space: nowrap; }
+  #stranski .vnos .zapri { border: none; background: transparent; border-radius: 3px; padding: 0 5px; cursor: pointer; color: #778; font-size: 14px; line-height: 1; visibility: hidden; }
+  #stranski .vnos:hover .zapri { visibility: visible; }
+  #stranski .vnos .zapri:hover { background: #f3c9c9; color: #900; }
+  #stranski .prazno { padding: 3px 10px; color: #889; font-style: italic; }
+  #stranski .mapa { padding: 2px 10px 0; font-size: 11px; color: #889; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  #stranskiPokazi { position: absolute; top: 10px; left: 10px; z-index: 5; background: rgba(255,255,255,.85); border-color: var(--crta); }
+
   /* Pogled */
-  #pogled { flex: 1 1 auto; position: relative; min-height: 120px; }
+  #pogled { flex: 1 1 auto; position: relative; min-height: 120px; min-width: 120px; }
   #pogled canvas { display: block; }
   #pasica { position: absolute; top: 10px; left: 50%; transform: translateX(-50%); z-index: 5; max-width: 80%;
             background: #fff8e1; border: 1px solid #e0c36a; border-radius: 6px; padding: 6px 10px; font-size: 13px;
@@ -184,11 +212,21 @@
     <button id="skicaZapri" type="button" title="Konča urejanje skice; skica ostane izbrana za naslednji ukaz">Zapri skico</button>
   </div>
 </div>
+<div id="telo">
+  <aside id="stranski">
+    <div class="glavaStranski"><span>Projekti</span>
+      <button type="button" id="stranskiOsvezi" title="Znova prebere mape s projekti">&#8635;</button>
+      <button type="button" id="stranskiSkrij" title="Skrije stranski meni">&#9664;</button>
+    </div>
+    <div id="stranskiVsebina"><div class="prazno">Nalagam …</div></div>
+  </aside>
 <div id="pogled">
+  <button type="button" id="stranskiPokazi" class="skrit" title="Pokaže stranski meni s projekti">&#9654; Projekti</button>
   <div id="mere"></div>
   <div id="pripenjanjeNapis" class="skrit"></div>
   <div id="pasica" class="skrit"><span id="pasicaBesedilo"></span><button id="pasicaGumb" type="button">Pokaži FreeCAD</button></div>
   <div id="namig">Srednji gumb: vrtenje (Ctrl premik, Shift povečava, Alt sukanje, klik na model: središče vrtenja) · kolešček: povečava · klik: izbira (Ctrl doda) · puščice · Ctrl+1–8 pogledi · preslednica: meni pogledov · F: prilagodi</div>
+</div>
 </div>
 <div id="dialogSkica" class="skrit">
   <div class="okno">
@@ -413,6 +451,78 @@ function posodobiPasico() {
 $('pasicaGumb').addEventListener('click', () => objavi('/okno', { prikazi: true }).catch(pokaziNapako));
 $('obrazecFreecad').addEventListener('click', () => objavi('/okno', { prikazi: true }).catch(pokaziNapako));
 
+// --- stranski meni: projekti (datoteke FCStd), odprti dokumenti, nedavne datoteke ---------------
+const stranski = $('stranski');
+function ikonaUkaza(ime) { const u = (stanje.ukazi && stanje.ukazi.hitriDostop || []).find(u => u.ime === ime); return u && u.ikona ? u.ikona : ''; }
+function datumProjekta(sekunde) {
+  const d = new Date(sekunde * 1000), danes = new Date();
+  return d.toDateString() === danes.toDateString() ? d.toLocaleTimeString('sl-SI', { hour: '2-digit', minute: '2-digit' }) : d.toLocaleDateString('sl-SI');
+}
+async function projektDejanje(telo) { try { await objavi('/projekt', telo); } catch (e) { pokaziNapako(e); } }
+function vnosDatoteke(d, odprti, vProjektu) {
+  const odprt = odprti.find(o => o.pot && o.pot.toLowerCase() === d.pot.toLowerCase());
+  const v = el('div', 'vnos' + (vProjektu ? ' vProjektu' : '') + (odprt ? (odprt.aktiven ? ' aktiven' : ' odprt') : ''));
+  v.title = d.pot + (odprt ? '\n(odprt' + (odprt.spremenjen ? ', neshranjene spremembe' : '') + ')' : '') + '\nKlik: ' + (odprt ? 'preklopi na dokument' : 'odpri');
+  const ik = ikonaUkaza('Std_Open'); if (ik) { const i = el('img'); i.src = ik; v.append(i); }
+  v.append(el('span', 'ime', d.ime + (odprt && odprt.spremenjen ? ' *' : '')));
+  v.append(el('span', 'podatek', datumProjekta(d.spremenjeno)));
+  v.addEventListener('click', () => odprt ? projektDejanje({ dejanje: 'aktiviraj', ime: odprt.ime }) : projektDejanje({ dejanje: 'odpri', pot: d.pot }));
+  return v;
+}
+function narisiProjekte(p) {
+  stanje.projekti = p;
+  const vsebina = $('stranskiVsebina'); vsebina.innerHTML = '';
+  const odprti = p.odprti || [];
+
+  const r1 = el('div', 'razdelek'); r1.append(el('div', 'naslovRazdelka', 'Odprti dokumenti'));
+  if (!odprti.length) r1.append(el('div', 'prazno', 'ni odprtih dokumentov'));
+  for (const o of odprti) {
+    const v = el('div', 'vnos' + (o.aktiven ? ' aktiven' : ' odprt'));
+    v.title = (o.pot || 'še ni shranjen') + '\nKlik: preklopi na dokument';
+    const ik = ikonaUkaza(o.pot ? 'Std_Open' : 'Std_New'); if (ik) { const i = el('img'); i.src = ik; v.append(i); }
+    v.append(el('span', 'ime', o.oznaka + (o.spremenjen ? ' *' : '')));
+    v.addEventListener('click', () => projektDejanje({ dejanje: 'aktiviraj', ime: o.ime }));
+    const x = el('button', 'zapri', '×'); x.type = 'button'; x.title = 'Zapri dokument';
+    x.addEventListener('click', e => {
+      e.stopPropagation();
+      if (o.spremenjen && !confirm('Dokument »' + o.oznaka + '« ima neshranjene spremembe, ki bodo izgubljene. Zapreti? (Za shranjevanje najprej uporabite gumb Shrani.)')) return;
+      projektDejanje({ dejanje: 'zapri', ime: o.ime });
+    });
+    v.append(x);
+    r1.append(v);
+  }
+  vsebina.append(r1);
+
+  for (const sk of p.skupine || []) {
+    const r = el('div', 'razdelek'); r.append(el('div', 'naslovRazdelka', 'Projekti · ' + sk.naslov));
+    const m = el('div', 'mapa', sk.mapa); m.title = sk.mapa; r.append(m);
+    if (!sk.datoteke.length) r.append(el('div', 'prazno', 'v mapi ni datotek FCStd'));
+    let projekt = null;
+    for (const d of sk.datoteke) {
+      if (d.projekt && d.projekt !== projekt) { r.append(el('div', 'naslovProjekta', d.projekt)); }
+      projekt = d.projekt;
+      r.append(vnosDatoteke(d, odprti, !!d.projekt));
+    }
+    vsebina.append(r);
+  }
+
+  if ((p.nedavne || []).length) {
+    const r = el('div', 'razdelek'); r.append(el('div', 'naslovRazdelka', 'Nedavne datoteke'));
+    for (const d of p.nedavne) r.append(vnosDatoteke(d, odprti, false));
+    vsebina.append(r);
+  }
+}
+async function naloziProjekte() { const r = await fetch('/projekti', { cache: 'no-store' }); narisiProjekte(await r.json()); }
+function pokaziStranski(pokazi) {
+  stranski.classList.toggle('skrit', !pokazi);
+  $('stranskiPokazi').classList.toggle('skrit', pokazi);
+  try { localStorage.setItem('stranskiSkrit', pokazi ? '0' : '1'); } catch (e) { /* zasebno okno */ }
+}
+$('stranskiSkrij').addEventListener('click', () => pokaziStranski(false));
+$('stranskiPokazi').addEventListener('click', () => pokaziStranski(true));
+$('stranskiOsvezi').addEventListener('click', () => naloziProjekte().catch(pokaziNapako));
+try { if (localStorage.getItem('stranskiSkrit') === '1') pokaziStranski(false); } catch (e) { /* zasebno okno */ }
+
 // --- obrazci: okna FreeCAD-a v brskalniku ---------------------------------------
 function el(oznaka, razred, besedilo) {
   const e = document.createElement(oznaka);
@@ -621,6 +731,7 @@ async function naloziUkaze() {
     ? stanje.okolje.delovnaMiza : (stanje.ukazi.delovnaOkolja[0] || {}).ime;
   if (prvi) izberiZavihek(prvi, false);
   uporabiOkolje(stanje.okolje);
+  if (stanje.projekti) narisiProjekte(stanje.projekti);
 }
 
 // Ikone orodij skice so FreeCAD-ove (iste kot v njegovi orodni vrstici); brez ikone ostane samo napis.
@@ -1524,6 +1635,7 @@ dogodki.addEventListener('aktivni', e => { uporabiAktivne(JSON.parse(e.data)); }
 dogodki.addEventListener('okolje', e => { uporabiOkolje(JSON.parse(e.data)); });
 dogodki.addEventListener('obrazec', e => { try { narisiObrazec(JSON.parse(e.data)); } catch (err) { pokaziNapako(err); } });
 dogodki.addEventListener('skica', e => { try { uporabiSkico(JSON.parse(e.data)); } catch (err) { pokaziNapako(err); } });
+dogodki.addEventListener('projekti', e => { try { narisiProjekte(JSON.parse(e.data)); } catch (err) { pokaziNapako(err); } });
 dogodki.onopen = () => { stanje.povezava = true; osveziHud(); };
 dogodki.onerror = () => {
   if (stanje.zaprto) { hud.innerHTML = '<b>FreeCAD je zaprt.</b> Za nov zagon uporabite ZAZENI-SPLET.bat in osvežite stran.'; return; }
