@@ -1,0 +1,4 @@
+Zalogovnik_zadaj: x 646..2354, y 2340..2600, z 300..1900, trk s tiskalnikom 0 mm3, s stenami 0 mm3
+Zalogovnik_spredaj: x 646..2354, y -0..260, z 300..1900, trk s tiskalnikom 0 mm3, s stenami 0 mm3
+Tiskalnik: x 57..2943, y 941..1694
+Prehod spredaj: 681 mm, zadaj: 646 mm, ob straneh tiskalnika: 57 mm
