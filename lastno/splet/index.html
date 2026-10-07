@@ -188,7 +188,7 @@
   <div id="mere"></div>
   <div id="pripenjanjeNapis" class="skrit"></div>
   <div id="pasica" class="skrit"><span id="pasicaBesedilo"></span><button id="pasicaGumb" type="button">Pokaži FreeCAD</button></div>
-  <div id="namig">Levi gumb: vrtenje · kolešček: povečava · desni gumb: premik · klik: izbira ploskve ali roba (Ctrl doda) · F: prilagodi pogled</div>
+  <div id="namig">Srednji gumb: vrtenje (Ctrl premik, Shift povečava, Alt sukanje, klik na model: središče vrtenja) · kolešček: povečava · klik: izbira (Ctrl doda) · puščice · Ctrl+1–8 pogledi · preslednica: meni pogledov · F: prilagodi</div>
 </div>
 <div id="dialogSkica" class="skrit">
   <div class="okno">
@@ -648,9 +648,6 @@ scene.background = new THREE.Color(0xeef0f3);
 const camera = new THREE.PerspectiveCamera(40, 1, 0.1, 10000);
 camera.up.set(0, 0, 1);
 camera.position.set(120, -140, 100);
-const controls = new OrbitControls(camera, renderer.domElement);
-controls.enableDamping = true;
-controls.dampingFactor = 0.12;
 let aktivnaKamera = camera;
 
 scene.add(new THREE.HemisphereLight(0xffffff, 0x8a9099, 0.9));
@@ -712,7 +709,7 @@ async function naloziModel() {
   stanje.dokument = model.dokument; stanje.verzija = model.verzija;
   sferaModela = okvirModela().getBoundingSphere(new THREE.Sphere());
   if (skica.posnetek) zgradiPripenjanjeModela();
-  if (!prviNalozen && model.objekti.length) { prilagodiPogled(); prviNalozen = true; }
+  if (!prviNalozen && model.objekti.length) { prilagodiPogled(true); prviNalozen = true; }
   oznaciIzbiro(stanje.izbira);
   osveziHud();
 }
@@ -724,8 +721,8 @@ function okvirModela() { return new THREE.Box3().setFromObject(koren); }
 let sferaModela = new THREE.Sphere();
 function prilagodiRavnini() {
   const r = sferaModela.isEmpty() ? 100 : Math.max(sferaModela.radius, 1);
-  const doSredisca = camera.position.distanceTo(sferaModela.isEmpty() ? controls.target : sferaModela.center);
-  const doCilja = camera.position.distanceTo(controls.target);
+  const doSredisca = camera.position.distanceTo(sferaModela.isEmpty() ? nadzor.cilj : sferaModela.center);
+  const doCilja = camera.position.distanceTo(nadzor.cilj);
   const far = doSredisca + r * 3;   // mreža sega do dvojnega polmera
   const near = Math.max(doSredisca - r * 1.05, doCilja / 200, far / 20000);
   if (Math.abs(camera.near - near) > near * 0.01 || Math.abs(camera.far - far) > far * 0.01) {
@@ -733,20 +730,197 @@ function prilagodiRavnini() {
   }
 }
 
-function prilagodiPogled() {
-  if (skica.posnetek) { prilagodiPogledSkice(); return; }
+// --- pogled kot v SolidWorksu ------------------------------------------------
+// Srednji gumb: vrtenje (prosto, v ravnini zaslona) okoli središča modela ali okoli točke, ki jo določi klik
+// s srednjim gumbom na model (vijolična oznaka; klik v prazno jo odstrani). Ctrl+srednji: premik, Shift+srednji:
+// povečava, Alt+srednji: sukanje okoli osi pogleda, dvoklik srednjega: prilagodi. Kolešček naprej oddalji, nazaj
+// približa, proti kazalcu (privzetek SolidWorksa). Tipke: puščice 15°, Shift+puščice 90°, Alt+levo/desno sukanje,
+// Ctrl+puščice premik, Ctrl+1..7 (ali 1..7) standardni pogledi, Ctrl+8 (ali 8) pravokotno na izbrano ploskev,
+// F prilagodi, Z oddalji, Shift+Z približa, preslednica meni pogledov. Levi gumb samo izbira, kot v SolidWorksu.
+const nadzor = { cilj: new THREE.Vector3(), sredisceVrtenja: null, vlek: null, animacija: null, zadnjiSrednji: 0, kazalec: { x: 0, y: 0 } };
+const KORAK_VRTENJA = THREE.MathUtils.degToRad(15);   // SolidWorks: Možnosti > Pogled > puščice, privzeto 15°
+const VRTENJE_NA_PIKO = 0.008;
+const OBRNI_KOLESCEK = false;                          // true: kolešček naprej približa (kot v večini programov)
+const oznakaVrtenja = new THREE.Mesh(new THREE.SphereGeometry(1, 16, 12), new THREE.MeshBasicMaterial({ color: 0xd81b9c, depthTest: false }));
+oznakaVrtenja.renderOrder = 10; oznakaVrtenja.visible = false; scene.add(oznakaVrtenja);
+
+const STANDARDNI_POGLEDI = [   // FreeCAD: Z gor, spredaj gledamo v smeri +Y
+  { ime: 'Spredaj', nazaj: [0, -1, 0], gor: [0, 0, 1] },
+  { ime: 'Zadaj', nazaj: [0, 1, 0], gor: [0, 0, 1] },
+  { ime: 'Levo', nazaj: [-1, 0, 0], gor: [0, 0, 1] },
+  { ime: 'Desno', nazaj: [1, 0, 0], gor: [0, 0, 1] },
+  { ime: 'Zgoraj', nazaj: [0, 0, 1], gor: [0, 1, 0] },
+  { ime: 'Spodaj', nazaj: [0, 0, -1], gor: [0, -1, 0] },
+  { ime: 'Izometrično', nazaj: [1, -1, 1], gor: [0, 0, 1] },
+];
+
+function razdaljaPogleda() { return camera.position.distanceTo(nadzor.cilj); }
+function osKamere(x, y, z) { return new THREE.Vector3(x, y, z).applyQuaternion(camera.quaternion); }
+function sredisceVrtenja() {
+  if (nadzor.sredisceVrtenja) return nadzor.sredisceVrtenja;
+  return sferaModela.isEmpty() ? nadzor.cilj.clone() : sferaModela.center.clone();
+}
+function zavrtiOkoli(q, tocka) {
+  camera.position.sub(tocka).applyQuaternion(q).add(tocka);
+  nadzor.cilj.sub(tocka).applyQuaternion(q).add(tocka);
+  camera.quaternion.premultiply(q).normalize();
+  camera.up.copy(osKamere(0, 1, 0));
+}
+function zasukZaslona(dx, dy) {   // dx, dy v radianih: vlek desno zasuka model v desno, vlek dol nagne sprednjo stran navzdol
+  return new THREE.Quaternion().setFromAxisAngle(osKamere(0, 1, 0), -dx)
+    .multiply(new THREE.Quaternion().setFromAxisAngle(osKamere(1, 0, 0), -dy));
+}
+function vrtiPogled(dx, dy) { zavrtiOkoli(zasukZaslona(dx, dy), sredisceVrtenja()); }
+function zasukOsiPogleda(kot) { return new THREE.Quaternion().setFromAxisAngle(osKamere(0, 0, 1), kot); }   // + : model v smeri urinega kazalca
+function premakniPogled(dxPik, dyPik) {   // model sledi kazalcu
+  const e = 2 * razdaljaPogleda() * Math.tan(THREE.MathUtils.degToRad(camera.fov / 2)) / Math.max(1, renderer.domElement.clientHeight);
+  const t = osKamere(1, 0, 0).multiplyScalar(-dxPik * e).add(osKamere(0, 1, 0).multiplyScalar(dyPik * e));
+  camera.position.add(t); nadzor.cilj.add(t);
+}
+function povecajPogled(faktor, tocka) {   // faktor < 1 približa proti točki
+  const t = tocka || nadzor.cilj;
+  if (faktor < 1 && razdaljaPogleda() < 1e-3) return;
+  camera.position.sub(t).multiplyScalar(faktor).add(t);
+  nadzor.cilj.sub(t).multiplyScalar(faktor).add(t);
+}
+function tockaPodKazalcem(e) {
+  nastaviKazalec(e);
+  const meshi = []; for (const z of objekti.values()) if (z.mesh) meshi.push(z.mesh);
+  const zadetki = raycaster.intersectObjects(meshi, false);
+  if (zadetki.length) return { tocka: zadetki[0].point.clone(), naModelu: true };
+  const ravnina = new THREE.Plane().setFromNormalAndCoplanarPoint(osKamere(0, 0, 1), nadzor.cilj);
+  return { tocka: raycaster.ray.intersectPlane(ravnina, new THREE.Vector3()) || nadzor.cilj.clone(), naModelu: false };
+}
+function nastaviSredisceVrtenja(tocka) {
+  nadzor.sredisceVrtenja = tocka;
+  oznakaVrtenja.visible = !!tocka;
+  if (tocka) oznakaVrtenja.position.copy(tocka);
+}
+function posodobiOznakoVrtenja() {
+  if (oznakaVrtenja.visible) oznakaVrtenja.scale.setScalar(camera.position.distanceTo(oznakaVrtenja.position) * 0.006);
+}
+
+// Usmeritev kamere iz smeri proti kameri (nazaj) in smeri navzgor na zaslonu.
+function usmeritev(nazaj, gor) {
+  const n = nazaj.clone().normalize();
+  let g = gor.clone().addScaledVector(n, -gor.dot(n));
+  if (g.lengthSq() < 1e-8) { g = Math.abs(n.z) < 0.9 ? new THREE.Vector3(0, 0, 1) : new THREE.Vector3(0, 1, 0); g.addScaledVector(n, -g.dot(n)); }
+  g.normalize();
+  const d = new THREE.Vector3().crossVectors(g, n);
+  return new THREE.Quaternion().setFromRotationMatrix(new THREE.Matrix4().makeBasis(d, g, n));
+}
+// Središče in razdalja, pri kateri cel model napolni pogled.
+function prileganje() {
   const okvir = okvirModela();
-  if (okvir.isEmpty()) return;
+  if (okvir.isEmpty()) return null;
+  const sfera = okvir.getBoundingSphere(new THREE.Sphere());
+  const pv = THREE.MathUtils.degToRad(camera.fov / 2), ph = Math.atan(Math.tan(pv) * camera.aspect);
+  return { sredisce: sfera.center, razdalja: Math.max(sfera.radius, 1e-3) / Math.sin(Math.min(pv, ph)) * 1.02, okvir };
+}
+function animirajNa(q1, cilj1, razdalja1, trajanje = 320) {
+  nadzor.animacija = { zacetek: performance.now(), trajanje, q0: camera.quaternion.clone(), q1,
+                       c0: nadzor.cilj.clone(), c1: cilj1.clone(), d0: razdaljaPogleda(), d1: razdalja1 };
+  if (trajanje <= 0) korakAnimacije(true);
+}
+function korakAnimacije(takoj) {
+  const a = nadzor.animacija; if (!a) return;
+  const t = takoj ? 1 : Math.min(1, (performance.now() - a.zacetek) / a.trajanje), s = t * t * (3 - 2 * t);
+  camera.quaternion.slerpQuaternions(a.q0, a.q1, s);
+  nadzor.cilj.lerpVectors(a.c0, a.c1, s);
+  camera.position.copy(nadzor.cilj).addScaledVector(osKamere(0, 0, 1), a.d0 + (a.d1 - a.d0) * s);
+  camera.up.copy(osKamere(0, 1, 0));
+  if (t >= 1) nadzor.animacija = null;
+}
+function koncajAnimacijo() { if (nadzor.animacija) korakAnimacije(true); }
+// Standardni pogledi se prilagodijo modelu (SolidWorks: »Zoom to fit when changing to standard views«).
+function pojdiNaPogled(nazaj, gor, animiraj = true) {
+  koncajAnimacijo();
+  const p = prileganje(), q = usmeritev(nazaj, gor);
+  animirajNa(q, p ? p.sredisce : nadzor.cilj, p ? p.razdalja : razdaljaPogleda(), animiraj ? 320 : 0);
+}
+function standardniPogled(i) {
+  const v = STANDARDNI_POGLEDI[i];
+  pojdiNaPogled(new THREE.Vector3(...v.nazaj), new THREE.Vector3(...v.gor));
+}
+// Zasuk s tipko: animacija do trenutne lege, zasukane okoli središča vrtenja.
+function zavrtiAnimirano(q) {
+  koncajAnimacijo();
+  const tocka = sredisceVrtenja();
+  const cilj = nadzor.cilj.clone().sub(tocka).applyQuaternion(q).add(tocka);
+  animirajNa(camera.quaternion.clone().premultiply(q), cilj, razdaljaPogleda(), 160);
+}
+
+// Pravokotno na izbrano ploskev (Ctrl+8); drugič zapored pogled z druge strani.
+function normalaPloskve(mesh, k) {
+  const p = mesh.userData.ploskve[k]; if (!p) return null;
+  const pos = mesh.geometry.attributes.position, idx = mesh.geometry.index;
+  const a = new THREE.Vector3(), b = new THREE.Vector3(), c = new THREE.Vector3(), x = new THREE.Vector3(), y = new THREE.Vector3();
+  const n = new THREE.Vector3(); let ploscina = 0;
+  for (let t = p[2]; t < p[2] + p[3]; t++) {
+    a.fromBufferAttribute(pos, idx.getX(3 * t)); b.fromBufferAttribute(pos, idx.getX(3 * t + 1)); c.fromBufferAttribute(pos, idx.getX(3 * t + 2));
+    x.subVectors(b, a).cross(y.subVectors(c, a));
+    n.add(x); ploscina += x.length();
+  }
+  if (ploscina <= 0 || n.length() < ploscina * 0.5) return null;   // ukrivljena ploskev nima ene normale
+  return n.normalize();
+}
+function pravokotnoNaIzbrano() {
+  for (const s of stanje.izbira) {
+    const z = objekti.get(s.objekt); if (!z || !z.mesh) continue;
+    for (const el of s.elementi || []) {
+      if (!el.startsWith('Face')) continue;
+      let n = normalaPloskve(z.mesh, parseInt(el.slice(4), 10) - 1); if (!n) continue;
+      if (osKamere(0, 0, 1).dot(n) > 0.9999) n = n.negate();
+      // navzgor ostane os modela, ki leži v ploskvi in je najbližje trenutni smeri navzgor (slika ni poševna)
+      const gor = osKamere(0, 1, 0);
+      let najboljsa = gor, ocena = -2;
+      for (const os of [[1, 0, 0], [0, 1, 0], [0, 0, 1], [-1, 0, 0], [0, -1, 0], [0, 0, -1]]) {
+        const v = new THREE.Vector3(...os); v.addScaledVector(n, -v.dot(n));
+        if (v.length() < 0.7) continue;
+        const o = v.normalize().dot(gor);
+        if (o > ocena) { ocena = o; najboljsa = v; }
+      }
+      pojdiNaPogled(n, najboljsa);
+      return true;
+    }
+  }
+  return false;
+}
+
+function odpriMeniPogledov(x, y) {
+  meni.innerHTML = '';
+  const dodaj = (napis, bliznjica, dejanje) => {
+    const g = document.createElement('div'); g.className = 'gumb';
+    g.innerHTML = '<span>' + napis + '</span><small style="float:right;color:#888;margin-left:16px">' + bliznjica + '</small>';
+    g.addEventListener('click', () => { zapriMeni(); dejanje(); });
+    meni.appendChild(g);
+  };
+  STANDARDNI_POGLEDI.forEach((v, i) => dodaj(v.ime, 'Ctrl+' + (i + 1), () => standardniPogled(i)));
+  dodaj('Pravokotno na izbrano', 'Ctrl+8', pravokotnoNaIzbrano);
+  dodaj('Prilagodi pogled', 'F', () => prilagodiPogled());
+  meni.classList.remove('skrit');
+  meni.style.left = Math.max(8, Math.min(x, window.innerWidth - meni.offsetWidth - 8)) + 'px';
+  meni.style.top = Math.max(8, Math.min(y, window.innerHeight - meni.offsetHeight - 8)) + 'px';
+}
+
+function nastaviMrezo(okvir) {
   const sredisce = okvir.getCenter(new THREE.Vector3());
   const polmer = okvir.getSize(new THREE.Vector3()).length() / 2 || 10;
-  const smer = new THREE.Vector3(1, -1.2, 0.9).normalize();
-  const razdalja = polmer / Math.sin(THREE.MathUtils.degToRad(camera.fov / 2)) * 1.1;
-  camera.position.copy(sredisce).addScaledVector(smer, razdalja);
-  camera.near = razdalja / 100; camera.far = razdalja * 100; camera.updateProjectionMatrix();
-  controls.target.copy(sredisce); controls.update();
   const velikostMreze = Math.ceil(polmer * 4 / 10) * 10;
   mreza.scale.setScalar(velikostMreze / 200);
   mreza.position.set(sredisce.x, sredisce.y, okvir.min.z);
+}
+
+// F: prilagodi pogled; usmeritev ostane (kot v SolidWorksu), prvi prikaz dokumenta je izometričen.
+function prilagodiPogled(prvic = false) {
+  if (skica.posnetek) { prilagodiPogledSkice(); return; }
+  const p = prileganje();
+  if (!p) return;
+  nastaviMrezo(p.okvir);
+  nastaviSredisceVrtenja(null);
+  if (prvic) { const v = STANDARDNI_POGLEDI[6]; pojdiNaPogled(new THREE.Vector3(...v.nazaj), new THREE.Vector3(...v.gor), false); return; }
+  koncajAnimacijo();
+  animirajNa(camera.quaternion.clone(), p.sredisce, p.razdalja, 250);
 }
 
 function ploskevTrikotnika(mesh, i) { const p = mesh.userData.ploskve; for (let k = 0; k < p.length; k++) if (i >= p[k][2] && i < p[k][2] + p[k][3]) return k; return -1; }
@@ -794,7 +968,7 @@ renderer.domElement.addEventListener('pointerup', e => {
   const premik = Math.hypot(e.clientX - pritisk.x, e.clientY - pritisk.y); pritisk = null;
   if (premik > 4) return;
   nastaviKazalec(e);
-  raycaster.params.Line.threshold = controls.getDistance() * 0.004;
+  raycaster.params.Line.threshold = razdaljaPogleda() * 0.004;
   const meshi = [], crte = [];
   for (const z of objekti.values()) { if (z.mesh) meshi.push(z.mesh); if (z.crte) crte.push(z.crte); }
   const zr = raycaster.intersectObjects(crte, false), zp = raycaster.intersectObjects(meshi, false);
@@ -805,9 +979,66 @@ renderer.domElement.addEventListener('pointerup', e => {
   else if (!e.ctrlKey) objavi('/select', { objekt: '', element: '', dodaj: false }).catch(pokaziNapako);
 });
 renderer.domElement.addEventListener('contextmenu', e => { e.preventDefault(); if (skica.posnetek) prekiniRisanje(); });
+// Miška in tipke za pogled (SolidWorks). V skici vodi pogled ortoControls.
+const platno = renderer.domElement;
+platno.addEventListener('mousedown', e => { if (e.button === 1) e.preventDefault(); });   // brez samodejnega drsenja brskalnika
+platno.addEventListener('pointerdown', e => {
+  if (skica.posnetek || e.button !== 1) return;
+  e.preventDefault(); koncajAnimacijo();
+  try { platno.setPointerCapture(e.pointerId); } catch (_) { /* umetni dogodek brez kazalca */ }
+  nadzor.vlek = { x: e.clientX, y: e.clientY, x0: e.clientX, y0: e.clientY, premaknjen: false };
+});
+platno.addEventListener('pointermove', e => {
+  nadzor.kazalec = { x: e.clientX, y: e.clientY };
+  const v = nadzor.vlek; if (!v || skica.posnetek) return;
+  if (!v.premaknjen && Math.hypot(e.clientX - v.x0, e.clientY - v.y0) <= 3) return;
+  const dx = e.clientX - v.x, dy = e.clientY - v.y; v.x = e.clientX; v.y = e.clientY; v.premaknjen = true;
+  if (e.ctrlKey) premakniPogled(dx, dy);
+  else if (e.shiftKey) povecajPogled(Math.pow(1.005, -dy));   // vlek dol približa
+  else if (e.altKey) zavrtiOkoli(zasukOsiPogleda(dx * VRTENJE_NA_PIKO), sredisceVrtenja());
+  else vrtiPogled(dx * VRTENJE_NA_PIKO, dy * VRTENJE_NA_PIKO);
+});
+platno.addEventListener('pointerup', e => {
+  const v = nadzor.vlek; if (!v || e.button !== 1) return;
+  nadzor.vlek = null;
+  if (platno.hasPointerCapture(e.pointerId)) platno.releasePointerCapture(e.pointerId);
+  if (v.premaknjen) return;
+  const zdaj = performance.now();
+  if (zdaj - nadzor.zadnjiSrednji < 400) { nadzor.zadnjiSrednji = 0; prilagodiPogled(); return; }
+  nadzor.zadnjiSrednji = zdaj;
+  const t = tockaPodKazalcem(e);   // klik srednjega na model: vrtenje okoli te točke
+  nastaviSredisceVrtenja(t.naModelu ? t.tocka : null);
+});
+platno.addEventListener('wheel', e => {
+  if (skica.posnetek) return;
+  e.preventDefault(); koncajAnimacijo();
+  const korak = (e.deltaMode === 1 ? e.deltaY * 33 : e.deltaY) * (OBRNI_KOLESCEK ? -1 : 1);
+  povecajPogled(Math.pow(1.0015, -korak), tockaPodKazalcem(e).tocka);   // naprej (deltaY < 0) oddalji
+}, { passive: false });
+
+function tipkaPogleda(e) {
+  if (skica.posnetek) return false;
+  const k = e.key, sm = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] }[k];
+  if (sm) {
+    if (e.ctrlKey) { const w = platno.clientWidth * 0.1; premakniPogled(sm[0] * w, sm[1] * w); }
+    else if (e.altKey) { if (sm[0]) zavrtiAnimirano(zasukOsiPogleda(sm[0] * KORAK_VRTENJA)); }
+    else { const kot = e.shiftKey ? Math.PI / 2 : KORAK_VRTENJA; zavrtiAnimirano(zasukZaslona(sm[0] * kot, sm[1] * kot)); }
+    return true;
+  }
+  const st = /^Digit([1-8])$/.exec(e.code);
+  if (st && !e.altKey && !e.shiftKey) {
+    const i = parseInt(st[1], 10) - 1;
+    if (i < 7) standardniPogled(i); else pravokotnoNaIzbrano();
+    return true;
+  }
+  if (e.code === 'KeyZ' && !e.ctrlKey && !e.altKey) { koncajAnimacijo(); povecajPogled(e.shiftKey ? 1 / 1.25 : 1.25); return true; }
+  if (e.code === 'Space' && !e.ctrlKey) { odpriMeniPogledov(nadzor.kazalec.x, nadzor.kazalec.y); return true; }
+  return false;
+}
 window.addEventListener('keydown', e => {
   if (e.target !== document.body) return;
-  if (e.key === 'f' || e.key === 'F') prilagodiPogled();
+  if ((e.key === 'f' || e.key === 'F') && !e.ctrlKey) { prilagodiPogled(); return; }
+  if (tipkaPogleda(e)) { e.preventDefault(); return; }
   if (e.key === 'Escape' && dialogSkiceOdprt()) { zapriDialogSkice(); return; }
   if (skica.posnetek) {
     if (e.key === 'Escape') { if (skica.risba) prekiniRisanje(); else nastaviOrodje('izberi'); }
@@ -962,16 +1193,16 @@ function vstopiVSkico(p) {
   const predogled = new THREE.LineSegments(new THREE.BufferGeometry(), matPredogled); predogled.userData = { trajno: true, predogled: true }; predogled.frustumCulled = false; skica.skupina.add(predogled);
   const pripenjanje = new THREE.Points(new THREE.BufferGeometry(), matPripenjanje); pripenjanje.userData = { trajno: true, pripenjanje: true }; pripenjanje.frustumCulled = false; pripenjanje.visible = false; skica.skupina.add(pripenjanje);
   ortoKamera = new THREE.OrthographicCamera(-60, 60, 60, -60, -5000, 5000);
-  controls.enabled = false;
   ortoControls = new OrbitControls(ortoKamera, renderer.domElement);
   ortoControls.enableRotate = false; ortoControls.screenSpacePanning = true; ortoControls.enableDamping = false;
-  ortoControls.mouseButtons = { LEFT: null, MIDDLE: THREE.MOUSE.DOLLY, RIGHT: THREE.MOUSE.PAN };
+  ortoControls.mouseButtons = { LEFT: null, MIDDLE: THREE.MOUSE.PAN, RIGHT: THREE.MOUSE.PAN };
+  ortoControls.zoomToCursor = true; ortoControls.zoomSpeed = OBRNI_KOLESCEK ? 1 : -1;   // negativna hitrost obrne smer koleščka (SolidWorks)
   aktivnaKamera = ortoKamera;
   materialPloskev.transparent = true; materialPloskev.opacity = 0.22; materialPloskev.needsUpdate = true;
   materialRobov.transparent = true; materialRobov.opacity = 0.35; materialRobov.needsUpdate = true;
   mreza.visible = false;
   trak.classList.add('skrit'); $('skicaTrak').classList.remove('skrit');
-  $('namig').textContent = 'Kolešček: povečava · desni gumb: premik · Esc: prekini · Delete: izbriši izbrano · F: prilagodi pogled';
+  $('namig').textContent = 'Kolešček: povečava · srednji ali desni gumb: premik · Esc: prekini · Delete: izbriši izbrano · F: prilagodi pogled';
   skica.posnetek = p; skica.izbrano = null; skica.risba = null;
   nastaviOrodje('izberi');
   prilagodiPogledSkice();
@@ -981,13 +1212,13 @@ function zapriSkicoLokalno() {
   skica.modelTocke = []; skica.modelRobovi = []; $('pripenjanjeNapis').classList.add('skrit');
   if (skica.skupina) { skica.skupina.traverse(n => { if (n.geometry) n.geometry.dispose(); }); scene.remove(skica.skupina); skica.skupina = null; }
   if (ortoControls) { ortoControls.dispose(); ortoControls = null; }
-  ortoKamera = null; aktivnaKamera = camera; controls.enabled = true;
+  ortoKamera = null; aktivnaKamera = camera;
   materialPloskev.transparent = false; materialPloskev.opacity = 1; materialPloskev.needsUpdate = true;
   materialRobov.transparent = false; materialRobov.opacity = 1; materialRobov.needsUpdate = true;
   mreza.visible = true;
   $('mere').innerHTML = ''; skica.oznake = [];
   trak.classList.remove('skrit'); $('skicaTrak').classList.add('skrit');
-  $('namig').textContent = 'Levi gumb: vrtenje · kolešček: povečava · desni gumb: premik · klik: izbira ploskve ali roba (Ctrl doda) · F: prilagodi pogled';
+  $('namig').textContent = 'Srednji gumb: vrtenje (Ctrl premik, Shift povečava, Alt sukanje, klik na model: središče vrtenja) · kolešček: povečava · klik: izbira (Ctrl doda) · puščice · Ctrl+1–8 pogledi · preslednica: meni pogledov · F: prilagodi';
   skica.posnetek = null; skica.risba = null; skica.izbrano = null; skica.vlecenje = null;
   osveziHud();
 }
@@ -1307,7 +1538,7 @@ new ResizeObserver(() => {
   renderer.setSize(w, h);
 }).observe(pogled);
 renderer.setAnimationLoop(() => {
-  if (ortoControls) ortoControls.update(); else { controls.update(); prilagodiRavnini(); }
+  if (ortoControls) ortoControls.update(); else { korakAnimacije(); prilagodiRavnini(); posodobiOznakoVrtenja(); }
   if (skica.oznake.length) posodobiMere();
   if (renderer.domElement.clientWidth > 0 && renderer.domElement.clientHeight > 0) renderer.render(scene, aktivnaKamera);
 });

@@ -55,6 +55,11 @@ FreeCAD je motor, vmesnik in grafika nastajata v brskalniku (plan, korak 8 napre
   vrne `izpis`, `napaka`, `rezultat`), `POST /obrazec`. Vsak POST potrebuje glavo `X-Zeton` (žeton nastane ob
   zagonu in je vpisan v stran), da tuja spletna stran v brskalniku ne more poganjati kode v FreeCAD-u.
 - Vir resnice za izbiro je FreeCAD (`Gui.Selection`): brskalnik pošlje klik, obarva pa šele to, kar FreeCAD javi.
+- Pogled (3D) se vodi kot v SolidWorksu (lasten nadzor `nadzor` v `index.html`, ne OrbitControls): srednji gumb vrti
+  prosto okoli središča modela ali okoli točke, ki jo določi klik srednjega na model; Ctrl/Shift/Alt + srednji = premik,
+  povečava, sukanje; kolešček naprej oddalji (`OBRNI_KOLESCEK`), proti kazalcu; levi gumb samo izbira. Tipke: puščice 15°,
+  Shift 90°, Alt sukanje, Ctrl premik, Ctrl+1..7 ali 1..7 standardni pogledi (Ctrl+številke brskalnik pogosto vzame
+  sam), 8 pravokotno na izbrano ploskev, F, Z, Shift+Z, preslednica meni pogledov. Skica ostaja na `ortoControls`.
 - Ukazi v brskalniku so tisti iz orodnih vrstic okolij `DELOVNA_OKOLJA` (Snovanje delov, Skica, Del) in `HITRI_DOSTOP`;
   stanje »na voljo« se preverja vsakih 500 ms (`isActive`). Med urejanjem značilnosti je objekt v predogledu vključen v posnetek, čeprav je `Visibility` še False.
 - Skica v brskalniku (`POST /skica`, dogodek `skica`): `nova` (ravnina XY/XZ/YZ ali ploskev modela: okno Nova skica ne pokriva pogleda, ploskev se klikne med odprtim oknom; odmik, obrni, v telesu),
