@@ -67,6 +67,18 @@ SPLOSNE_ORODNE = {"File", "Edit", "Clipboard", "Workbench", "Macro", "View", "In
 # Vrstica hitrega dostopa (kot v SolidWorksu zgoraj levo).
 HITRI_DOSTOP = ["Std_New", "Std_Open", "Std_Save", "Std_Undo", "Std_Redo", "Std_Refresh",
                 "Std_ViewFitAll", "Std_ViewFitSelection", "Std_ViewIsometric"]
+# Ikone orodij skice v brskalniku: ime orodja -> imena ikon FreeCAD-a po prednosti (prva, ki obstaja).
+IKONE_SKICE = {
+    "izberi": ["edit-select-all", "Std_SelectAll"],
+    "crta": ["Sketcher_CreatePolyline", "Sketcher_CreateLine"],
+    "pravokotnik": ["Sketcher_CreateRectangle"],
+    "krog": ["Sketcher_CreateCircle"],
+    "tocka": ["Sketcher_CreatePoint"],
+    "mera": ["Constraint_Dimension", "Constraint_Length"],
+    "gradbena": ["Sketcher_ToggleConstruction"],
+    "izbrisi": ["edit-delete", "Std_Delete"],
+    "zapri": ["Sketcher_LeaveSketch"],
+}
 
 
 def _log(besedilo):
@@ -229,6 +241,24 @@ def _ikona_uri(ikona, kljuc):
     return uri
 
 
+def _ikone_skice():
+    """Ikone orodij skice (data URI) iz FreeCAD-ovih virov; manjkajoče ostanejo prazne."""
+    ikone = {}
+    for orodje, imena in IKONE_SKICE.items():
+        uri = ""
+        for ime in imena:
+            try:
+                ikona = Gui.getIcon(ime)
+            except Exception:  # noqa: BLE001
+                ikona = None
+            if ikona is not None and not ikona.isNull():
+                uri = _ikona_uri(ikona, "skica:" + ime)
+                if uri:
+                    break
+        ikone[orodje] = uri
+    return ikone
+
+
 def _besedilo(qt_besedilo):
     b = (qt_besedilo or "").replace("&", "").strip()
     while b.endswith("...") or b.endswith("…"):
@@ -333,7 +363,7 @@ def zgradi_ukaze():
         if u:
             hitri.append(u)
             imena_ukazov.append(ime_ukaza)
-    return {"delovnaOkolja": okolja, "hitriDostop": hitri}, sorted(set(imena_ukazov))
+    return {"delovnaOkolja": okolja, "hitriDostop": hitri, "skica": _ikone_skice()}, sorted(set(imena_ukazov))
 
 
 def _sprozi_ukaz(ime, indeks):
