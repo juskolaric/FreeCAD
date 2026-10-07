@@ -76,6 +76,13 @@ FreeCAD je motor, vmesnik in grafika nastajata v brskalniku (plan, korak 8 napre
   Brskalnik prestreže ukaze Nov očrt / Edit Sketch / Leave Sketch ter Izboklino in Ugrez iz izbrane skice
   (`POST /znacilnost`, dolžina se vpraša v brskalniku). Urejanje skice, ki ga začne FreeCAD sam, strežnik prekine
   (`resetEdit`) in skico odpre v brskalniku.
+- Stranski meni s projekti (od 2026-10-07, levo od pogleda, gumb ◀ ga skrije, ▶ Projekti pokaže; stanje v `localStorage`):
+  razdelki Odprti dokumenti (aktivni poudarjen, `*` ob neshranjenih, × zapre; brskalnik vpraša, če so spremembe),
+  Projekti (datoteke FCStd iz `lastno/modeli`, po podmapah; dodatne mape z okoljsko `SPLET_PROJEKTI`, ločilo `;`)
+  in Nedavne datoteke (FreeCAD-ov seznam `RecentFiles`, le obstoječe in ne tistih, ki so že med projekti). Klik odpre
+  datoteko ali preklopi na že odprti dokument. Strežnik: `GET /projekti`, dogodek `projekti` (vsaki 2 s le ob spremembi,
+  takoj ob dogodkih dokumenta), `POST /projekt {dejanje: odpri|aktiviraj|zapri, pot|ime}`. Neshranjene spremembe
+  pozna le `Gui.getDocument(ime).Modified` (`App.Document` te lastnosti nima).
 - Obrazci (od 2026-10-07): **vsa** okna FreeCAD-a gredo v brskalnik, okno FreeCAD-a se ne pokaže. Filter dogodkov na
   aplikaciji vsako novo okno (pogovor, sporočilo, izbira datoteke) ob prikazu naredi nevidno (prosojnost 0, zunaj zaslona,
   brez fokusa tipkovnice; skriti ga ne sme, ker `hide()` konča modalni pogovor). Vsakih 250 ms `_zajemi_obrazec` prebere
