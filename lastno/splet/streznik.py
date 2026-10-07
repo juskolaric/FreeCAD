@@ -17,10 +17,14 @@ Zgradba:
     "izbira" -> brskalnik obarva ploskev ali rob. Vir resnice je FreeCAD.
   - Ukazi: seznam ukazov (GET /ukazi) nastane iz orodnih vrstic delovnih okolij Snovanje delov,
     Skica in Del (prevedena imena, namigi, ikone, podukazi skupin). Klik v brskalniku
-    -> POST /ukaz -> Gui.runCommand na glavni niti; okna z nastavitvami ukaza se odprejo v FreeCAD-u.
+    -> POST /ukaz -> Gui.runCommand na glavni niti.
+  - Obrazci: okno FreeCAD-a se ne pokaže. Vsako novo okno (pogovor, sporočilo, izbira datoteke) ostane
+    nevidno, podokno Opravila je v skritem glavnem oknu; njihovi gradniki gredo v brskalnik kot obrazec
+    (dogodek "obrazec"), vrednosti in kliki se vrnejo prek POST /obrazec.
   - Varnost: vsak POST potrebuje žeton (glava X-Zeton), ki nastane ob zagonu in ga pozna le stran.
 
-Dogodki SSE (GET /events): model {verzija}, izbira [...], aktivni {ime: bool}, okolje {delovnaMiza, urejanje}.
+Dogodki SSE (GET /events): model {verzija}, izbira [...], aktivni {ime: bool}, okolje {delovnaMiza, urejanje},
+skica {...}, obrazec {vrsta, kljuc, naslov, vrstice | datoteka} ali null.
 Oblika posnetka geometrije (GET /model): glej _geometrija().
 """
 
@@ -447,6 +451,493 @@ def _nalozi_okolja():
 
 
 # ---------------------------------------------------------------------------
+# Obrazci: okna FreeCAD-a (pogovorna okna, opravila v podoknu Opravila, izbira datotek) se ne
+# pokažejo na zaslonu, ampak se njihovi gradniki preberejo in pošljejo brskalniku, ki jih izriše
+# kot obrazec. Spremembe iz brskalnika se vpišejo nazaj v prave gradnike Qt (samo glavna nit).
+
+def _veljaven(w):
+    try:
+        import shiboken6
+        return w is not None and shiboken6.isValid(w)
+    except Exception:  # noqa: BLE001
+        return w is not None
+
+
+def _razred(w):
+    try:
+        return w.metaObject().className()
+    except Exception:  # noqa: BLE001
+        return ""
+
+
+def _navadno(besedilo):
+    """Besedilo gradnika brez HTML oznak (QLabel, QMessageBox znata obogateno besedilo)."""
+    import re
+    b = besedilo or ""
+    if "<" in b and ">" in b:
+        try:
+            from PySide6 import QtGui
+            d = QtGui.QTextDocument()
+            d.setHtml(b)
+            b = d.toPlainText()
+        except Exception:  # noqa: BLE001
+            b = re.sub(r"<[^>]+>", "", b)
+    return b.replace("&&", "\x00").replace("&", "").replace("\x00", "&").strip()
+
+
+def _nevidno_okno(w):
+    """Okno ostane odprto (modalna zanka teče), a ga na zaslonu ni: prosojno in zunaj zaslona.
+    Skriti ga ne smemo, ker bi QDialog.hide() končal pogovor. Tudi fokusa tipkovnice ne sme
+    prevzeti: sicer bi tipke (npr. Enter), namenjene drugemu programu, potrdile nevidno okno."""
+    from PySide6 import QtCore
+    try:
+        w.setAttribute(QtCore.Qt.WidgetAttribute.WA_ShowWithoutActivating, True)
+        if w.windowHandle() is not None:
+            w.windowHandle().setFlag(QtCore.Qt.WindowType.WindowDoesNotAcceptFocus, True)
+        w.setWindowOpacity(0.0)
+        w.move(-32000, -32000)
+    except Exception:  # noqa: BLE001
+        pass
+
+
+def _vidno_okno(w):
+    """Vrne okno, skrito z _nevidno_okno, na zaslon (na sredino glavnega okna)."""
+    from PySide6 import QtCore
+    try:
+        w.setAttribute(QtCore.Qt.WidgetAttribute.WA_ShowWithoutActivating, False)
+        if w.windowHandle() is not None:
+            w.windowHandle().setFlag(QtCore.Qt.WindowType.WindowDoesNotAcceptFocus, False)
+        w.setWindowOpacity(1.0)
+        mw = Gui.getMainWindow()
+        sredina = mw.frameGeometry().center()
+        w.move(sredina.x() - w.width() // 2, sredina.y() - w.height() // 2)
+        w.raise_()
+        w.activateWindow()
+    except Exception:  # noqa: BLE001
+        pass
+
+
+_TASK_VIEW = [None]
+
+
+def _task_view():
+    """Gradnik podokna Opravila (Gui::TaskView::TaskView) v glavnem oknu."""
+    tv = _TASK_VIEW[0]
+    if _veljaven(tv):
+        return tv
+    from PySide6 import QtWidgets
+    mw = Gui.getMainWindow()
+    for w in QtWidgets.QApplication.allWidgets():
+        if _razred(w) == "Gui::TaskView::TaskView" and mw.isAncestorOf(w):
+            _TASK_VIEW[0] = w
+            return w
+    return None
+
+
+class Zajem:
+    """Prebere drevo gradnikov okna v JSON (vrstice po postavitvi) in si zapomni id -> gradnik."""
+    PRESKOCI = ("QScrollBar", "QSizeGrip", "QRubberBand", "QSplitterHandle", "QMenu", "QFocusFrame")
+
+    def __init__(self, koren):
+        from PySide6 import QtWidgets
+        self.W = QtWidgets
+        self.koren = koren
+        self.mapa = {}
+
+    def _id(self, w, dodatno=None):
+        i = len(self.mapa) + 1
+        self.mapa[i] = (w, dodatno)
+        return i
+
+    def _vidno(self, w):
+        try:
+            return w is self.koren or w.isVisibleTo(self.koren)
+        except Exception:  # noqa: BLE001
+            return False
+
+    # -- postavitev: seznam vrstic, vrstica je seznam gradnikov ali ("stolpec", [vrstice]) --
+    def vrstice_gradnika(self, w):
+        vrstice, videni = [], set()
+        lay = w.layout()
+        if lay is not None:
+            self._iz_postavitve(lay, vrstice, videni)
+        for c in w.children():
+            if isinstance(c, self.W.QWidget) and not c.isWindow() and id(c) not in videni:
+                vrstice.append([c])
+        return vrstice
+
+    def _vodoravna(self, lay):
+        return isinstance(lay, self.W.QBoxLayout) and lay.direction() in (
+            self.W.QBoxLayout.Direction.LeftToRight, self.W.QBoxLayout.Direction.RightToLeft)
+
+    def _iz_postavitve(self, lay, vrstice, videni):
+        W = self.W
+        if isinstance(lay, W.QGridLayout):
+            po_vrsticah = {}
+            for k in range(lay.count()):
+                r, c, _, _ = lay.getItemPosition(k)
+                po_vrsticah.setdefault(r, []).append((c, lay.itemAt(k)))
+            for r in sorted(po_vrsticah):
+                vrsta = []
+                for _, it in sorted(po_vrsticah[r], key=lambda x: x[0]):
+                    self._predmet(it, vrsta, videni)
+                if vrsta:
+                    vrstice.append(vrsta)
+        elif isinstance(lay, W.QFormLayout):
+            for r in range(lay.rowCount()):
+                vrsta = []
+                for vloga in (W.QFormLayout.ItemRole.LabelRole, W.QFormLayout.ItemRole.FieldRole,
+                              W.QFormLayout.ItemRole.SpanningRole):
+                    it = lay.itemAt(r, vloga)
+                    if it is not None:
+                        self._predmet(it, vrsta, videni)
+                if vrsta:
+                    vrstice.append(vrsta)
+        elif self._vodoravna(lay):
+            vrsta = []
+            for k in range(lay.count()):
+                self._predmet(lay.itemAt(k), vrsta, videni)
+            if vrsta:
+                vrstice.append(vrsta)
+        else:
+            for k in range(lay.count()):
+                vrsta = []
+                self._predmet(lay.itemAt(k), vrsta, videni)
+                if vrsta:
+                    vrstice.append(vrsta)
+
+    def _predmet(self, it, vrsta, videni):
+        if it is None:
+            return
+        w = it.widget()
+        if w is not None:
+            videni.add(id(w))
+            vrsta.append(w)
+            return
+        l = it.layout()
+        if l is None:
+            return
+        if self._vodoravna(l):
+            for k in range(l.count()):
+                self._predmet(l.itemAt(k), vrsta, videni)
+        else:
+            pod = []
+            self._iz_postavitve(l, pod, videni)
+            if len(pod) == 1:
+                vrsta.extend(pod[0])
+            elif pod:
+                vrsta.append(("stolpec", pod))
+
+    def json_vrstic(self, vrstice):
+        izhod = []
+        for vrsta in vrstice:
+            elementi = []
+            for w in vrsta:
+                if isinstance(w, tuple):
+                    pod = self.json_vrstic(w[1])
+                    if pod:
+                        elementi.append({"tip": "stolpec", "vrstice": pod})
+                    continue
+                e = self.gradnik(w)
+                if e is None:
+                    continue
+                # Skupina brez naslova je le postavitev: njene vrstice gredo na isto raven.
+                if e.get("tip") == "skupina" and not e.get("naslov") and not e.get("preklopna") and len(vrsta) == 1:
+                    izhod.extend(e["vrstice"])
+                    elementi = None
+                    break
+                elementi.append(e)
+            if elementi:
+                izhod.append(elementi)
+        return izhod
+
+    # -- posamezni gradniki --
+    def gradnik(self, w):
+        W = self.W
+        if not isinstance(w, W.QWidget) or not self._vidno(w):
+            return None
+        razred = _razred(w)
+        if razred in self.PRESKOCI or isinstance(w, (W.QScrollBar, W.QMenu)):
+            return None
+        omogoceno = w.isEnabled()
+        e = None
+        if "TaskHeader" in razred:
+            naslov = " ".join(_navadno(b.text()) for b in w.findChildren(W.QToolButton) if b.text())
+            return {"tip": "naslov", "besedilo": naslov} if naslov else None
+        if razred == "QSint::ActionLabel":
+            return {"tip": "naslov", "besedilo": _navadno(w.text())} if w.text() else None
+        if isinstance(w, W.QLabel):
+            t = _navadno(w.text())
+            return {"tip": "oznaka", "besedilo": t, "omogoceno": omogoceno} if t else None
+        if isinstance(w, W.QAbstractSpinBox):
+            e = {"tip": "vnos", "id": self._id(w), "vrednost": w.text(), "stevilo": True,
+                 "samoBranje": w.isReadOnly()}
+        elif isinstance(w, W.QLineEdit):
+            e = {"tip": "vnos", "id": self._id(w), "vrednost": w.text(), "samoBranje": w.isReadOnly(),
+                 "geslo": w.echoMode() != W.QLineEdit.EchoMode.Normal, "namig": w.placeholderText()}
+        elif isinstance(w, W.QComboBox):
+            e = {"tip": "izbira", "id": self._id(w), "moznosti": [w.itemText(k) for k in range(w.count())],
+                 "indeks": w.currentIndex(), "urejljivo": w.isEditable(), "vrednost": w.currentText()}
+        elif isinstance(w, (W.QCheckBox, W.QRadioButton)):
+            e = {"tip": "kljukica", "id": self._id(w), "besedilo": _navadno(w.text()), "izbrano": w.isChecked(),
+                 "radio": isinstance(w, W.QRadioButton)}
+        elif isinstance(w, W.QAbstractButton):
+            besedilo = _navadno(w.text())
+            ikona = ""
+            if not besedilo:
+                try:
+                    ikona = _ikona_uri(w.icon(), "gumb:%d" % w.icon().cacheKey())
+                except Exception:  # noqa: BLE001
+                    ikona = ""
+            if not besedilo and not ikona:
+                return None
+            e = {"tip": "gumb", "id": self._id(w), "besedilo": besedilo, "ikona": ikona,
+                 "namig": _navadno(w.toolTip()), "preklopni": w.isCheckable(), "izbrano": w.isChecked(),
+                 "privzet": bool(isinstance(w, W.QPushButton) and w.isDefault())}
+        elif isinstance(w, W.QAbstractSlider) and not isinstance(w, W.QScrollBar):
+            e = {"tip": "drsnik", "id": self._id(w), "min": w.minimum(), "max": w.maximum(), "vrednost": w.value()}
+        elif isinstance(w, W.QProgressBar):
+            e = {"tip": "napredek", "min": w.minimum(), "max": w.maximum(), "vrednost": w.value()}
+        elif isinstance(w, (W.QTextEdit, W.QPlainTextEdit)):
+            e = {"tip": "besedilo", "id": self._id(w), "vrednost": w.toPlainText(), "samoBranje": w.isReadOnly()}
+        elif isinstance(w, W.QAbstractItemView):
+            e = self._seznam(w)
+        elif isinstance(w, W.QTabWidget):
+            tabs = {"tip": "zavihki", "id": self._id(w), "zavihki": [_navadno(w.tabText(k)) for k in range(w.count())],
+                    "indeks": w.currentIndex(), "omogoceno": omogoceno}
+            stran = w.currentWidget()
+            vsebina = self.json_vrstic(self.vrstice_gradnika(stran)) if stran is not None else []
+            return {"tip": "skupina", "naslov": "", "vrstice": [[tabs]] + vsebina}
+        elif isinstance(w, W.QScrollArea):
+            notranji = w.widget()
+            return self.gradnik(notranji) if notranji is not None else None
+        elif isinstance(w, W.QGroupBox):
+            vrstice = self.json_vrstic(self.vrstice_gradnika(w))
+            e = {"tip": "skupina", "naslov": _navadno(w.title()), "vrstice": vrstice}
+            if w.isCheckable():
+                e.update({"id": self._id(w), "preklopna": True, "izbrano": w.isChecked()})
+        else:
+            vrstice = self.json_vrstic(self.vrstice_gradnika(w))
+            if not vrstice:
+                return None
+            e = {"tip": "skupina", "naslov": "", "vrstice": vrstice}
+        if e is not None:
+            e["omogoceno"] = omogoceno
+            if "namig" not in e and w.toolTip():
+                e["namig"] = _navadno(w.toolTip())
+        return e
+
+    def _seznam(self, w):
+        from PySide6 import QtCore
+        model = w.model()
+        if model is None:
+            return None
+        izbrani = set()
+        try:
+            for ix in w.selectionModel().selectedIndexes():
+                izbrani.add((ix.row(), ix.parent().row(), ix.parent().column()))
+        except Exception:  # noqa: BLE001
+            pass
+        vrstice, indeksi = [], []
+        stolpcev = min(model.columnCount(), 4)
+
+        def obisci(stars, globina):
+            for r in range(model.rowCount(stars)):
+                if len(vrstice) >= 300:
+                    return
+                ix = model.index(r, 0, stars)
+                deli = []
+                for c in range(max(stolpcev, 1)):
+                    d = model.data(model.index(r, c, stars), QtCore.Qt.ItemDataRole.DisplayRole)
+                    if d not in (None, ""):
+                        deli.append(str(d))
+                vrstice.append({"besedilo": " · ".join(deli), "globina": globina,
+                                "izbrano": (r, stars.row(), stars.column()) in izbrani})
+                indeksi.append(QtCore.QPersistentModelIndex(ix))
+                if isinstance(w, self.W.QTreeView) and w.isExpanded(ix):
+                    obisci(ix, globina + 1)
+
+        obisci(QtCore.QModelIndex(), 0)
+        return {"tip": "seznam", "id": self._id(w, indeksi), "vrstice": vrstice}
+
+
+def _datotecni_obrazec(w):
+    """Posebni obrazec za QFileDialog: mapa, vsebina mape, filter, ime datoteke."""
+    import fnmatch
+    import re
+    from PySide6 import QtCore, QtWidgets
+    mapa = w.directory().absolutePath()
+    filtri = list(w.nameFilters())
+    filter_ = w.selectedNameFilter()
+    vzorci = []
+    for skupina in re.findall(r"\(([^)]*)\)", filter_ or ""):
+        vzorci.extend(v.lower() for v in skupina.split())
+    if not vzorci or "*" in vzorci or "*.*" in vzorci:
+        vzorci = []
+    vnosi = []
+    try:
+        with os.scandir(mapa) as it:
+            for d in it:
+                if d.name.startswith("."):
+                    continue
+                try:
+                    je_mapa = d.is_dir()
+                except OSError:
+                    continue
+                if not je_mapa and vzorci and not any(fnmatch.fnmatch(d.name.lower(), v) for v in vzorci):
+                    continue
+                vnosi.append({"ime": d.name, "mapa": je_mapa})
+    except OSError:
+        pass
+    vnosi.sort(key=lambda v: (not v["mapa"], v["ime"].lower()))
+    ime = ""
+    vnos = w.findChild(QtWidgets.QLineEdit, "fileNameEdit")
+    if vnos is not None:
+        ime = vnos.text()
+    return {
+        "vrsta": "datoteka", "naslov": w.windowTitle() or "Datoteka", "mapa": mapa,
+        "vnosi": vnosi[:800], "filtri": filtri, "filter": filter_, "ime": ime,
+        "shrani": w.acceptMode() == QtWidgets.QFileDialog.AcceptMode.AcceptSave,
+        "samoMape": w.fileMode() == QtWidgets.QFileDialog.FileMode.Directory,
+        "pogoni": [QtCore.QDir.toNativeSeparators(d.absolutePath()) for d in QtCore.QDir.drives()],
+        "domov": QtCore.QDir.homePath(),
+    }
+
+
+def _zajemi_obrazec(stanje):
+    """Poišče okno, ki čaka na uporabnika, in vrne (json, mapa id -> gradnik) ali (None, {})."""
+    from PySide6 import QtWidgets
+    koren = QtWidgets.QApplication.activeModalWidget()
+    vrsta = "pogovor"
+    if koren is None:
+        for w in reversed(stanje.skrita_okna):
+            if _veljaven(w) and w.isVisible():
+                koren = w
+                break
+    if koren is None:
+        try:
+            opravilo = bool(Gui.Control.activeDialog())
+        except Exception:  # noqa: BLE001
+            opravilo = False
+        if opravilo:
+            koren = _task_view()
+            vrsta = "opravilo"
+    if koren is None:
+        return None, {}
+    kljuc = "%s:%x" % (_razred(koren), id(koren))
+    if isinstance(koren, QtWidgets.QFileDialog):
+        obr = _datotecni_obrazec(koren)
+        obr["kljuc"] = kljuc
+        return obr, {0: (koren, None)}
+    zajem = Zajem(koren)
+    vrstice = zajem.json_vrstic(zajem.vrstice_gradnika(koren))
+    naslov = koren.windowTitle() if vrsta == "pogovor" else ""
+    if vrsta == "opravilo":
+        try:
+            vp = Gui.ActiveDocument.getInEdit() if Gui.ActiveDocument else None
+            if vp is not None:
+                naslov = vp.Object.Label
+        except Exception:  # noqa: BLE001
+            pass
+    return {"vrsta": vrsta, "kljuc": kljuc, "naslov": naslov or "FreeCAD", "vrstice": vrstice}, zajem.mapa
+
+
+def _v_vrsto(w, metoda):
+    """Pokliče režo gradnika prek Qt-jeve vrste dogodkov (npr. klik, ki odpre modalno okno,
+    ne sme teči s Pythonom na skladu: drugače strežniške niti obstanejo)."""
+    from PySide6 import QtCore
+    QtCore.QMetaObject.invokeMethod(w, metoda, QtCore.Qt.ConnectionType.QueuedConnection)
+
+
+def _obrazec_dejanje(mapa, podatki):
+    """Vpiše spremembo iz brskalnika v gradnik Qt."""
+    from PySide6 import QtCore, QtWidgets as W
+    dejanje = podatki.get("dejanje", "")
+    vrednost = podatki.get("vrednost")
+    par = mapa.get(int(podatki.get("id", -1) or 0)) if dejanje not in ("mapa", "datoteka", "filter", "preklici") \
+        else mapa.get(0)
+    if par is None:
+        _log("obrazec: gradnik %s ne obstaja več" % podatki.get("id"))
+        return
+    w, dodatno = par
+    if not _veljaven(w):
+        return
+    if isinstance(w, W.QFileDialog):
+        if dejanje == "mapa":
+            w.setDirectory(str(vrednost))
+        elif dejanje == "filter":
+            w.selectNameFilter(str(vrednost))
+        elif dejanje == "datoteka":
+            w.selectFile(str(vrednost))
+            _v_vrsto(w, "accept")
+        elif dejanje == "preklici":
+            _v_vrsto(w, "reject")
+        return
+    if dejanje == "vnos":
+        besedilo = "" if vrednost is None else str(vrednost)
+        if isinstance(w, W.QDoubleSpinBox):
+            try:
+                w.setValue(float(besedilo.replace(",", ".").split()[0]))
+            except (ValueError, IndexError):
+                pass
+        elif isinstance(w, W.QSpinBox):
+            try:
+                w.setValue(int(float(besedilo.replace(",", ".").split()[0])))
+            except (ValueError, IndexError):
+                pass
+        elif isinstance(w, W.QAbstractSpinBox):
+            # Gui::QuantitySpinBox ipd.: besedilo z enoto ali izrazom gre skozi njihov razčlenjevalnik.
+            vnos = w.findChild(W.QLineEdit)
+            if vnos is not None:
+                vnos.setText(besedilo)
+            w.interpretText()
+        elif isinstance(w, W.QLineEdit):
+            w.setText(besedilo)
+        try:
+            w.editingFinished.emit()
+        except Exception:  # noqa: BLE001
+            pass
+    elif dejanje == "izbira" and isinstance(w, W.QComboBox):
+        if isinstance(vrednost, int) and 0 <= vrednost < w.count():
+            w.setCurrentIndex(vrednost)
+            try:
+                w.activated.emit(vrednost)
+            except Exception:  # noqa: BLE001
+                pass
+        elif w.isEditable():
+            w.setEditText(str(vrednost))
+    elif dejanje == "kljukica":
+        if isinstance(w, W.QGroupBox):
+            w.setChecked(bool(vrednost))
+        elif w.isChecked() != bool(vrednost):
+            _v_vrsto(w, "click")
+    elif dejanje == "klik":
+        _v_vrsto(w, "click")
+    elif dejanje == "drsnik":
+        w.setValue(int(vrednost))
+    elif dejanje == "besedilo":
+        w.setPlainText(str(vrednost or ""))
+    elif dejanje == "zavihek":
+        w.setCurrentIndex(int(vrednost))
+    elif dejanje in ("vrstica", "dvoklik") and dodatno is not None:
+        k = int(vrednost)
+        if 0 <= k < len(dodatno) and dodatno[k].isValid():
+            ix = w.model().index(dodatno[k].row(), dodatno[k].column(), dodatno[k].parent())
+            w.setCurrentIndex(ix)
+            sm = w.selectionModel()
+            if sm is not None:
+                sm.select(ix, QtCore.QItemSelectionModel.SelectionFlag.ClearAndSelect
+                          | QtCore.QItemSelectionModel.SelectionFlag.Rows)
+            try:
+                w.clicked.emit(ix)
+                if dejanje == "dvoklik":
+                    w.doubleClicked.emit(ix)
+                    w.activated.emit(ix)
+            except Exception:  # noqa: BLE001
+                pass
+
+
+# ---------------------------------------------------------------------------
 # Skica v brskalniku: geometrijo in omejitve urejamo prek Python API-ja skice, reševalnik
 # je FreeCAD-ov; FreeCAD-ov lastni način urejanja skice (okno) pri tem ni potreben.
 
@@ -757,6 +1248,14 @@ class Stanje:
         self.samodejno_prikazano = False   # okno smo pokazali sami zaradi vnosa; po koncu ga spet skrijemo
         self.okno_na_zahtevo = False       # uporabnik je z gumbom zahteval vidno okno
         self.zapiranje_okna = False        # uporabnik je zaprl okno (X); ko ni več vprašanj, program konča
+        self.skrita_okna = []              # okna (pogovori), ki smo jih ob prikazu naredili nevidna
+        self.obrazec = None                # JSON obrazca, ki je trenutno v brskalniku (ali None)
+        self.obrazec_mapa = {}             # id -> (gradnik, dodatno) zadnjega zajema
+        self.zadnji_obrazec = 0.0
+
+    def skrivaj_okna(self):
+        """Ali naj nova okna FreeCAD-a ostanejo nevidna (vse se dela v brskalniku)."""
+        return OKNO_SKRITO and not self.okno_na_zahtevo and not self.zapiranje_okna
 
     # -- niti strežnika --
     def nov_odjemalec(self):
@@ -791,21 +1290,33 @@ class Stanje:
             "odjemalcev": len(self.odjemalci),
             "ukazov": len(self.imena_ukazov),
             "napaka": self.napaka,
+            "obrazec": self.obrazec is not None,
         }
 
     # -- glavna nit --
     def obdelaj(self):
         while True:
             try:
-                ukaz, podatki = self.vrsta.get_nowait()
+                ukaz, podatki, odgovor = self.vrsta.get_nowait()
             except queue.Empty:
                 break
             try:
-                self._izvedi(ukaz, podatki)
+                self._izvedi(ukaz, podatki, odgovor)
             except Exception:  # noqa: BLE001
                 self.napaka = traceback.format_exc()
                 _log("napaka pri ukazu %s: %s" % (ukaz, self.napaka))
+                if odgovor is not None:
+                    odgovor["napaka"] = self.napaka
+            if odgovor is not None:
+                odgovor["konec"].set()
         zdaj = time.time()
+        if IMA_OKNO and zdaj - self.zadnji_obrazec > 0.25:
+            self.zadnji_obrazec = zdaj
+            try:
+                self.preveri_obrazec()
+            except Exception:  # noqa: BLE001
+                self.napaka = traceback.format_exc()
+                _log("obrazec: %s" % self.napaka)
         if self.umazano and zdaj - self.zadnja_gradnja > 0.3:
             self.zgradi()
         if IMA_OKNO and zdaj - self.zadnji_pregled > 0.5:
@@ -875,17 +1386,24 @@ class Stanje:
             opravilo = False
         from PySide6 import QtWidgets
         mw = Gui.getMainWindow()
-        potrebuje_vnos = bool(pogovor) or opravilo
-        if OKNO_SKRITO and not self.zapiranje_okna:
-            # Skrito okno pokažemo, ko FreeCAD potrebuje vnos (izbira ravnine, nastavitve, urejanje skice),
-            # in ga po koncu spet skrijemo. Če ga FreeCAD sam pokaže (npr. ob novem dokumentu), ga skrijemo,
-            # razen če ga je uporabnik zahteval z gumbom.
-            if potrebuje_vnos and not mw.isVisible():
-                _pokazi_okno()
-                self.samodejno_prikazano = True
-            elif not potrebuje_vnos and mw.isVisible() and not self.okno_na_zahtevo:
+        if self.skrivaj_okna():
+            # Okno FreeCAD-a ostane skrito: pogovori in opravila gredo v brskalnik kot obrazec
+            # (preveri_obrazec). Če ga FreeCAD pokaže sam (npr. ob novem dokumentu), ga skrijemo.
+            if mw.isVisible():
                 _skrij_okno()
-                self.samodejno_prikazano = False
+            # Urejanje skice, ki ga je začel FreeCAD (ne brskalnik), prestavimo v brskalnik.
+            if urejanje.startswith("Sketcher::") and not pogovor:
+                try:
+                    ime = Gui.ActiveDocument.getInEdit().Object.Name
+                    Gui.ActiveDocument.resetEdit()
+                    self.skica = ime
+                    self.umazano = True
+                    self.oddaj_skico()
+                    _log("urejanje skice %s preneseno v brskalnik" % ime)
+                    urejanje = ""
+                    opravilo = bool(Gui.Control.activeDialog())
+                except Exception:  # noqa: BLE001
+                    _log("skice ni bilo mogoče prenesti v brskalnik: %s" % traceback.format_exc())
         if self.zapiranje_okna and not pogovor:
             if mw.isVisible():
                 self.zapiranje_okna = False  # zapiranje preklicano (npr. pri vprašanju o shranjevanju)
@@ -902,6 +1420,14 @@ class Stanje:
         if okolje != self.okolje:
             self.okolje = okolje
             self.oddaj("okolje", okolje)
+
+    def preveri_obrazec(self):
+        """Okno, ki čaka na vnos, pošlje brskalniku kot obrazec (le ob spremembi)."""
+        obr, mapa = _zajemi_obrazec(self)
+        self.obrazec_mapa = mapa
+        if obr != self.obrazec:
+            self.obrazec = obr
+            self.oddaj("obrazec", obr)
 
     def skica_objekt(self):
         doc = App.ActiveDocument
@@ -928,7 +1454,7 @@ class Stanje:
         self.izbira = izbira
         self.oddaj("izbira", izbira)
 
-    def _izvedi(self, ukaz, podatki):
+    def _izvedi(self, ukaz, podatki, odgovor=None):
         if ukaz == "izbira":
             if not IMA_OKNO:
                 return
@@ -954,6 +1480,10 @@ class Stanje:
                 self.okno_na_zahtevo = bool(podatki.get("prikazi", True))
                 if self.okno_na_zahtevo:
                     _pokazi_okno()
+                    for w in self.skrita_okna:
+                        if _veljaven(w) and w.isVisible():
+                            _vidno_okno(w)
+                    self.skrita_okna = []
                 else:
                     _skrij_okno()
                 self.zadnji_pregled = 0.0
@@ -1045,9 +1575,24 @@ class Stanje:
                 novi = _skica_izvedi(sk, podatki)
                 self.umazano = True
                 self.oddaj_skico(novi)
+        elif ukaz == "obrazec":
+            if IMA_OKNO and self.obrazec is not None and podatki.get("kljuc") == self.obrazec.get("kljuc"):
+                _obrazec_dejanje(self.obrazec_mapa, podatki)
+                self.zadnji_obrazec = 0.0  # novo stanje obrazca takoj nazaj v brskalnik
         elif ukaz == "python":
-            exec(podatki.get("koda", ""), {"App": App, "FreeCAD": App, "Gui": Gui, "FreeCADGui": Gui})
-            self.umazano = True
+            # Koda iz brskalnika ali iz izvedi.py; izpis in spremenljivka "rezultat" gresta v odgovor.
+            import contextlib
+            import io
+            izpis = io.StringIO()
+            okolje = {"App": App, "FreeCAD": App, "Gui": Gui, "FreeCADGui": Gui, "STANJE": self}
+            try:
+                with contextlib.redirect_stdout(izpis), contextlib.redirect_stderr(izpis):
+                    exec(podatki.get("koda", ""), okolje)
+            finally:
+                self.umazano = True
+                if odgovor is not None:
+                    odgovor["izpis"] = izpis.getvalue()
+                    odgovor["rezultat"] = okolje.get("rezultat")
 
 
 STANJE = Stanje()
@@ -1155,9 +1700,17 @@ class Zahteva(http.server.BaseHTTPRequestHandler):
             return
         pot = self.path.split("?")[0]
         poti = {"/select": "izbira", "/ukaz": "ukaz", "/okolje": "okolje", "/okno": "okno",
-                "/izhod": "izhod", "/skica": "skica", "/znacilnost": "znacilnost", "/python": "python"}
-        if pot in poti:
-            STANJE.vrsta.put((poti[pot], podatki))
+                "/izhod": "izhod", "/skica": "skica", "/znacilnost": "znacilnost", "/obrazec": "obrazec"}
+        if pot == "/python":
+            # Počaka na izvedbo na glavni niti in vrne izpis, napako in spremenljivko "rezultat".
+            odgovor = {"konec": threading.Event(), "izpis": "", "napaka": "", "rezultat": None}
+            STANJE.vrsta.put(("python", podatki, odgovor))
+            koncano = odgovor["konec"].wait(float(podatki.get("cakaj", 120) or 120))
+            telo = {"ok": koncano and not odgovor["napaka"], "koncano": koncano, "izpis": odgovor["izpis"],
+                    "napaka": odgovor["napaka"], "rezultat": odgovor["rezultat"]}
+            self._odgovor(json.dumps(telo, ensure_ascii=False, default=str).encode("utf-8"))
+        elif pot in poti:
+            STANJE.vrsta.put((poti[pot], podatki, None))
             self._odgovor(b'{"ok":true}')
         else:
             self._odgovor(b"ni", "text/plain", 404)
@@ -1181,7 +1734,8 @@ class Zahteva(http.server.BaseHTTPRequestHandler):
             self._poslji_sse("izbira", STANJE.izbira)
             self._poslji_sse("aktivni", dict(STANJE.aktivni))
             self._poslji_sse("okolje", dict(STANJE.okolje))
-            STANJE.vrsta.put(("skica-posnetek", {}))
+            self._poslji_sse("obrazec", STANJE.obrazec)
+            STANJE.vrsta.put(("skica-posnetek", {}, None))
             while True:
                 try:
                     dogodek, podatki = q.get(timeout=15)
@@ -1235,6 +1789,49 @@ def _vzorcni_dokument():
 # ---------------------------------------------------------------------------
 # Zagon
 
+# Povezava za druga orodja (izvedi.py, druge seje): vrata in žeton tega primerka.
+DATOTEKA_POVEZAVE = os.path.join(os.environ.get("LOCALAPPDATA") or os.path.expanduser("~"),
+                                 "FreeCAD-splet", "povezava.json")
+
+
+def _zapisi_povezavo():
+    try:
+        os.makedirs(os.path.dirname(DATOTEKA_POVEZAVE), exist_ok=True)
+        with open(DATOTEKA_POVEZAVE, "w", encoding="utf-8") as f:
+            json.dump({"vrata": VRATA, "zeton": ZETON, "pid": os.getpid(), "zacetek": time.time()}, f)
+    except OSError as e:
+        _log("povezave ni bilo mogoče zapisati: %s" % e)
+
+
+def _pobrisi_povezavo():
+    try:
+        with open(DATOTEKA_POVEZAVE, encoding="utf-8") as f:
+            moja = json.load(f).get("pid") == os.getpid()
+        if moja:  # brisati šele po zaprtju datoteke (Windows)
+            os.remove(DATOTEKA_POVEZAVE)
+    except (OSError, ValueError):
+        pass
+
+
+def _qt_izbira_datotek(aplikacija):
+    """FreeCAD naj za izbiro datotek uporablja Qt-jevo okno namesto okna Windows: le tega je mogoče
+    prebrati in upravljati iz brskalnika. Nastavitev je skupna z nameščenim FreeCAD-om, zato jo ob
+    izhodu vrnemo, kot je bila."""
+    skupina = App.ParamGet("User parameter:BaseApp/Preferences/Dialog")
+    imela = "DontUseNativeDialog" in skupina.GetBools()
+    prej = skupina.GetBool("DontUseNativeDialog", False)
+    skupina.SetBool("DontUseNativeDialog", True)
+
+    def vrni():
+        if imela:
+            skupina.SetBool("DontUseNativeDialog", prej)
+        else:
+            skupina.RemBool("DontUseNativeDialog")
+        _pobrisi_povezavo()
+
+    aplikacija.aboutToQuit.connect(vrni)
+
+
 def zazeni():
     global _FILTER
     if IMA_OKNO:
@@ -1250,13 +1847,34 @@ def zazeni():
                     STANJE.zadnji_pregled = 0.0
                 return False
 
+        class NevidnaOkna(QtCore.QObject):
+            """Vsako novo okno FreeCAD-a (pogovor, sporočilo, izbira datoteke) ostane nevidno;
+            njegovo vsebino brskalnik dobi kot obrazec (preveri_obrazec)."""
+            def eventFilter(self, obj, dogodek):
+                if dogodek.type() == QtCore.QEvent.Type.Show and STANJE.skrivaj_okna():
+                    try:
+                        if isinstance(obj, QtWidgets.QWidget) and obj.isWindow() and obj is not mw \
+                                and obj.windowType() in (QtCore.Qt.WindowType.Window, QtCore.Qt.WindowType.Dialog,
+                                                         QtCore.Qt.WindowType.Tool, QtCore.Qt.WindowType.Sheet):
+                            _nevidno_okno(obj)
+                            STANJE.skrita_okna = [w for w in STANJE.skrita_okna if _veljaven(w)] + [obj]
+                            STANJE.zadnji_obrazec = 0.0
+                    except Exception:  # noqa: BLE001
+                        pass
+                return False
+
         # Skrito glavno okno ne sme pomeniti, da se program konča ob zaprtju zadnjega pogovornega okna.
-        QtWidgets.QApplication.instance().setQuitOnLastWindowClosed(False)
+        aplikacija = QtWidgets.QApplication.instance()
+        aplikacija.setQuitOnLastWindowClosed(False)
         _FILTER = ZapiranjeOkna()
         mw.installEventFilter(_FILTER)
         if OKNO_SKRITO:
             _skrij_okno()
-            _log("okno FreeCAD-a je skrito; pokaže se, ko potrebuje vnos, ali z gumbom v brskalniku")
+            global _FILTER_OKEN
+            _FILTER_OKEN = NevidnaOkna()
+            aplikacija.installEventFilter(_FILTER_OKEN)
+            _qt_izbira_datotek(aplikacija)
+            _log("okno FreeCAD-a je skrito; pogovori in opravila so obrazci v brskalniku")
 
     if App.ActiveDocument is None:
         _vzorcni_dokument()
@@ -1281,6 +1899,7 @@ def zazeni():
     nit = threading.Thread(target=streznik.serve_forever, name="splet-streznik", daemon=True)
     nit.start()
     _log("strežnik teče na %s (okno: %s)" % (naslov, "da" if IMA_OKNO else "ne"))
+    _zapisi_povezavo()
 
     STANJE.zgradi()
     if IMA_OKNO:
@@ -1312,4 +1931,5 @@ def zazeni():
 
 _CASOVNIK = None
 _FILTER = None
+_FILTER_OKEN = None
 zazeni()

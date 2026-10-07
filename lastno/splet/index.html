@@ -100,6 +100,49 @@
   #dialogSkica .gumbi { display: flex; justify-content: flex-end; gap: 8px; margin-top: 14px; }
   #dialogSkica .gumbi button { border: 1px solid var(--crta); background: #fff; border-radius: 4px; padding: 5px 12px; cursor: pointer; }
   #dialogSkica .gumbi button.glavni { background: var(--poudarek); color: #fff; border-color: var(--poudarek); }
+  /* Obrazec: okno FreeCAD-a (pogovor, opravilo, izbira datoteke), izrisano v brskalniku. Ne pokriva pogleda,
+     da se med odprtim obrazcem lahko izbirajo robovi in ploskve na modelu. */
+  #obrazec { position: fixed; top: 130px; right: 16px; bottom: 16px; z-index: 35; pointer-events: none; display: flex; align-items: flex-start; }
+  #obrazec .okno { pointer-events: auto; background: #fff; border-radius: 8px; box-shadow: 0 8px 30px rgba(0,0,0,.28);
+                   width: 360px; max-height: 100%; display: flex; flex-direction: column; overflow: hidden; }
+  #obrazec .okno.siroko { width: 520px; }
+  #obrazec header { padding: 10px 14px; background: #f3f6fa; border-bottom: 1px solid var(--crta); font-weight: 600; font-size: 14px;
+                    display: flex; gap: 8px; align-items: center; }
+  #obrazec header small { font-weight: 400; color: #667; margin-left: auto; font-size: 11px; }
+  #obrazecVsebina { padding: 10px 14px; overflow-y: auto; display: flex; flex-direction: column; gap: 6px; }
+  #obrazec .vrsta { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+  #obrazec .vrsta > .oznaka:first-child { flex: 0 1 auto; min-width: 90px; }
+  #obrazec .vrsta > input, #obrazec .vrsta > select { flex: 1 1 110px; min-width: 0; }
+  #obrazec .stolpec { display: flex; flex-direction: column; gap: 6px; flex: 1 1 auto; }
+  #obrazec .oznaka { color: #333; white-space: pre-wrap; }
+  #obrazec .oznaka.onemogoceno, #obrazec label.onemogoceno { color: #999; }
+  #obrazec .naslov { font-weight: 600; margin-top: 6px; padding-bottom: 3px; border-bottom: 1px solid #e4e8ee; color: #0d47a1; }
+  #obrazec fieldset { border: 1px solid #dde2e9; border-radius: 6px; padding: 6px 10px 8px; margin: 2px 0; display: flex; flex-direction: column; gap: 6px; }
+  #obrazec legend { padding: 0 4px; font-weight: 600; }
+  #obrazec input[type=text], #obrazec select, #obrazec textarea { font: inherit; border: 1px solid #c3cad4; border-radius: 4px; padding: 3px 6px; background: #fff; }
+  #obrazec input[type=text]:focus, #obrazec select:focus, #obrazec textarea:focus { outline: 2px solid #9cc7f2; border-color: var(--poudarek); }
+  #obrazec input[readonly] { background: #f4f5f7; }
+  #obrazec textarea { width: 100%; box-sizing: border-box; min-height: 60px; }
+  #obrazec label { display: inline-flex; gap: 5px; align-items: center; }
+  #obrazec button { border: 1px solid var(--crta); background: #fff; border-radius: 4px; padding: 4px 10px; cursor: pointer; display: inline-flex; gap: 5px; align-items: center; }
+  #obrazec button:hover:not([disabled]) { background: #eef2f7; }
+  #obrazec button[disabled] { opacity: .45; cursor: default; }
+  #obrazec button.privzet { background: var(--poudarek); color: #fff; border-color: var(--poudarek); }
+  #obrazec button.privzet:hover:not([disabled]) { background: #1669b8; }
+  #obrazec button.vklopljen { background: #dbe8f8; border-color: var(--poudarek); }
+  #obrazec button img { width: 18px; height: 18px; }
+  #obrazec .seznam { border: 1px solid #c3cad4; border-radius: 4px; max-height: 180px; overflow-y: auto; flex: 1 1 100%; }
+  #obrazec .seznam div { padding: 2px 6px; cursor: default; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  #obrazec .seznam div:hover { background: #eef2f7; }
+  #obrazec .seznam div.izbrano { background: #dbe8f8; }
+  #obrazec .seznam.datoteke { max-height: none; height: 300px; }
+  #obrazec .zavihki { display: flex; gap: 2px; border-bottom: 1px solid var(--crta); flex: 1 1 100%; }
+  #obrazec .zavihki button { border-radius: 4px 4px 0 0; border-bottom: none; }
+  #obrazec .zavihki button.aktiven { background: #dbe8f8; font-weight: 600; }
+  #obrazec progress { flex: 1 1 auto; }
+  #obrazec .pot { font-family: Consolas, monospace; font-size: 12px; word-break: break-all; color: #333; }
+  #obrazec .noga { padding: 6px 14px 10px; display: flex; justify-content: flex-start; }
+  #obrazec .noga button { font-size: 11px; color: #555; border: none; background: none; padding: 2px 0; text-decoration: underline; }
   .skrit { display: none !important; }
   #napaka { position: fixed; right: 12px; bottom: 12px; max-width: 40vw; background: #fff3f3; color: #900; padding: 8px 12px;
             border-radius: 6px; font-size: 12px; display: none; white-space: pre-wrap; z-index: 40; }
@@ -155,6 +198,13 @@
     <label>Odmik od ravnine (mm) <input type="number" id="skicaOdmik" value="0" step="0.1"></label>
     <label><input type="checkbox" id="skicaTelo"> V telesu (Part Design); brez kljukice nastane samostojna skica</label>
     <div class="gumbi"><button type="button" id="skicaPreklici">Prekliči</button><button type="button" class="glavni" id="skicaOk">V redu</button></div>
+  </div>
+</div>
+<div id="obrazec" class="skrit">
+  <div class="okno">
+    <header><span id="obrazecNaslov"></span><small id="obrazecVrsta"></small></header>
+    <div id="obrazecVsebina"></div>
+    <div class="noga"><button type="button" id="obrazecFreecad" title="Pokaže to okno v namiznem FreeCAD-u, če ga tu ni mogoče izpolniti">Odpri v FreeCAD-u</button></div>
   </div>
 </div>
 <div id="opis" class="skrit"></div>
@@ -344,26 +394,205 @@ function uporabiOkolje(okolje) {
   const cilj = urejaSkico ? 'SketcherWorkbench' : okolje.delovnaMiza;
   for (const z of zavihki.children) z.classList.toggle('urejanje', urejaSkico && z.dataset.ime === 'SketcherWorkbench');
   if (stanje.ukazi && cilj && stanje.ukazi.delovnaOkolja.some(o => o.ime === cilj) && cilj !== stanje.zavihek) izberiZavihek(cilj, false);
-  // Pasica: FreeCAD potrebuje vnos v svojem oknu (modalno okno, opravilo, urejanje skice v FreeCAD-u).
-  const pasica = $('pasica'), besedilo = $('pasicaBesedilo');
-  const kje = okolje.oknoVidno ? 'FreeCAD je pokazal svoje okno, ker potrebuje vaš vnos' : 'FreeCAD potrebuje vaš vnos v svojem oknu';
-  if (okolje.pogovor) {
-    besedilo.textContent = kje + ': »' + okolje.pogovor + '«. Ko končate, se okno spet skrije.';
-    pasica.classList.remove('skrit');
-  } else if (urejaSkico) {
-    besedilo.textContent = 'Skica se ureja v oknu FreeCAD-a. Ko jo tam zaprete, se okno spet skrije.';
-    pasica.classList.remove('skrit');
-  } else if (okolje.opravilo) {
-    const kaj = okolje.urejanje ? ' (' + okolje.urejanje.split('::').pop() + ')' : '';
-    besedilo.textContent = kje + kaj + ': tam vnesite nastavitve in potrdite ali prekličite. Potem se okno spet skrije.';
+  posodobiPasico();
+  $('gumbOkno').textContent = okolje.oknoVidno ? 'Skrij FreeCAD' : 'Pokaži FreeCAD';
+  osveziHud();
+}
+// Pasica le še, ko FreeCAD čaka na vnos, ki ga brskalnik ne prikaže (obrazca ni), ali ko je okno odprto na zahtevo.
+function posodobiPasico() {
+  const okolje = stanje.okolje, pasica = $('pasica'), besedilo = $('pasicaBesedilo');
+  const caka = okolje.pogovor || okolje.opravilo;
+  if (caka && !stanje.obrazec) {
+    besedilo.textContent = 'FreeCAD čaka na vnos' + (okolje.pogovor ? ' (»' + okolje.pogovor + '«)' : '') + ', ki ga brskalnik še ne zna prikazati.';
     pasica.classList.remove('skrit');
   } else {
     pasica.classList.add('skrit');
   }
-  $('gumbOkno').textContent = okolje.oknoVidno ? 'Skrij FreeCAD' : 'Pokaži FreeCAD';
-  osveziHud();
 }
 $('pasicaGumb').addEventListener('click', () => objavi('/okno', { prikazi: true }).catch(pokaziNapako));
+$('obrazecFreecad').addEventListener('click', () => objavi('/okno', { prikazi: true }).catch(pokaziNapako));
+
+// --- obrazci: okna FreeCAD-a v brskalniku ---------------------------------------
+function el(oznaka, razred, besedilo) {
+  const e = document.createElement(oznaka);
+  if (razred) e.className = razred;
+  if (besedilo != null) e.textContent = besedilo;
+  return e;
+}
+async function obrazecDejanje(id, dejanje, vrednost) {
+  if (!stanje.obrazec) return;
+  try { await objavi('/obrazec', { kljuc: stanje.obrazec.kljuc, id, dejanje, vrednost }); } catch (e) { pokaziNapako(e); }
+}
+function elementObrazca(e) {
+  const onem = e.omogoceno === false;
+  let x;
+  switch (e.tip) {
+    case 'naslov': return el('div', 'naslov', e.besedilo);
+    case 'oznaka': return el('div', 'oznaka' + (onem ? ' onemogoceno' : ''), e.besedilo);
+    case 'vnos':
+      x = el('input'); x.type = 'text'; x.value = e.vrednost; x.readOnly = !!e.samoBranje; x.disabled = onem;
+      if (e.geslo) x.type = 'password';
+      if (e.namig) x.placeholder = e.namig;
+      x.addEventListener('change', () => obrazecDejanje(e.id, 'vnos', x.value));
+      x.addEventListener('keydown', ev => { if (ev.key === 'Enter') { ev.preventDefault(); x.blur(); } ev.stopPropagation(); });
+      break;
+    case 'izbira':
+      x = el('select'); x.disabled = onem;
+      e.moznosti.forEach((m, i) => { const o = el('option', '', m); o.value = i; x.appendChild(o); });
+      x.value = e.indeks;
+      x.addEventListener('change', () => obrazecDejanje(e.id, 'izbira', parseInt(x.value, 10)));
+      break;
+    case 'kljukica': {
+      x = el('label', onem ? 'onemogoceno' : '');
+      const v = el('input'); v.type = e.radio ? 'radio' : 'checkbox'; v.checked = e.izbrano; v.disabled = onem;
+      v.addEventListener('change', () => obrazecDejanje(e.id, 'kljukica', v.checked));
+      x.append(v, document.createTextNode(e.besedilo));
+      break;
+    }
+    case 'gumb':
+      x = el('button', (e.privzet ? 'privzet' : '') + (e.preklopni && e.izbrano ? ' vklopljen' : '')); x.type = 'button'; x.disabled = onem;
+      if (e.ikona) { const i = el('img'); i.src = e.ikona; x.appendChild(i); }
+      if (e.besedilo) x.appendChild(document.createTextNode(e.besedilo));
+      x.addEventListener('click', () => obrazecDejanje(e.id, 'klik'));
+      break;
+    case 'drsnik':
+      x = el('input'); x.type = 'range'; x.min = e.min; x.max = e.max; x.value = e.vrednost; x.disabled = onem;
+      x.addEventListener('change', () => obrazecDejanje(e.id, 'drsnik', parseInt(x.value, 10)));
+      break;
+    case 'napredek':
+      x = el('progress'); x.max = Math.max(1, e.max - e.min); x.value = e.vrednost - e.min;
+      break;
+    case 'besedilo':
+      x = el('textarea'); x.value = e.vrednost; x.readOnly = !!e.samoBranje; x.disabled = onem;
+      x.addEventListener('change', () => obrazecDejanje(e.id, 'besedilo', x.value));
+      x.addEventListener('keydown', ev => ev.stopPropagation());
+      break;
+    case 'seznam':
+      x = el('div', 'seznam');
+      e.vrstice.forEach((v, i) => {
+        const d = el('div', v.izbrano ? 'izbrano' : '', v.besedilo || ' ');
+        d.style.paddingLeft = (6 + 14 * (v.globina || 0)) + 'px';
+        d.addEventListener('click', () => obrazecDejanje(e.id, 'vrstica', i));
+        d.addEventListener('dblclick', () => obrazecDejanje(e.id, 'dvoklik', i));
+        x.appendChild(d);
+      });
+      break;
+    case 'zavihki':
+      x = el('div', 'zavihki');
+      e.zavihki.forEach((z, i) => {
+        const b = el('button', i === e.indeks ? 'aktiven' : '', z); b.type = 'button';
+        b.addEventListener('click', () => obrazecDejanje(e.id, 'zavihek', i));
+        x.appendChild(b);
+      });
+      break;
+    case 'stolpec':
+      x = el('div', 'stolpec'); dodajVrstice(x, e.vrstice);
+      break;
+    case 'skupina':
+      if (!e.naslov && !e.preklopna) { x = el('div', 'stolpec'); dodajVrstice(x, e.vrstice); break; }
+      x = el('fieldset'); x.disabled = onem;
+      { const l = el('legend');
+        if (e.preklopna) {
+          const v = el('input'); v.type = 'checkbox'; v.checked = e.izbrano;
+          v.addEventListener('change', () => obrazecDejanje(e.id, 'kljukica', v.checked));
+          const lab = el('label'); lab.append(v, document.createTextNode(e.naslov)); l.appendChild(lab);
+        } else l.textContent = e.naslov;
+        x.appendChild(l); }
+      dodajVrstice(x, e.vrstice);
+      break;
+    default: return null;
+  }
+  if (x && e.id != null) x.dataset.id = e.id;
+  if (x && e.namig && e.tip !== 'vnos') x.title = e.namig;
+  return x;
+}
+function dodajVrstice(cilj, vrstice) {
+  for (const vrsta of vrstice) {
+    const elementi = vrsta.map(elementObrazca).filter(Boolean);
+    if (!elementi.length) continue;
+    if (elementi.length === 1) { cilj.appendChild(elementi[0]); continue; }
+    const v = el('div', 'vrsta'); v.append(...elementi); cilj.appendChild(v);
+  }
+}
+function datotecniObrazec(o, vsebina) {
+  const pot = ime => o.mapa.replace(/[\\/]+$/, '') + '/' + ime;
+  const vrh = el('div', 'vrsta');
+  const gor = el('button', '', '↑ Gor'); gor.type = 'button';
+  gor.addEventListener('click', () => obrazecDejanje(0, 'mapa', o.mapa.replace(/[\\/]+$/, '') + '/..'));
+  const domov = el('button', '', 'Domov'); domov.type = 'button';
+  domov.addEventListener('click', () => obrazecDejanje(0, 'mapa', o.domov));
+  vrh.append(gor, domov);
+  if (o.pogoni.length > 1) {
+    const p = el('select'); for (const d of o.pogoni) { const op = el('option', '', d); op.value = d; p.appendChild(op); }
+    p.value = o.pogoni.find(d => o.mapa.toUpperCase().startsWith(d.slice(0, 2).toUpperCase())) || o.pogoni[0];
+    p.addEventListener('change', () => obrazecDejanje(0, 'mapa', p.value));
+    vrh.appendChild(p);
+  }
+  vsebina.appendChild(vrh);
+  vsebina.appendChild(el('div', 'pot', o.mapa));
+  const s = el('div', 'seznam datoteke');
+  for (const v of o.vnosi) {
+    const d = el('div', '', (v.mapa ? '📁 ' : '📄 ') + v.ime);
+    if (v.mapa) d.addEventListener('dblclick', () => obrazecDejanje(0, 'mapa', pot(v.ime)));
+    else {
+      d.addEventListener('click', () => { ime.value = v.ime; for (const c of s.children) c.classList.toggle('izbrano', c === d); });
+      d.addEventListener('dblclick', () => obrazecDejanje(0, 'datoteka', pot(v.ime)));
+    }
+    s.appendChild(d);
+  }
+  if (!o.vnosi.length) s.appendChild(el('div', 'oznaka', '(prazno)'));
+  vsebina.appendChild(s);
+  const ime = el('input'); ime.type = 'text'; ime.value = o.ime; ime.placeholder = o.shrani ? 'Ime datoteke' : 'Datoteka';
+  const potrdi = () => {
+    const v = ime.value.trim();
+    if (o.samoMape) { obrazecDejanje(0, 'datoteka', v ? (/^[a-zA-Z]:|^[\\/]/.test(v) ? v : pot(v)) : o.mapa); return; }
+    if (v) obrazecDejanje(0, 'datoteka', /^[a-zA-Z]:|^[\\/]/.test(v) ? v : pot(v));
+  };
+  ime.addEventListener('keydown', ev => { ev.stopPropagation(); if (ev.key === 'Enter') potrdi(); });
+  const vrstaIme = el('div', 'vrsta'); vrstaIme.append(el('span', 'oznaka', o.samoMape ? 'Mapa:' : 'Ime:'), ime);
+  vsebina.appendChild(vrstaIme);
+  if (o.filtri.length > 1) {
+    const f = el('select'); for (const x of o.filtri) { const op = el('option', '', x); op.value = x; f.appendChild(op); }
+    f.value = o.filter;
+    f.addEventListener('change', () => obrazecDejanje(0, 'filter', f.value));
+    const vf = el('div', 'vrsta'); vf.append(el('span', 'oznaka', 'Vrsta:'), f); vsebina.appendChild(vf);
+  }
+  const gumbi = el('div', 'vrsta'); gumbi.style.justifyContent = 'flex-end';
+  const prekl = el('button', '', 'Prekliči'); prekl.type = 'button'; prekl.addEventListener('click', () => obrazecDejanje(0, 'preklici'));
+  const ok = el('button', 'privzet', o.samoMape ? 'Izberi mapo' : o.shrani ? 'Shrani' : 'Odpri'); ok.type = 'button'; ok.addEventListener('click', potrdi);
+  gumbi.append(prekl, ok);
+  vsebina.appendChild(gumbi);
+}
+function narisiObrazec(o) {
+  const prej = stanje.obrazec;
+  stanje.obrazec = o;
+  posodobiPasico();
+  const okvir = $('obrazec');
+  if (!o) { okvir.classList.add('skrit'); return; }
+  // Polje, v katerega uporabnik pravkar piše, ohrani svojo vrednost in fokus.
+  const vsebina = $('obrazecVsebina');
+  const fokus = document.activeElement && vsebina.contains(document.activeElement) ? document.activeElement : null;
+  const ohrani = fokus && prej && prej.kljuc === o.kljuc && fokus.dataset.id
+    ? { id: fokus.dataset.id, vrednost: fokus.value, zacetek: fokus.selectionStart, konec: fokus.selectionEnd } : null;
+  const drsenje = vsebina.scrollTop;
+  vsebina.replaceChildren();
+  $('obrazecNaslov').textContent = o.naslov;
+  $('obrazecVrsta').textContent = o.vrsta === 'opravilo' ? 'nastavitve' : o.vrsta === 'datoteka' ? '' : 'FreeCAD sprašuje';
+  okvir.querySelector('.okno').classList.toggle('siroko', o.vrsta === 'datoteka');
+  if (o.vrsta === 'datoteka') datotecniObrazec(o, vsebina); else dodajVrstice(vsebina, o.vrstice);
+  okvir.classList.remove('skrit');
+  if (prej && prej.kljuc === o.kljuc) vsebina.scrollTop = drsenje;
+  if (ohrani) {
+    const nov = vsebina.querySelector('[data-id="' + ohrani.id + '"]');
+    if (nov && 'value' in nov && nov.tagName !== 'SELECT') {
+      nov.value = ohrani.vrednost; nov.focus();
+      try { nov.setSelectionRange(ohrani.zacetek, ohrani.konec); } catch (e) { /* ni besedilno polje */ }
+    }
+  } else if (!prej || prej.kljuc !== o.kljuc) {
+    const prvi = vsebina.querySelector('input[type=text]:not([readonly]), button.privzet');
+    if (prvi && o.vrsta !== 'opravilo') prvi.focus();
+  }
+}
 $('gumbOkno').addEventListener('click', () => objavi('/okno', { prikazi: !stanje.okolje.oknoVidno }).catch(pokaziNapako));
 $('gumbIzhod').addEventListener('click', () => {
   const vprasanje = stanje.okolje.spremenjeno
@@ -1044,6 +1273,7 @@ dogodki.addEventListener('model', () => { naloziModel().catch(pokaziNapako); });
 dogodki.addEventListener('izbira', e => { oznaciIzbiro(JSON.parse(e.data)); });
 dogodki.addEventListener('aktivni', e => { uporabiAktivne(JSON.parse(e.data)); });
 dogodki.addEventListener('okolje', e => { uporabiOkolje(JSON.parse(e.data)); });
+dogodki.addEventListener('obrazec', e => { try { narisiObrazec(JSON.parse(e.data)); } catch (err) { pokaziNapako(err); } });
 dogodki.addEventListener('skica', e => { try { uporabiSkico(JSON.parse(e.data)); } catch (err) { pokaziNapako(err); } });
 dogodki.onopen = () => { stanje.povezava = true; osveziHud(); };
 dogodki.onerror = () => {
