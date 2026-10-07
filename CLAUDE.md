@@ -42,9 +42,8 @@ FreeCAD je motor, vmesnik in grafika nastajata v brskalniku (plan, korak 8 napre
 
 - Zagon: `lastno\splet\ZAZENI-SPLET.bat` (FreeCAD s strežnikom, odpre brskalnik) ali `FreeCAD.exe lastno/splet/streznik.py`.
   Naslov `http://127.0.0.1:3020/` (vrata po `Photolandia-Apps/ports.json`). Okolje: `SPLET_VRATA`, `SPLET_BRSKALNIK=0` ne odpre brskalnika,
-  `SPLET_OKNO=vidno` pusti okno FreeCAD-a vidno (privzeto je **skrito**: skripta ga skrije takoj ob zagonu, pokaže ga sama,
-  ko FreeCAD potrebuje vnos (modalno okno, opravilo, urejanje skice), in ga po koncu spet skrije; gumba v brskalniku:
-  Pokaži/Skrij FreeCAD in Izhod). Možnost `--hidden` FreeCAD-a ni uporabna: po skripti se program konča.
+  `SPLET_OKNO=vidno` pusti okno FreeCAD-a vidno (privzeto je **skrito** in se samo od sebe nikoli ne pokaže; gumba v
+  brskalniku: Pokaži/Skrij FreeCAD in Izhod). Možnost `--hidden` FreeCAD-a ni uporabna: po skripti se program konča.
   Zaprtje okna z X konča program, ko ni več odprtih vprašanj (`setQuitOnLastWindowClosed(False)` + filter dogodkov).
   Vrata 3021 zaseda tuj program (python.exe); za testni primerek uporabi `SPLET_VRATA=3029`.
 - Pravilo niti: nit strežnika **nikoli** ne kliče FreeCAD API-ja. Bere le posnetek (bajti JSON), zahteve daje v vrsto,
@@ -52,12 +51,12 @@ FreeCAD je motor, vmesnik in grafika nastajata v brskalniku (plan, korak 8 napre
 - Končne točke: `GET /` stran, `GET /model` posnetek, `GET /ukazi` seznam ukazov (okolja, orodne vrstice, skupine, ikone),
   `GET /events` SSE (`model`, `izbira`, `aktivni`, `okolje`), `GET /stanje`, `POST /select {objekt, element, dodaj}`,
   `POST /ukaz {ime, indeks}` (sproži QAction prek Qt vrste dogodkov), `POST /okolje {ime}` (Gui.activateWorkbench),
-  `POST /okno {prikazi}`, `POST /izhod` (zapre dokumente brez shranjevanja in konča), `POST /python {koda}`. Vsak POST potrebuje glavo `X-Zeton` (žeton nastane ob
+  `POST /okno {prikazi}`, `POST /izhod` (zapre dokumente brez shranjevanja in konča), `POST /python {koda, cakaj}` (počaka na izvedbo,
+  vrne `izpis`, `napaka`, `rezultat`), `POST /obrazec`. Vsak POST potrebuje glavo `X-Zeton` (žeton nastane ob
   zagonu in je vpisan v stran), da tuja spletna stran v brskalniku ne more poganjati kode v FreeCAD-u.
 - Vir resnice za izbiro je FreeCAD (`Gui.Selection`): brskalnik pošlje klik, obarva pa šele to, kar FreeCAD javi.
 - Ukazi v brskalniku so tisti iz orodnih vrstic okolij `DELOVNA_OKOLJA` (Snovanje delov, Skica, Del) in `HITRI_DOSTOP`;
-  stanje »na voljo« se preverja vsakih 500 ms (`isActive`). Okna z nastavitvami ukaza (dolžina izbokline ...) se še odpirajo
-  v FreeCAD-u. Med urejanjem značilnosti je objekt v predogledu vključen v posnetek, čeprav je `Visibility` še False.
+  stanje »na voljo« se preverja vsakih 500 ms (`isActive`). Med urejanjem značilnosti je objekt v predogledu vključen v posnetek, čeprav je `Visibility` še False.
 - Skica v brskalniku (`POST /skica`, dogodek `skica`): `nova` (ravnina XY/XZ/YZ ali ploskev modela: okno Nova skica ne pokriva pogleda, ploskev se klikne med odprtim oknom; odmik, obrni, v telesu),
   `odpri`, `zapri`, `crta` (s `spoji1`/`spoji2` za sovpadanje), `pravokotnik` (4 črte + sovpadanja + vodoravno/navpično),
   `krog`, `tocka`, `premakni` (movePoint, reševalnik), `izbrisi`, `mera` (Distance/Radius), `omejitev`, `gradbena`.
@@ -70,7 +69,23 @@ FreeCAD je motor, vmesnik in grafika nastajata v brskalniku (plan, korak 8 napre
   stran izloči z žarkom. Rob objekta zunaj telesa v skici telesa ni mogoč: točka nastane brez vezave (zapis v dnevnik).
   Orodja skice v brskalniku nosijo FreeCAD-ove ikone (`IKONE_SKICE` v strežniku, `Gui.getIcon`, slovar `skica` v `/ukazi`).
   Brskalnik prestreže ukaze Nov očrt / Edit Sketch / Leave Sketch ter Izboklino in Ugrez iz izbrane skice
-  (`POST /znacilnost`, dolžina se vpraša v brskalniku). Ostala okna z nastavitvami so še v FreeCAD-u.
+  (`POST /znacilnost`, dolžina se vpraša v brskalniku). Urejanje skice, ki ga začne FreeCAD sam, strežnik prekine
+  (`resetEdit`) in skico odpre v brskalniku.
+- Obrazci (od 2026-10-07): **vsa** okna FreeCAD-a gredo v brskalnik, okno FreeCAD-a se ne pokaže. Filter dogodkov na
+  aplikaciji vsako novo okno (pogovor, sporočilo, izbira datoteke) ob prikazu naredi nevidno (prosojnost 0, zunaj zaslona,
+  brez fokusa tipkovnice; skriti ga ne sme, ker `hide()` konča modalni pogovor). Vsakih 250 ms `_zajemi_obrazec` prebere
+  okno, ki čaka (modalno, nevidno nemodalno ali podokno Opravila, `Gui::TaskView::TaskView`), v JSON po postavitvah
+  (oznake, vnosi, številska polja z enotami, spustni seznami, kljukice, gumbi, seznami, zavihki, skupine) in ob
+  spremembi pošlje dogodek `obrazec`; brskalnik ga izriše v plošči desno (ne pokriva pogleda, da se lahko izbirajo robovi).
+  `POST /obrazec {kljuc, id, dejanje, vrednost}` vpiše vrednost v pravi gradnik; kliki gredo prek Qt vrste dogodkov.
+  `QFileDialog` ima svoj obrazec (mapa, vsebina, filter, ime); zato strežnik med delovanjem vklopi
+  `Preferences/Dialog/DontUseNativeDialog` in ga ob izhodu vrne (nastavitev je skupna z nameščenim FreeCAD-om).
+  Gumb »Odpri v FreeCAD-u« v obrazcu je rezerva, če kakšnega gradnika obrazec ne zna prikazati.
+- **Skripte v FreeCAD-u brez novega okna:** `FreeCAD.exe skripta.py` vedno odpre okno; ne uporabljaj ga za pomožne skripte.
+  Če spletni strežnik teče, kodo poženi v njem: `.pixi/envs/default/python.exe lastno/splet/izvedi.py skripta.py`
+  (ali `-c "koda"`; vrne izpis in spremenljivko `rezultat`; vrata in žeton bere iz `%LOCALAPPDATA%/FreeCAD-splet/povezava.json`).
+  Brez strežnika uporabi `FreeCADCmd.exe` (brez okna). Poti v Python nizih piši kot `r"C:\..."` ali s `/`
+  (`"C:\Users"` je napaka zaradi `\U`, skripta se sploh ne zažene, FreeCAD pa obvisi z odprtim oknom).
 - Vgrajeni brskalnik aplikacije Claude: gumbe klikaj prek `find` in `ref` (v zgoščenem traku so napisi skriti, zato raje
   `javascript_tool` s `querySelector('.gumb[data-ime=...]').click()`); klike po platnu daj v koordinatah posnetka zaslona
   (orodje jih preslika). `window.prompt` za preizkus povozi v JS.
