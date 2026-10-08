@@ -245,8 +245,9 @@ slots), pcbway.com (welded sheet metal guidelines), help.solidworks.com (closed 
 
 **Jedro FreeCAD-a nima razgrnjevalnika pločevine** (ne PartDesign, ne BIM, ne TechDraw). Standard je dodatek
 **SheetMetal** (Shai Seger, `github.com/shaise/FreeCAD_SheetMetal`, LGPL). Stanje 30. 9. 2026: različica 0.8.24,
-dela s FreeCAD 1.x (upošteva novo poimenovanje topologije). **Na tem računalniku še ni nameščen** (ne v nameščenem
-FreeCAD 1.1 ne v lastni gradnji).
+dela s FreeCAD 1.x (upošteva novo poimenovanje topologije). **Nameščen 8. 10. 2026** (commit a1cf212, 0.8.24) v
+`%APPDATA%\FreeCAD1-1\Mod\sheetmetal`, networkx 3.6.1 v `AdditionalPythonPackages\py311`; velja za nameščeni
+FreeCAD 1.1 in lastno gradnjo (oba Python 3.11). Posodobitev: `git -C "%APPDATA%\FreeCAD1-1\Mod\sheetmetal" pull`.
 
 ### 7.1 Namestitev
 - Orodja → Addon Manager → »SheetMetal Workbench«, ali ročno:
@@ -317,7 +318,10 @@ Pasti:
 4. Potreben je aktivni dokument: `FreeCAD.setActiveDocument(doc.Name)`.
 5. Ploskve izbiraj geometrijsko (normala, središče), ne s stalno številko `FaceN` (poimenovanje topologije).
 
-Primer (iz kode prebran, **še ne preizkušen**):
+Primer (**preizkušen 8. 10. 2026 v `FreeCADCmd`** nameščenega 1.1: plošča 100 × 60 × 2, prirobnica 25 mm, R 2, K 0,42 →
+razgrnitev 129,461 × 60 mm = 100 + BA 4,461 + 25, točno po formuli; DXF ima le zaprt obris v sloju objekta, brez
+upogibnih črt, dolgi robovi so razdeljeni na meji upogiba v 3 kolinearne odseke; STEP in parametrični `Unfold` z
+`GenerateSketch = False` delujeta, sporoči »Using V2 unfolding system«. Kot koren vzemi največjo ravno ploskev):
 
 ```python
 import FreeCAD, Part, importDXF
@@ -402,5 +406,4 @@ de.wikipedia.org/wiki/Biegeverkürzung, lokalno `src/App/FreeCADInit.py`.
 6. Skripte modelov naj gredo v `Oblak\3D modeliranje\<Projekt>\Skripte\` kot pri drugih projektih; ploskve izbiraj
    geometrijsko.
 
-**Kaj še ni preizkušeno:** namestitev SheetMetal + networkx na tem računalniku, primer iz 7.5 v `FreeCADCmd` in
-prek `izvedi.py`, prikaz objektov SheetMetal v spletnem pogledu in drevesu, napaka interpolacije K v V2.
+**Kaj še ni preizkušeno:** primer iz 7.5 prek `izvedi.py` (z GUI, skice razgrnitve z ločenimi sloji), prikaz objektov SheetMetal v spletnem pogledu in drevesu, napaka interpolacije K v V2.
