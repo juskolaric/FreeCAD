@@ -83,6 +83,8 @@
   #stranski .naslovRazdelka { font-size: 11px; text-transform: uppercase; letter-spacing: .04em; color: #667; padding: 8px 10px 3px; }
   #stranski .naslovProjekta { display: flex; align-items: center; gap: 5px; padding: 5px 10px 2px; font-weight: 600; color: #0d47a1; }
   #stranski .naslovProjekta img { width: 14px; height: 14px; }
+  #stranski .podnaslovRazdelka { padding: 8px 10px 3px; font-size: 11px; font-weight: 600; letter-spacing: .03em; color: #667; text-transform: uppercase; border-top: 1px solid var(--crta); margin-top: 4px; }
+  #stranski .razdelek > .naslovRazdelka + .podnaslovRazdelka { border-top: none; margin-top: 0; }
   #stranski .vnos { display: flex; align-items: center; gap: 6px; padding: 3px 8px 3px 10px; cursor: pointer; border-left: 3px solid transparent; }
   #stranski .vnos.vProjektu { padding-left: 22px; }
   #stranski .vnos:hover { background: #e6eaf0; }
@@ -607,6 +609,7 @@ async function drevoDejanje(telo) { try { await objavi('/drevo', telo); } catch 
 // Urejanje iz drevesa (dvojni klik, desni klik -> Uredi, gumb nad lastnostmi): strežnik naredi isto kot dvojni klik
 // v FreeCAD-ovem drevesu. Značilnost odpre svoje opravilo (obrazec desno), skica urejevalnik skic, telo postane dejavno.
 function napisUrejanja(v) {
+  if (v.povezava) return (v.povezava.sestav ? 'Odpri sestav »' : 'Odpri del »') + v.povezava.dokument + '«';
   if (v.tip.startsWith('Sketcher::')) return 'Uredi skico';
   if (v.tip === 'PartDesign::Body' || v.tip === 'App::Part') return 'Dejavno telo (vklop/izklop)';
   return 'Uredi značilnost';
@@ -644,8 +647,8 @@ function vozelDrevesa(d, ime, globina, pot) {
   vrstica.append(el('span', 'ime', v.oznaka));
   if (!v.tip.startsWith('App::Origin')) {   // izhodišče (ravnine, osi) nima urejanja
     const telo = v.tip === 'PartDesign::Body' || v.tip === 'App::Part';
-    const gumb = el('button', 'urediVrstico', telo ? '◉' : '✎'); gumb.type = 'button';
-    gumb.append(el('span', 'napis', telo ? ' Dejavno' : ' Uredi'));
+    const gumb = el('button', 'urediVrstico', v.povezava ? '↗' : (telo ? '◉' : '✎')); gumb.type = 'button';
+    gumb.append(el('span', 'napis', v.povezava ? ' Odpri' : (telo ? ' Dejavno' : ' Uredi')));
     gumb.title = napisUrejanja(v);
     gumb.addEventListener('click', e => { e.stopPropagation(); urediObjekt(ime); });
     gumb.addEventListener('dblclick', e => e.stopPropagation());
@@ -706,7 +709,7 @@ function narisiLastnosti(d) {
   const r = el('div', 'razdelek lastnosti');
   const naslov = el('div', 'naslovRazdelka', 'Lastnosti · ' + v.oznaka);
   const telo = v.tip === 'PartDesign::Body' || v.tip === 'App::Part';
-  const uredi = el('button', 'urediObjekt', telo ? '◉ Dejavno' : '✎ Uredi'); uredi.type = 'button';
+  const uredi = el('button', 'urediObjekt', v.povezava ? '↗ Odpri' : (telo ? '◉ Dejavno' : '✎ Uredi')); uredi.type = 'button';
   uredi.title = napisUrejanja(v) + ' (kot dvojni klik v drevesu)';
   uredi.addEventListener('click', () => urediObjekt(v.ime));
   naslov.append(uredi); r.append(naslov);
@@ -791,7 +794,12 @@ function narisiProjekte(p) {
 
   const r1 = el('div', 'razdelek'); r1.append(el('div', 'naslovRazdelka', 'Odprti dokumenti'));
   if (!odprti.length) r1.append(el('div', 'prazno', 'ni odprtih dokumentov'));
-  for (const o of odprti) {
+  // zgoraj sestavi, spodaj deli (vsaka skupina s svojim naslovom, ko so odprte obe vrste)
+  const sestavi = odprti.filter(o => o.vrsta === 'sestav'), deli = odprti.filter(o => o.vrsta !== 'sestav');
+  const skupine = sestavi.length && deli.length ? [['Sestavi', sestavi], ['Deli', deli]] : [['', odprti]];
+  for (const [naslovSkupine, seznam] of skupine) {
+  if (naslovSkupine) r1.append(el('div', 'podnaslovRazdelka', naslovSkupine + ' (' + seznam.length + ')'));
+  for (const o of seznam) {
     const v = el('div', 'vnos' + (o.aktiven ? ' aktiven' : ' odprt'));
     v.title = o.oznaka + '\n' + (o.pot || 'še ni shranjen') + '\nKlik: preklopi na dokument';
     v.append(slikaVnosa(o, o.pot ? 'Std_Open' : 'Std_New'));
@@ -817,6 +825,7 @@ function narisiProjekte(p) {
     });
     v.append(x);
     r1.append(v);
+  }
   }
   vsebina.append(r1);
   // Od 2026-10-07 levi stolpec kaže samo odprte dokumente: seznam datotek FCStd iz map (p.skupine, vnosDatoteke)

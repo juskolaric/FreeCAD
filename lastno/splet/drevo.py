@@ -106,6 +106,10 @@ def drevo_dokumenta(doc, ikona_uri=None):
             viden = True
         vozli[obj.Name] = {"ime": obj.Name, "oznaka": obj.Label, "tip": obj.TypeId, "viden": viden,
                            "ikona": ikona, "otroci": otroci, "lastnosti": _lastnosti(obj)}
+        cilj = _cilj_povezave(obj)
+        if cilj is not None:   # povezava na podsestav ali del v drugi datoteki: Uredi ga odpre
+            vozli[obj.Name]["povezava"] = {"dokument": cilj.Document.Label,
+                                           "sestav": cilj.TypeId in ("Assembly::AssemblyObject", "App::Part")}
     koreni = [o.Name for o in doc.Objects if o.Name not in zahtevani]
     return {"koreni": koreni, "vozli": vozli, "telesa": _telesa(doc, koreni)}
 
@@ -161,6 +165,36 @@ def _v_urejanju(doc):
         return False
 
 
+def _cilj_povezave(obj):
+    """Objekt v drugem dokumentu, na katerega kaže povezava (App::Link na podsestav ali del), sicer None."""
+    if obj.TypeId != "App::Link":
+        return None
+    cilj = getattr(obj, "LinkedObject", None)
+    if isinstance(cilj, tuple):
+        cilj = cilj[0]
+    if cilj is None or cilj.Document is obj.Document:
+        return None
+    return cilj
+
+
+def _odpri_povezano(stanje, cilj):
+    """Kot »Odpri podsestav« v SolidWorksu: dokument povezave postane dejaven (seznam odprtih, drevo, pogled).
+    Povezane dokumente FreeCAD ob odpiranju sestava naloži le delno (samo potrebne objekte); tak se naloži v celoti."""
+    cdoc = cilj.Document
+    if getattr(cdoc, "Partial", False):
+        try:
+            cdoc.restore()
+        except Exception as e:  # noqa: BLE001
+            App.Console.PrintWarning("[splet] polno nalaganje %s: %r\n" % (cdoc.Name, e))
+    App.setActiveDocument(cdoc.Name)
+    try:
+        Gui.setActiveDocument(cdoc.Name)
+    except Exception:  # noqa: BLE001
+        pass
+    vrsta = "sestav" if cilj.TypeId in ("Assembly::AssemblyObject", "App::Part") else "del"
+    stanje.oddaj("obvestilo", {"sporocilo": "Odprt %s »%s«." % (vrsta, cdoc.Label)})
+
+
 def _uredi(stanje, obj):
     """Urejanje objekta iz drevesa, kot dvojni klik v FreeCAD-ovem drevesu (ViewObject.doubleClicked):
     značilnost (izboklina, žep, zaokrožitev, luknja ...) odpre svoje opravilo, ki ga strežnik pokaže kot obrazec
@@ -172,6 +206,10 @@ def _uredi(stanje, obj):
         stanje.oddaj_skico()
         return
     if Gui is None or not App.GuiUp:
+        return
+    cilj = _cilj_povezave(obj)
+    if cilj is not None:
+        _odpri_povezano(stanje, cilj)
         return
     if _v_urejanju(doc):
         stanje.oddaj("obvestilo", {"sporocilo": "Najprej zaključi trenutno urejanje: OK ali Prekliči v obrazcu desno.",

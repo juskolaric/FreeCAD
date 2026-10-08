@@ -104,7 +104,11 @@ FreeCAD je motor, vmesnik in grafika nastajata v brskalniku (plan, korak 8 napre
   po shranjevanju iz skripte nastavi `Gui.getDocument(ime).Modified = False`.
 - **Telesa pod drevesom** (od 2026-10-08): posnetek drevesa nosi `telesa` (koreni drevesa s trdno obliko, `drevo._telesa`);
   stran pokaže razdelek »Telesa (N)« pod drevesom, ko jih je več kot eno (številka, ime = Label, število ločenih teles, cm³).
-  Imena teles: »<kos> – <stanje>« (npr. »Podstavek – upognjen«, »Podstavek – razgrnitev«). Med urejanjem značilnosti je objekt v predogledu vključen v posnetek, čeprav je `Visibility` še False.
+  Imena teles: »<kos> – <stanje>« (npr. »Podstavek – upognjen«, »Podstavek – razgrnitev«).
+- **Povezave na druge datoteke v drevesu** (od 2026-10-08): vozel `App::Link` na objekt v drugem dokumentu nosi `povezava`
+  {dokument, sestav}; gumb ↗ Odpri (dvojni klik, desni klik) odpre ta podsestav ali del (`drevo._odpri_povezano`: delno
+  naložen dokument — `Document.Partial` — se naloži v celoti z `restore()`, nato postane dejaven). Seznam odprtih
+  dokumentov je razdeljen: zgoraj Sestavi (N), spodaj Deli (N). Med urejanjem značilnosti je objekt v predogledu vključen v posnetek, čeprav je `Visibility` še False.
 - Skica v brskalniku (`POST /skica`, dogodek `skica`): `nova` (ravnina XY/XZ/YZ ali ploskev modela: okno Nova skica ne pokriva pogleda, ploskev se klikne med odprtim oknom; odmik, obrni, v telesu),
   `odpri`, `zapri`, `crta` (s `spoji1`/`spoji2` za sovpadanje), `pravokotnik` (4 črte + sovpadanja + vodoravno/navpično),
   `krog`, `tocka`, `premakni` (movePoint, reševalnik), `izbrisi`, `mera` (Distance/Radius), `omejitev`, `gradbena`.
