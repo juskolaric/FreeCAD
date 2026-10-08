@@ -3,6 +3,7 @@
 Stanje 2026-09-29. Odločitve: osnova je veja `releases/FreeCAD-1-1` (nameščen je FreeCAD 1.1.3, veja je pri 1.1.4),
 mapa `Desktop/Apps/FreeCAD`, javen fork `juskolaric/FreeCAD`.
 **Smer od 2026-09-29 (pot 1): FreeCAD je motor, uporabniški vmesnik in grafika nastajata v brskalniku.**
+Različice modelov (PDM nad lastnim oblakom): ločen plan `PDM-PLAN.md` (7. 10. 2026).
 
 ## Kaj je nastalo
 
@@ -26,7 +27,7 @@ mapa `Desktop/Apps/FreeCAD`, javen fork `juskolaric/FreeCAD`.
 8. [x] Dokaz koncepta spletnega pogleda 2026-09-29: model iz FreeCAD-a v brskalniku (three.js 0.186, WebGPU s preklopom na WebGL 2), izbira ploskev in robov v obe smeri, samodejna osvežitev ob spremembi modela, ukazi Python prek žetona; preverjeno v vgrajenem brskalniku
 9a. [x] Okno FreeCAD-a skrito 2026-09-29: teče v ozadju, pokaže se samo, ko potrebuje vnos, gumba Pokaži/Skrij in Izhod v brskalniku; ukazi se sprožijo prek Qt vrste dogodkov, zato strežnik odgovarja tudi med modalnimi okni
 9. [x] Ukazna vrstica v brskalniku 2026-09-29: vsi ukazi okolij Snovanje delov (28), Skica (52) in Del (34) ter hitri dostop, po zavihkih in skupinah kot v SolidWorksu (veliki in majhni gumbi, zgoščeni način, spustni meniji skupin, namigi, ikone iz FreeCAD-a), stanje »na voljo« v živo, klik izvede ukaz v FreeCAD-u (okno z nastavitvami se odpre v FreeCAD-u), zavihek Skica se pokaže sam med urejanjem skice; preverjeno: Kocka, Izboklina iz izbrane skice
-10. [ ] Pregledovalnik: drevo objektov in lastnosti v brskalniku, več dokumentov, binarni prenos geometrije namesto JSON, robovi z debelino, boljše senčenje (okolje, sence)
+10. [~] Pregledovalnik: drevo objektov in lastnosti v brskalniku (narejeno 2026-10-07: `lastno/splet/drevo.py`, stranski meni), več dokumentov, binarni prenos geometrije namesto JSON, robovi z debelino, boljše senčenje (okolje, sence)
 11. [~] Okna z nastavitvami ukazov v brskalniku: Izboklina in Ugrez iz izbrane skice 2026-09-29 (dolžina, smer); ostali ukazi še v FreeCAD-u
 12. [x] Urejevalnik skic v brskalniku, 1. različica 2026-09-29: nova skica na ravnini ali izbrani ploskvi (spletno okno), pravokotna kamera, črta in lomljena črta, pravokotnik, krog, točka, pripenjanje na točke s sovpadanjem, vlečenje točk z reševalnikom, mera (dolžina, polmer), gradbena, brisanje, napisi mer; preverjeno: ploskev → skica → pravokotnik + krog → zapri → izboklina, vse brez okna FreeCAD-a
 13. [ ] Ločen repozitorij za spletni vmesnik (Next.js po vzoru ostalih programov); FreeCAD ostane motor s strežniškim delom v tej mapi

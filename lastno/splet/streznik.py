@@ -22,16 +22,19 @@ Zgradba:
     nevidno, podokno Opravila je v skritem glavnem oknu; njihovi gradniki gredo v brskalnik kot obrazec
     (dogodek "obrazec"), vrednosti in kliki se vrnejo prek POST /obrazec.
   - Projekti: stranski meni v brskalniku kaže odprte dokumente, datoteke FCStd iz map projektov
-    (lastno/modeli in SPLET_PROJEKTI) in nedavne datoteke FreeCAD-a (GET /projekti, dogodek "projekti");
+    (Oblak/3D modeliranje in SPLET_PROJEKTI) (GET /projekti, dogodek "projekti");
     klik odpre, aktivira ali zapre dokument (POST /projekt).
+  - Drevo dokumenta (drevo.py): posnetek /model nosi "drevo" (koreni, vozli kot v FreeCAD-ovem drevesu:
+    claimChildren, vidnost, ikona, urejljive lastnosti); POST /drevo {dejanje: vidnost | lastnost | uredi}.
   - Varnost: vsak POST potrebuje žeton (glava X-Zeton), ki nastane ob zagonu in ga pozna le stran.
 
 Dogodki SSE (GET /events): model {verzija}, izbira [...], aktivni {ime: bool}, okolje {delovnaMiza, urejanje},
-skica {...}, obrazec {vrsta, kljuc, naslov, vrstice | datoteka} ali null, projekti {odprti, skupine, nedavne}.
+skica {...}, obrazec {vrsta, kljuc, naslov, vrstice | datoteka} ali null, projekti {odprti, skupine}.
 Oblika posnetka geometrije (GET /model): glej _geometrija().
 """
 
 import http.server
+import io
 import json
 import os
 import queue
@@ -41,6 +44,8 @@ import threading
 import time
 import traceback
 import webbrowser
+import xml.etree.ElementTree as ET
+import zipfile
 
 import FreeCAD as App
 
@@ -62,11 +67,17 @@ try:
 except NameError:
     MAPA = os.path.join(App.getHomePath(), "lastno", "splet")
 ZETON = secrets.token_hex(16)
-# Mape s projekti (datoteke FCStd) za stranski meni: lastno/modeli in dodatne mape iz SPLET_PROJEKTI (ločilo ;).
-MAPE_PROJEKTOV = [os.path.normpath(os.path.join(MAPA, "..", "modeli"))]
+# Mape s projekti (datoteke FCStd) za stranski meni: Oblak/3D modeliranje (od 2026-10-07, prej lastno/modeli v repozitoriju)
+# in dodatne mape iz SPLET_PROJEKTI (ločilo ;).
+if MAPA not in sys.path:
+    sys.path.insert(0, MAPA)
+from drevo import drevo_dejanje, drevo_dokumenta  # noqa: E402
+from oblak import Oblak, obdelaj_zahtevo as oblak_zahteva  # noqa: E402
+
+MAPA_OBLAK = os.path.join(os.path.expanduser("~"), "Oblak", "3D modeliranje")
+MAPE_PROJEKTOV = [os.path.normpath(MAPA_OBLAK)]
 MAPE_PROJEKTOV += [os.path.normpath(m.strip()) for m in os.environ.get("SPLET_PROJEKTI", "").split(";") if m.strip()]
 GLOBINA_PROJEKTOV = 4        # podmape pod mapo projektov, ki se še pregledajo
-NEDAVNIH_NAJVEC = 12
 
 # Delovna okolja, katerih ukazi so na voljo v brskalniku (ime, slovenski naslov, če ga FreeCAD nima).
 DELOVNA_OKOLJA = [
@@ -105,6 +116,20 @@ def _barve(obj, stevilo_ploskev):
     osnovna = (0.78, 0.78, 0.80)
     po_ploskvah = None
     if not IMA_OKNO or not hasattr(obj, "ViewObject") or obj.ViewObject is None:
+        return osnovna, po_ploskvah
+    # Povezava (App::Link) kaže barvo povezanega objekta, razen če ima lastno (OverrideMaterial).
+    for _ in range(8):
+        try:
+            cilj = obj.LinkedObject if obj.isDerivedFrom("App::Link") else None
+            if cilj is None or cilj is obj:
+                break
+            vo = obj.ViewObject
+            if getattr(vo, "OverrideMaterial", False):
+                return tuple(vo.ShapeMaterial.DiffuseColor[:3]), None
+            obj = cilj
+        except Exception:  # noqa: BLE001
+            break
+    if not hasattr(obj, "ViewObject") or obj.ViewObject is None:
         return osnovna, po_ploskvah
     vo = obj.ViewObject
     try:
@@ -157,6 +182,8 @@ def _vidni_objekti(doc):
             continue  # skico, ki se ureja v brskalniku, brskalnik riše sam
         if obj.isDerivedFrom("PartDesign::Body") or obj.isDerivedFrom("App::Part"):
             continue  # vsebnika prikazujemo prek njunih vidnih elementov
+        if obj.isDerivedFrom("App::DocumentObjectGroup"):
+            continue  # skupina nima lastne geometrije (Shape je le sestav otrok, ki so v posnetku vsak zase)
         if _je_izhodisce(obj):
             continue  # osi in ravnine izhodišča (neskončne pomožne oblike)
         try:
@@ -179,12 +206,18 @@ def _z3(v):
 
 
 def _geometrija(obj):
-    """Posnetek enega objekta: teselirane ploskve (Face{i+1}) in diskretizirani robovi (Edge{j+1})."""
-    oblika = obj.Shape.copy()
+    """Posnetek enega objekta: teselirane ploskve (Face{i+1}) in diskretizirani robovi (Edge{j+1}).
+
+    Oblike ne kopiramo: kopija izgubi že izračunano mrežo (BRepMesh) in se teselira znova (3-4x počasneje).
+    Teseliramo izvirno obliko in točke po potrebi prestavimo iz lege oblike v globalno lego objekta
+    (povezava App::Link vrne obliko povezanega objekta brez lastne lege)."""
+    oblika = obj.Shape
     try:
-        oblika.Placement = obj.getGlobalPlacement()
+        globalna = obj.getGlobalPlacement()
     except Exception:  # noqa: BLE001
-        pass
+        globalna = oblika.Placement
+    premik = globalna.multiply(oblika.Placement.inverse())
+    pretvori = None if premik.isIdentity(1e-9) else premik.multVec
 
     tocke, trikotniki, ploskve = [], [], []
     osnovna, po_ploskvah = _barve(obj, len(oblika.Faces))
@@ -195,8 +228,12 @@ def _geometrija(obj):
             v, t = [], []
         zacetek_tock = len(tocke) // 3
         zacetek_trik = len(trikotniki) // 3
-        for p in v:
-            tocke.extend(_z3(p))
+        if pretvori is None:
+            for p in v:
+                tocke.extend(_z3(p))
+        else:
+            for p in v:
+                tocke.extend(_z3(pretvori(p)))
         for a, b, c in t:
             trikotniki.extend((a + zacetek_tock, b + zacetek_tock, c + zacetek_tock))
         barva = po_ploskvah[i] if po_ploskvah else osnovna
@@ -209,12 +246,14 @@ def _geometrija(obj):
             pts = rob.discretize(Deflection=ODMIK_ROBOV)
         except Exception:  # noqa: BLE001
             pts = [v.Point for v in rob.Vertexes]
+        if pretvori is not None:
+            pts = [pretvori(p) for p in pts]
         zacetek = len(rob_tocke) // 6
         for a, b in zip(pts, pts[1:]):
             rob_tocke.extend(_z3(a))
             rob_tocke.extend(_z3(b))
         robovi.append([zacetek, max(len(pts) - 1, 0)])
-        rob_info.append(_rob_info(rob))
+        rob_info.append(_rob_info(rob, pretvori))
 
     return {
         "ime": obj.Name,
@@ -228,20 +267,86 @@ def _geometrija(obj):
     }
 
 
-def _rob_info(rob):
+# Predpomnilnik posnetkov objektov: (ime dokumenta, ime objekta) -> (ključ, posnetek). Ključ zajame vse, od
+# česar je posnetek odvisen (oblika, lega, barve, oznaka); ob preklopu dokumenta ali ponovnem izračunu se
+# teselirajo le objekti, ki so se res spremenili. Brez tega je preklop na sobo trajal >10 s.
+_PREDPOMNILNIK = {}
+
+
+def _lega_kljuc(pl):
+    b, q = pl.Base, pl.Rotation.Q
+    return (round(b.x, 6), round(b.y, 6), round(b.z, 6),
+            round(q[0], 9), round(q[1], 9), round(q[2], 9), round(q[3], 9))
+
+
+def _kljuc_oblike(obj, globina=0):
+    """Stabilen ključ oblike objekta. `Shape.hashCode()` je stabilen le pri objektih z lastno obliko
+    (Part::Feature, PartDesign); povezava (App::Link) in skupina ob vsakem dostopu zgradita novo obliko,
+    zato ključ sestavimo iz povezanega objekta oz. otrok."""
+    if globina > 8:
+        return ("?", id(obj))
+    try:
+        povezan = obj.getLinkedObject(True)
+    except Exception:  # noqa: BLE001
+        povezan = obj
+    if povezan is not None and povezan is not obj:
+        return ("L", _kljuc_oblike(povezan, globina + 1), _lega_kljuc(obj.Placement) if hasattr(obj, "Placement") else None)
+    if obj.isDerivedFrom("App::DocumentObjectGroup"):
+        return ("G", tuple(_kljuc_oblike(o, globina + 1) for o in obj.Group))
+    oblika = obj.Shape
+    return (oblika.hashCode(), _lega_kljuc(oblika.Placement))
+
+
+def _geometrija_kljuc(obj):
+    oblika = obj.Shape
+    try:
+        globalna = obj.getGlobalPlacement()
+    except Exception:  # noqa: BLE001
+        globalna = oblika.Placement
+    osnovna, po_ploskvah = _barve(obj, len(oblika.Faces))
+    barve = (tuple(osnovna), tuple(tuple(b) for b in po_ploskvah) if po_ploskvah else None)
+    return (_kljuc_oblike(obj), _lega_kljuc(oblika.Placement), _lega_kljuc(globalna), obj.Label, barve)
+
+
+def _geometrija_predpomnjena(doc, obj):
+    """Posnetek objekta kot JSON niz iz predpomnilnika, če se ni nič spremenilo; sicer ga zgradi in shrani.
+    Vrne (json, zadetek). Hranimo že serializiran JSON, ker je serializacija celega posnetka (več MB) stala
+    skoraj pol sekunde na vsako gradnjo."""
+    kljuc = _geometrija_kljuc(obj)
+    vnos = _PREDPOMNILNIK.get((doc.Name, obj.Name))
+    if vnos is not None and vnos[0] == kljuc:
+        return vnos[1], True
+    posnetek = json.dumps(_geometrija(obj), separators=(",", ":"))
+    _PREDPOMNILNIK[(doc.Name, obj.Name)] = (kljuc, posnetek)
+    return posnetek, False
+
+
+def _pozabi_geometrijo(ime_dokumenta, ime_objekta=None):
+    for k in [k for k in _PREDPOMNILNIK if k[0] == ime_dokumenta and (ime_objekta is None or k[1] == ime_objekta)]:
+        del _PREDPOMNILNIK[k]
+
+
+def _rob_info(rob, pretvori=None):
     """Analitični podatki roba za pripenjanje v skici (kot v SolidWorksu): krajišči, razpolovišče,
-    pri krogih središče, polmer in os. Vse v svetovnih koordinatah."""
-    info = {"tip": type(rob.Curve).__name__}
+    pri krogih središče, polmer in os. Vse v svetovnih koordinatah (`pretvori` prestavi točke iz lege oblike)."""
+    try:
+        info = {"tip": type(rob.Curve).__name__}
+    except Exception:  # noqa: BLE001
+        info = {"tip": ""}  # npr. rob brez krivulje (TypeError: undefined curve type); objekt ostane v posnetku
+    t = pretvori if pretvori is not None else (lambda p: p)
     try:
         if rob.Vertexes:
-            info["p1"] = _z3(rob.Vertexes[0].Point)
-            info["p2"] = _z3(rob.Vertexes[-1].Point)
-        info["sredina"] = _z3(rob.valueAt((rob.FirstParameter + rob.LastParameter) / 2.0))
+            info["p1"] = _z3(t(rob.Vertexes[0].Point))
+            info["p2"] = _z3(t(rob.Vertexes[-1].Point))
+        info["sredina"] = _z3(t(rob.valueAt((rob.FirstParameter + rob.LastParameter) / 2.0)))
         info["zaprt"] = bool(rob.isClosed())
         if info["tip"] == "Circle":
-            info["sredisce"] = _z3(rob.Curve.Center)
+            info["sredisce"] = _z3(t(rob.Curve.Center))
             info["r"] = round(rob.Curve.Radius, 4)
-            info["os"] = _z3(rob.Curve.Axis)
+            os_ = rob.Curve.Axis
+            if pretvori is not None:
+                os_ = pretvori(os_) - pretvori(App.Vector(0, 0, 0))
+            info["os"] = _z3(os_)
     except Exception:  # noqa: BLE001
         pass
     return info
@@ -254,12 +359,14 @@ _IKONE = {}
 
 
 def _ikona_uri(ikona, kljuc):
-    """QIcon -> PNG kot data URI (64 px), z medpomnilnikom po ključu."""
+    """QIcon (ali funkcija, ki ga vrne) -> PNG kot data URI (64 px), z medpomnilnikom po ključu."""
     if kljuc in _IKONE:
         return _IKONE[kljuc]
     uri = ""
     try:
         from PySide6 import QtCore
+        if callable(ikona):
+            ikona = ikona()
         if ikona is not None and not ikona.isNull():
             pm = ikona.pixmap(64, 64)
             ba = QtCore.QByteArray()
@@ -747,7 +854,12 @@ class Zajem:
         except Exception:  # noqa: BLE001
             pass
         vrstice, indeksi = [], []
-        stolpcev = min(model.columnCount(), 4)
+        # QAbstractListModel (npr. seznam robov v opravilu Zaokrožitev) ima en stolpec; njegov columnCount je v PySide
+        # zaseben (TypeError z argumentom ali brez), zato ga ne kličemo.
+        if isinstance(model, QtCore.QAbstractListModel):
+            stolpcev = 1
+        else:
+            stolpcev = min(model.columnCount(QtCore.QModelIndex()), 4)
 
         def obisci(stars, globina):
             for r in range(model.rowCount(stars)):
@@ -999,6 +1111,8 @@ def _posnetek_skice(sk, novi=None):
             "id": i, "tip": c.Type, "prvi": c.First, "prviPoz": c.FirstPos,
             "drugi": c.Second, "drugiPoz": c.SecondPos, "vrednost": round(c.Value, 4),
             "ime": c.Name, "gonilna": bool(c.Driving),
+            # lega kote kot v FreeCAD-u (SoDatumLabel): odmik kotirne črte, premik napisa (pri polmeru kot vodila)
+            "razmik": round(float(c.LabelDistance), 4), "polozaj": round(float(c.LabelPosition), 4),
         })
     try:
         pl = sk.getGlobalPlacement()
@@ -1009,11 +1123,16 @@ def _posnetek_skice(sk, novi=None):
         resitev = int(sk.solve())
     except Exception:  # noqa: BLE001
         resitev = -99
+    try:
+        dolocena = bool(sk.FullyConstrained)   # posodobi ga solve() zgoraj
+    except Exception:  # noqa: BLE001
+        dolocena = False
     return {
         "ime": sk.Name, "oznaka": sk.Label,
         "polozaj": {"osnova": [round(pl.Base.x, 4), round(pl.Base.y, 4), round(pl.Base.z, 4)],
                     "rotacija": [q[0], q[1], q[2], q[3]]},
         "geometrija": geometrija, "zunanji": zunanji, "omejitve": omejitve, "resitev": resitev, "novi": novi or [],
+        "dolocena": dolocena,
     }
 
 
@@ -1223,13 +1342,27 @@ def _skica_izvedi(sk, op):
             sk.toggleConstruction(int(op["id"]))
         elif vrsta == "izbrisiOmejitev":
             sk.delConstraint(int(op["id"]))
+        elif vrsta == "nastaviMero":
+            # obstoječa mera (klik na koto v brskalniku): vrednost v mm, kot v stopinjah
+            i, vr = int(op["id"]), float(op["vrednost"])
+            if sk.Constraints[i].Type == "Angle":
+                import math
+                vr = math.radians(vr)
+            sk.setDatum(i, vr)
+        elif vrsta == "polozajMere":
+            # premik kote (vlečenje v brskalniku): LabelDistance in LabelPosition kot v FreeCAD-u; geometrija se ne
+            # spremeni, zato brez preračuna (skica in telo se preračunata ob zaprtju skice)
+            i = int(op["id"])
+            sk.setLabelDistance(i, float(op["razmik"]))
+            sk.setLabelPosition(i, float(op["polozaj"]))
         else:
             raise ValueError("neznana vrsta: %s" % vrsta)
         doc.commitTransaction()
     except Exception:
         doc.abortTransaction()
         raise
-    doc.recompute()
+    if vrsta != "polozajMere":
+        doc.recompute()
     return novi
 
 
@@ -1237,7 +1370,7 @@ def _skica_izvedi(sk, op):
 # Stanje, deljeno med nitmi
 
 # ---------------------------------------------------------------------------
-# Projekti: datoteke FCStd v mapah projektov, nedavne datoteke in odprti dokumenti
+# Projekti: datoteke FCStd v mapah projektov in odprti dokumenti
 
 def _pot(pot):
     return os.path.normpath(pot).replace("\\", "/")
@@ -1247,13 +1380,209 @@ def _ista_pot(a, b):
     return bool(a) and bool(b) and os.path.normcase(os.path.normpath(a)) == os.path.normcase(os.path.normpath(b))
 
 
+def _vidnost_iz_datoteke(pot):
+    """Vidnost objektov (ime -> bool) iz Document.xml datoteke FCStd brez GuiDocument.xml; None, če ga datoteka ima
+    ali je ni mogoče prebrati. FreeCAD ob odpiranju skrije vse objekte (Gui::Document::Restore, startRestoring)
+    in jih spet pokaže šele iz GuiDocument.xml; datoteke, shranjene brez okna (FreeCADCmd), tega zapisa nimajo,
+    zato bi se odprle z vsemi objekti skritimi (prazen pogled)."""
+    try:
+        with zipfile.ZipFile(pot) as z:
+            if "GuiDocument.xml" in z.namelist():
+                return None
+            koren = ET.fromstring(z.read("Document.xml"))
+    except Exception:  # noqa: BLE001
+        return None
+    vidnost = {}
+    for obj in koren.iter("Object"):
+        ime = obj.get("name")
+        lastnosti = obj.find("Properties")
+        if not ime or lastnosti is None:
+            continue
+        vidnost[ime] = True
+        for lastnost in lastnosti.iter("Property"):
+            if lastnost.get("name") == "Visibility":
+                b = lastnost.find("Bool")
+                vidnost[ime] = (b is None) or (b.get("value") == "true")
+    return vidnost
+
+
+def _popravi_vidnost(doc):
+    """Po odprtju datoteke brez GuiDocument.xml vrne vidnost objektov, kot je zapisana v Document.xml."""
+    if not IMA_OKNO or not doc.FileName:
+        return
+    vidnost = _vidnost_iz_datoteke(doc.FileName)
+    if vidnost is None:
+        return
+    gdoc = Gui.getDocument(doc.Name)
+    spremenjen = gdoc.Modified
+    stevilo = 0
+    for obj in doc.Objects:
+        if vidnost.get(obj.Name, True) and not obj.Visibility:
+            vo = gdoc.getObject(obj.Name)
+            if vo is not None:
+                vo.Visibility = True
+            else:
+                obj.Visibility = True
+            stevilo += 1
+    gdoc.Modified = spremenjen
+    if stevilo:
+        _log("vidnost %d objektov obnovljena (datoteka brez GuiDocument.xml): %s" % (stevilo, doc.FileName))
+
+
+# Vrsta dokumenta po tipih objektov: "sestav" (Assembly, povezave App::Link na druge kose ali več App::Part),
+# "del" (telesa PartDesign ali oblike Part) ali "" (prazen dokument, skice ...). Enako za datoteke (Document.xml v FCStd)
+# in odprte dokumente (TypeId), da stran oboje označi enako.
+TIPI_TELES = ("PartDesign::Body", "Part::Feature", "Part::Box", "Part::Cylinder", "Part::Cone", "Part::Sphere",
+              "Part::Torus", "Part::Cut", "Part::Fuse", "Part::Common", "Part::MultiFuse", "Part::MultiCommon",
+              "Part::Extrusion", "Part::Revolution", "Part::Mirroring", "Part::Fillet", "Part::Chamfer", "Part::Loft",
+              "Part::Sweep", "Part::Compound", "Part::Prism", "Part::Wedge", "Mesh::Feature")
+
+
+def _vrsta_iz_tipov(tipi):
+    tipi = list(tipi)
+    povezav = sum(1 for t in tipi if t in ("App::Link", "App::LinkGroup", "App::LinkElement"))
+    delov = sum(1 for t in tipi if t == "App::Part")
+    teles = sum(1 for t in tipi if t in TIPI_TELES)
+    if any(t.startswith("Assembly::") for t in tipi) or povezav or delov > 1:
+        vrsta = "sestav"
+    elif teles or delov:
+        vrsta = "del"
+    else:
+        vrsta = ""
+    return {"vrsta": vrsta, "teles": teles, "povezav": povezav}
+
+
+_LASTNOSTI_FCSTD = {}  # (pot, mtime, velikost) -> {vrsta, teles, povezav, slicica}; branje zipa je drago
+
+
+def _lastnosti_fcstd(pot, st):
+    """Vrsta in prisotnost sličice (thumbnails/Thumbnail.png) iz datoteke FCStd; samo datotečni dostop, brez FreeCAD API-ja."""
+    kljuc = (os.path.normcase(pot), int(st.st_mtime), st.st_size)
+    r = _LASTNOSTI_FCSTD.get(kljuc)
+    if r is None:
+        r = {"vrsta": "", "teles": 0, "povezav": 0, "slicica": False}
+        try:
+            with zipfile.ZipFile(pot) as z:
+                imena = z.namelist()
+                r["slicica"] = "thumbnails/Thumbnail.png" in imena and _uporabna_slicica(z.read("thumbnails/Thumbnail.png"))
+                if "Document.xml" in imena:
+                    tipi = []
+                    for _, e in ET.iterparse(z.open("Document.xml")):
+                        if e.tag == "Object" and e.get("type"):
+                            tipi.append(e.get("type"))
+                        if e.tag in ("Object", "Property"):
+                            e.clear()
+                    r.update(_vrsta_iz_tipov(tipi))
+        except Exception:  # noqa: BLE001
+            _log("lastnosti %s: %s" % (pot, traceback.format_exc().splitlines()[-1]))
+        if len(_LASTNOSTI_FCSTD) > 500:
+            _LASTNOSTI_FCSTD.clear()
+        _LASTNOSTI_FCSTD[kljuc] = r
+    return dict(r)
+
+
+# Sličice modelov (renderji), ki jih izriše stran iz svojega 3D pogleda in pošlje s POST /slicica; shranjene po
+# datoteki v %LOCALAPPDATA%/FreeCAD-splet/slicice/<sha1 poti>.png. FreeCAD-ova vgrajena sličica (thumbnails/Thumbnail.png
+# v FCStd) je le rezerva in le, če je uporabna: iz skritega okna nastane prazna ali sivo odrezana (_uporabna_slicica).
+MAPA_SLICIC = os.path.join(os.environ.get("LOCALAPPDATA") or os.path.expanduser("~"), "FreeCAD-splet", "slicice")
+
+
+def _uporabna_slicica(png):
+    """Ali je FreeCAD-ova vgrajena sličica uporabna: ni prazna in model ni odrezan ob robu slike.
+
+    Ozadje je navpični preliv med barvo zgornjih in spodnjih vogalov (FreeCAD-ovo ozadje je preliv); vsebina so
+    piksli, ki od njega očitno odstopajo. Prazna slika ima vsebine skoraj nič, odrezana pa jo ima po robu
+    (ali vogali sami niso ozadje, kar prav tako napolni rob). Brez Pillow velja za uporabno."""
+    try:
+        from PIL import Image
+    except ImportError:
+        return True
+    try:
+        im = Image.open(io.BytesIO(png)).convert("RGB")
+        im.thumbnail((64, 64))
+        w, h = im.size
+        if w < 4 or h < 4:
+            return False
+        px = im.load()
+        zgoraj = [(a + b) / 2 for a, b in zip(px[0, 0], px[w - 1, 0])]
+        spodaj = [(a + b) / 2 for a, b in zip(px[0, h - 1], px[w - 1, h - 1])]
+
+        def vsebina(x, y):
+            f = y / (h - 1)
+            return max(abs(c - (z + (s - z) * f)) for c, z, s in zip(px[x, y], zgoraj, spodaj)) > 20
+
+        rob = [(x, y) for x in range(w) for y in (0, h - 1)] + [(x, y) for y in range(1, h - 1) for x in (0, w - 1)]
+        na_robu = sum(1 for x, y in rob if vsebina(x, y)) / len(rob)
+        skupaj = sum(1 for x in range(w) for y in range(h) if vsebina(x, y)) / (w * h)
+        return 0.005 < skupaj < 0.85 and na_robu < 0.03
+    except Exception:  # noqa: BLE001
+        return True
+
+
+def _pot_slicice(pot):
+    import hashlib
+    return os.path.join(MAPA_SLICIC, hashlib.sha1(os.path.normcase(os.path.normpath(pot)).encode("utf-8")).hexdigest() + ".png")
+
+
+_RENDER_OK = {}  # (pot renderja, mtime) -> ali je render uporaben (prazen render se ne upošteva)
+
+
+def _shranjena_slicica(pot):
+    """mtime shranjenega in uporabnega renderja za datoteko ali 0."""
+    try:
+        r = _pot_slicice(pot)
+        mtime = int(os.stat(r).st_mtime)
+    except OSError:
+        return 0
+    ok = _RENDER_OK.get((r, mtime))
+    if ok is None:
+        try:
+            with open(r, "rb") as f:
+                ok = _uporabna_slicica(f.read())
+        except OSError:
+            return 0
+        if len(_RENDER_OK) > 500:
+            _RENDER_OK.clear()
+        _RENDER_OK[(r, mtime)] = ok
+    return mtime if ok else 0
+
+
+def _slicica_fcstd(pot):
+    """Bajti PNG sličice: shranjeni render strani, sicer FreeCAD-ova iz FCStd, sicer None (strežniška nit; brez FreeCAD API-ja)."""
+    if _shranjena_slicica(pot):
+        try:
+            with open(_pot_slicice(pot), "rb") as f:
+                return f.read()
+        except OSError:
+            pass
+    try:
+        with zipfile.ZipFile(pot) as z:
+            png = z.read("thumbnails/Thumbnail.png")
+        return png if _uporabna_slicica(png) else None
+    except Exception:  # noqa: BLE001
+        return None
+
+
+def _shrani_slicico(pot, png):
+    os.makedirs(MAPA_SLICIC, exist_ok=True)
+    zacasna = _pot_slicice(pot) + ".tmp"
+    with open(zacasna, "wb") as f:
+        f.write(png)
+    os.replace(zacasna, _pot_slicice(pot))
+
+
 def _datoteka_projekta(pot):
     try:
         st = os.stat(pot)
     except OSError:
         return None
-    return {"ime": os.path.splitext(os.path.basename(pot))[0], "pot": _pot(pot),
-            "velikost": st.st_size, "spremenjeno": int(st.st_mtime)}
+    d = {"ime": os.path.splitext(os.path.basename(pot))[0], "pot": _pot(pot),
+         "velikost": st.st_size, "spremenjeno": int(st.st_mtime)}
+    d.update(_lastnosti_fcstd(pot, st))
+    render = _shranjena_slicica(pot)
+    d["slicica"] = d["slicica"] or render > 0
+    d["slicicaV"] = max(render, int(st.st_mtime))
+    return d
 
 
 def _projekti_v_mapah():
@@ -1275,27 +1604,6 @@ def _projekti_v_mapah():
     return skupine
 
 
-def _nedavne_datoteke(znane):
-    """Nedavne datoteke FreeCAD-a (nastavitve RecentFiles), ki še obstajajo in niso že v mapah projektov."""
-    try:
-        skupina = App.ParamGet("User parameter:BaseApp/Preferences/RecentFiles")
-    except Exception:  # noqa: BLE001
-        return []
-    nedavne = []
-    for i in range(30):
-        pot = skupina.GetString("MRU%d" % i, "")
-        if not pot:
-            break
-        if not pot.lower().endswith(".fcstd") or any(_ista_pot(pot, z) for z in znane):
-            continue
-        d = _datoteka_projekta(pot)
-        if d is not None:
-            nedavne.append(d)
-        if len(nedavne) >= NEDAVNIH_NAJVEC:
-            break
-    return nedavne
-
-
 def _spremenjen(doc):
     """Neshranjene spremembe pozna le dokument na strani Gui (App.Document nima lastnosti Modified)."""
     try:
@@ -1310,11 +1618,25 @@ def zgradi_projekte():
     for d in App.listDocuments().values():
         if getattr(d, "Temporary", False):
             continue
-        odprti.append({"ime": d.Name, "oznaka": d.Label, "pot": _pot(d.FileName) if d.FileName else "",
-                       "spremenjen": _spremenjen(d), "aktiven": d.Name == aktivni})
-    skupine = _projekti_v_mapah()
-    znane = [d["pot"] for s in skupine for d in s["datoteke"]]
-    return {"odprti": odprti, "skupine": skupine, "nedavne": _nedavne_datoteke(znane)}
+        o = {"ime": d.Name, "oznaka": d.Label, "pot": _pot(d.FileName) if d.FileName else "",
+             "spremenjen": _spremenjen(d), "aktiven": d.Name == aktivni, "slicica": False, "spremenjeno": 0, "slicicaV": 0}
+        o.update(_vrsta_iz_tipov(x.TypeId for x in d.Objects))
+        if d.FileName:
+            try:
+                # PDM: zaklep datoteke (iz predpomnilnika; ob prvem odprtju se sproži samodejni zaklep v ozadju)
+                o["zaklep"] = OBLAK.zaklep_dokumenta(d.FileName)
+            except Exception as e:  # noqa: BLE001
+                _log("oblak: zaklep za seznam: %r" % e)
+            try:
+                st = os.stat(d.FileName)
+                render = _shranjena_slicica(d.FileName)
+                o["spremenjeno"] = int(st.st_mtime)
+                o["slicica"] = _lastnosti_fcstd(d.FileName, st)["slicica"] or render > 0
+                o["slicicaV"] = max(render, int(st.st_mtime))
+            except OSError:
+                pass
+        odprti.append(o)
+    return {"odprti": odprti, "skupine": _projekti_v_mapah()}
 
 
 def _projekt_dejanje(stanje, podatki):
@@ -1326,16 +1648,57 @@ def _projekt_dejanje(stanje, podatki):
                 App.setActiveDocument(d.Name)
                 break
         else:
-            if not os.path.isfile(pot):
-                _log("projekt: datoteke ni: %s" % pot)
-                return
-            _log("odpiram %s" % pot)
-            doc = App.openDocument(pot)
-            App.setActiveDocument(doc.Name)
+            if os.path.isfile(pot):
+                _log("odpiram %s" % pot)
+                doc = App.openDocument(pot)
+                App.setActiveDocument(doc.Name)
+            else:
+                _log("projekt: datoteke ni: %s" % pot)  # seznam se spodaj osveži, vnos izgine
     elif dejanje == "aktiviraj":
         ime = podatki.get("ime", "")
+        pot = podatki.get("pot", "")
         if ime in App.listDocuments():
             App.setActiveDocument(ime)
+        elif pot and os.path.isfile(pot):
+            # Seznam v brskalniku je bil zastarel (dokument je medtem zaprt): datoteko odpremo znova.
+            _log("projekt: dokument %s ni več odprt, odpiram %s" % (ime, pot))
+            doc = App.openDocument(pot)
+            App.setActiveDocument(doc.Name)
+        else:
+            _log("projekt: dokumenta %s ni več (zastarel seznam v brskalniku)" % ime)
+    elif dejanje == "odpri-razlicico":
+        # Prenesena različica iz oblaka (oblak.py): kopija v mapi različic, odprta za ogled; oznaka pove, katera.
+        pot = podatki.get("pot", "")
+        for d in App.listDocuments().values():
+            if _ista_pot(d.FileName, pot):
+                App.closeDocument(d.Name)   # sveže prenesena vsebina naj zamenja prejšnji ogled iste različice
+                break
+        if os.path.isfile(pot):
+            # Oznaka dokumenta ostane ime datoteke (»ime · različica N«); nastavljanje Label bi dokument označilo
+            # kot spremenjen in ob zapiranju vprašalo za shranjevanje.
+            _log("odpiram različico %s" % pot)
+            doc = App.openDocument(pot)
+            App.setActiveDocument(doc.Name)
+        else:
+            _log("projekt: različice ni: %s" % pot)
+    elif dejanje == "osvezi":
+        # Odjemalec oblaka je datoteko na disku zamenjal (obnova različice): odprt dokument brez neshranjenih
+        # sprememb znova naložimo; spremenjenega ne, da uporabnik ne izgubi dela.
+        pot = podatki.get("pot", "")
+        for d in list(App.listDocuments().values()):
+            if _ista_pot(d.FileName, pot):
+                if _spremenjen(d):
+                    _log("projekt: %s ima neshranjene spremembe, ne osvežim" % d.Name)
+                    stanje.oddaj("oblak", {"vrsta": "neosvezeno", "pot": pot,
+                                           "sporocilo": "Dokument »%s« ima neshranjene spremembe, zato ni bil osvežen na obnovljeno različico." % d.Label})
+                    return
+                aktiven = App.ActiveDocument is not None and App.ActiveDocument.Name == d.Name
+                _log("osvežujem %s iz diska" % pot)
+                App.closeDocument(d.Name)
+                nov = App.openDocument(pot)
+                if aktiven:
+                    App.setActiveDocument(nov.Name)
+                break
     elif dejanje == "zapri":
         # Brskalnik je pri neshranjenih spremembah že vprašal za potrditev.
         ime = podatki.get("ime", "")
@@ -1345,6 +1708,10 @@ def _projekt_dejanje(stanje, podatki):
                 stanje.oddaj("skica", None)
             _log("zapiram dokument %s" % ime)
             App.closeDocument(ime)
+    elif dejanje == "osvezi-seznam":
+        # Zaklep se je spremenil (oblak.py v ozadju): samo znova zgradi seznam odprtih dokumentov.
+        stanje.zadnji_projekti = 0.0
+        return
     else:
         return
     if IMA_OKNO:
@@ -1377,8 +1744,10 @@ class Stanje:
         self.obrazec = None                # JSON obrazca, ki je trenutno v brskalniku (ali None)
         self.obrazec_mapa = {}             # id -> (gradnik, dodatno) zadnjega zajema
         self.zadnji_obrazec = 0.0
-        self._projekti = b'{"odprti":[],"skupine":[],"nedavne":[]}'
+        self._projekti = b'{"odprti":[],"skupine":[]}'
         self.zadnji_projekti = 0.0
+        self.za_vidnost = set()      # imena novo odprtih dokumentov, ki jim je treba po obnovi preveriti vidnost
+        self.za_dvojnike = 0.0       # čas zadnjega novega dokumenta; ko se odpiranje umiri, se zaprejo dvojniki
 
     def skrivaj_okna(self):
         """Ali naj nova okna FreeCAD-a ostanejo nevidna (vse se dela v brskalniku)."""
@@ -1448,6 +1817,10 @@ class Stanje:
             except Exception:  # noqa: BLE001
                 self.napaka = traceback.format_exc()
                 _log("obrazec: %s" % self.napaka)
+        if self.za_vidnost:
+            self.preveri_vidnost()
+        if self.za_dvojnike and zdaj - self.za_dvojnike > 1.5:
+            self.preveri_dvojnike()
         if self.umazano and zdaj - self.zadnja_gradnja > 0.3:
             self.zgradi()
         if zdaj - self.zadnji_projekti > 2.0:
@@ -1465,23 +1838,32 @@ class Stanje:
                 self.napaka = traceback.format_exc()
 
     def zgradi(self):
+        zacetek = time.time()
         doc = App.ActiveDocument
         objekti = []
+        zadetki = 0
         if doc is not None:
             for obj in _vidni_objekti(doc):
                 try:
-                    objekti.append(_geometrija(obj))
+                    posnetek, zadetek = _geometrija_predpomnjena(doc, obj)
+                    objekti.append(posnetek)
+                    zadetki += zadetek
                 except Exception:  # noqa: BLE001
                     _log("objekt %s preskočen: %s" % (obj.Name, traceback.format_exc()))
+        try:
+            drevo = drevo_dokumenta(doc, _ikona_uri)
+        except Exception:  # noqa: BLE001
+            drevo = {"koreni": [], "vozli": {}}
+            _log("drevo dokumenta: %s" % traceback.format_exc())
         self.verzija += 1
-        self._posnetek = json.dumps(
-            {"dokument": doc.Label if doc else "", "verzija": self.verzija, "objekti": objekti},
-            separators=(",", ":"),
-        ).encode("utf-8")
+        self._posnetek = ('{"dokument":%s,"verzija":%d,"objekti":[%s],"drevo":%s}' % (
+            json.dumps(doc.Label if doc else ""), self.verzija, ",".join(objekti),
+            json.dumps(drevo, separators=(",", ":")))).encode("utf-8")
         self.umazano = False
         self.zadnja_gradnja = time.time()
         self.oddaj("model", {"verzija": self.verzija})
-        _log("posnetek %d: %d objektov, %.1f kB" % (self.verzija, len(objekti), len(self._posnetek) / 1024.0))
+        _log("posnetek %d: %d objektov (%d iz predpomnilnika), %.1f kB, %.2f s"
+             % (self.verzija, len(objekti), zadetki, len(self._posnetek) / 1024.0, time.time() - zacetek))
 
     def zgradi_ukaze(self):
         podatki, self.imena_ukazov = zgradi_ukaze()
@@ -1555,6 +1937,37 @@ class Stanje:
         if okolje != self.okolje:
             self.okolje = okolje
             self.oddaj("okolje", okolje)
+
+    def preveri_vidnost(self):
+        """Novo odprtim dokumentom (ko obnova konča) vrne vidnost iz datoteke, če ta nima GuiDocument.xml."""
+        for ime in list(self.za_vidnost):
+            doc = App.getDocument(ime) if ime in App.listDocuments() else None
+            if doc is None:
+                self.za_vidnost.discard(ime)
+            elif not getattr(doc, "Restoring", False):
+                self.za_vidnost.discard(ime)
+                try:
+                    _popravi_vidnost(doc)
+                except Exception:  # noqa: BLE001
+                    _log("vidnost %s: %s" % (ime, traceback.format_exc()))
+                self.umazano = True
+
+    def preveri_dvojnike(self):
+        """Ko se odpiranje dokumentov umiri (noben se ne nalaga, ni modalnega okna, npr. Obnove dokumentov),
+        zapre dvojnike iste datoteke in odvečne vzorčne dokumente."""
+        if any(getattr(d, "Restoring", False) for d in App.listDocuments().values()):
+            return
+        if IMA_OKNO:
+            from PySide6 import QtWidgets
+            if QtWidgets.QApplication.activeModalWidget() is not None:
+                return
+        self.za_dvojnike = 0.0
+        try:
+            if _zapri_dvojnike():
+                self.umazano = True
+                self.zadnji_projekti = 0.0
+        except Exception:  # noqa: BLE001
+            _log("dvojniki: %s" % traceback.format_exc())
 
     def preveri_projekte(self):
         """Seznam projektov in odprtih dokumentov; pošlje le ob spremembi."""
@@ -1630,6 +2043,10 @@ class Stanje:
                     _skrij_okno()
                 self.zadnji_pregled = 0.0
         elif ukaz == "izhod":
+            try:
+                OBLAK.odkleni_vse()   # PDM: zaklepi tega primerka ne smejo ostati v oblaku
+            except Exception as e:  # noqa: BLE001
+                _log("oblak: odklep ob izhodu: %r" % e)
             if IMA_OKNO:
                 # Brskalnik je že vprašal za potrditev; neshranjene spremembe se zavržejo.
                 from PySide6 import QtCore, QtWidgets
@@ -1719,6 +2136,8 @@ class Stanje:
                 self.oddaj_skico(novi)
         elif ukaz == "projekt":
             _projekt_dejanje(self, podatki)
+        elif ukaz == "drevo":
+            drevo_dejanje(self, podatki)
         elif ukaz == "obrazec":
             if IMA_OKNO and self.obrazec is not None and podatki.get("kljuc") == self.obrazec.get("kljuc"):
                 _obrazec_dejanje(self.obrazec_mapa, podatki)
@@ -1740,6 +2159,7 @@ class Stanje:
 
 
 STANJE = Stanje()
+OBLAK = Oblak(_log, STANJE.vrsta, STANJE.oddaj)   # različice datotek iz lastnega oblaka (PDM)
 
 
 # ---------------------------------------------------------------------------
@@ -1755,18 +2175,41 @@ class OpazovalecDokumenta:
 
     def slotDeletedObject(self, obj):
         STANJE.umazano = True
+        try:
+            _pozabi_geometrijo(obj.Document.Name, obj.Name)
+        except Exception:  # noqa: BLE001
+            pass
 
     def slotActivateDocument(self, doc):
         STANJE.umazano = True
+        STANJE.zadnja_gradnja = 0.0  # preklop dokumenta: posnetek takoj, brez zamika za združevanje sprememb
         STANJE.zadnji_projekti = 0.0
 
     def slotCreatedDocument(self, doc):
         STANJE.umazano = True
         STANJE.zadnji_projekti = 0.0
+        STANJE.za_vidnost.add(doc.Name)  # Python opazovalec nima slotFinishRestoreDocument; preveri se v zanki
+        STANJE.za_dvojnike = time.time()
 
     def slotDeletedDocument(self, doc):
         STANJE.umazano = True
         STANJE.zadnji_projekti = 0.0
+        _pozabi_geometrijo(doc.Name)
+        try:
+            if doc.FileName:
+                OBLAK.dokument_zaprt(doc.FileName)   # PDM: sprosti zaklep tega primerka (v ozadju)
+        except Exception as e:  # noqa: BLE001
+            _log("oblak: odklep ob zaprtju: %r" % e)
+
+    def slotFinishSaveDocument(self, doc, ime):
+        # PDM (oblak.py): po shranjevanju datoteke iz mape oblaka brskalnik vpraša »Kaj si spremenil?«;
+        # komentar se zapiše k reviziji, ki jo bo oblaku poslal odjemalec oblaka.
+        STANJE.zadnji_projekti = 0.0
+        try:
+            if ime and OBLAK.prijavljen() and OBLAK.v_oblaku(ime) and not OBLAK.je_razlicica(ime):
+                STANJE.oddaj("oblak", {"vrsta": "shranjeno", "pot": ime, "ime": doc.Label})
+        except Exception as e:  # noqa: BLE001
+            _log("oblak: dogodek shranjevanja: %r" % e)
 
 
 class OpazovalecPogleda:
@@ -1809,11 +2252,18 @@ class Zahteva(http.server.BaseHTTPRequestHandler):
     def log_message(self, fmt, *args):  # tiho
         pass
 
-    def _odgovor(self, telo, vrsta="application/json; charset=utf-8", koda=200):
+    def _znana_datoteka(self, pot):
+        """Pot je med datotekami trenutnega seznama projektov (odprti dokumenti, mape projektov ...)."""
+        p = json.loads(STANJE.projekti())
+        znane = [d["pot"] for d in p.get("odprti", [])] + [d["pot"] for d in p.get("nedavne", [])]
+        znane += [d["pot"] for sk in p.get("skupine", []) for d in sk["datoteke"]]
+        return any(_ista_pot(pot, z) for z in znane)
+
+    def _odgovor(self, telo, vrsta="application/json; charset=utf-8", koda=200, predpomni=False):
         self.send_response(koda)
         self.send_header("Content-Type", vrsta)
         self.send_header("Content-Length", str(len(telo)))
-        self.send_header("Cache-Control", "no-store")
+        self.send_header("Cache-Control", "max-age=86400" if predpomni else "no-store")
         self.end_headers()
         self.wfile.write(telo)
 
@@ -1823,15 +2273,41 @@ class Zahteva(http.server.BaseHTTPRequestHandler):
             with open(os.path.join(MAPA, "index.html"), "rb") as f:
                 stran = f.read().replace(b"__ZETON__", ZETON.encode("ascii"))
             self._odgovor(stran, "text/html; charset=utf-8")
-        elif pot in ("/ikona.svg", "/favicon.ico"):
+        elif pot == "/ikona.svg":
             with open(os.path.join(MAPA, "ikona.svg"), "rb") as f:
-                self._odgovor(f.read(), "image/svg+xml")
+                self._odgovor(f.read(), "image/svg+xml", predpomni=True)
+        elif pot == "/ikona.png":
+            with open(os.path.join(MAPA, "ikona.png"), "rb") as f:
+                self._odgovor(f.read(), "image/png", predpomni=True)
+        elif pot == "/favicon.ico":
+            # Pravi ICO (iz ikona.png, več velikosti); PNG pod imenom .ico nekateri brskalniki zavrnejo.
+            with open(os.path.join(MAPA, "favicon.ico"), "rb") as f:
+                self._odgovor(f.read(), "image/x-icon", predpomni=True)
+        elif pot == "/slicica":
+            # Sličica modela (render strani ali FreeCAD-ova iz FCStd); samo za datoteke iz seznama projektov, ne poljubne poti.
+            import urllib.parse
+            q = urllib.parse.parse_qs(self.path.partition("?")[2])
+            iskana = (q.get("pot") or [""])[0]
+            if not self._znana_datoteka(iskana):
+                self._odgovor(b"", "text/plain", 404)
+                return
+            slika = _slicica_fcstd(iskana)
+            if slika is None:
+                self._odgovor(b"", "text/plain", 404)
+            else:
+                self._odgovor(slika, "image/png", predpomni=True)
         elif pot == "/model":
             self._odgovor(STANJE.posnetek())
         elif pot == "/ukazi":
             self._odgovor(STANJE.ukazi())
         elif pot == "/projekti":
             self._odgovor(STANJE.projekti())
+        elif pot.startswith("/oblak/"):
+            # Različice iz oblaka (oblak.py): klici v oblak tečejo tu, na niti strežnika.
+            import urllib.parse
+            q = {k: v[0] for k, v in urllib.parse.parse_qs(self.path.partition("?")[2]).items()}
+            koda, telo = oblak_zahteva(OBLAK, "GET", pot, q)
+            self._odgovor(json.dumps(telo, ensure_ascii=False).encode("utf-8"), koda=koda)
         elif pot == "/stanje":
             self._odgovor(json.dumps(STANJE.stanje(), ensure_ascii=False).encode("utf-8"))
         elif pot == "/events":
@@ -1853,8 +2329,30 @@ class Zahteva(http.server.BaseHTTPRequestHandler):
         pot = self.path.split("?")[0]
         poti = {"/select": "izbira", "/ukaz": "ukaz", "/okolje": "okolje", "/okno": "okno",
                 "/izhod": "izhod", "/skica": "skica", "/znacilnost": "znacilnost", "/obrazec": "obrazec",
-                "/projekt": "projekt"}
-        if pot == "/python":
+                "/projekt": "projekt", "/drevo": "drevo"}
+        if pot == "/slicica":
+            # Render modela iz strani (PNG kot data URL) za datoteko dokumenta; shrani se v niti strežnika (samo datoteke).
+            import base64
+            iskana = podatki.get("pot", "")
+            png = podatki.get("png", "")
+            if not self._znana_datoteka(iskana):
+                self._odgovor(b'{"napaka":"neznana datoteka"}', koda=404)
+                return
+            try:
+                bajti = base64.b64decode(png.partition(",")[2] if png.startswith("data:") else png)
+            except (ValueError, TypeError):
+                bajti = b""
+            if not bajti.startswith(b"\x89PNG") or len(bajti) > 2_000_000 or not _uporabna_slicica(bajti):
+                self._odgovor(b'{"napaka":"png"}', koda=400)   # tudi prazen render (npr. še brez geometrije) se ne shrani
+                return
+            try:
+                _shrani_slicico(iskana, bajti)
+            except OSError as e:
+                self._odgovor(json.dumps({"napaka": str(e)}).encode("utf-8"), koda=500)
+                return
+            STANJE.zadnji_projekti = 0.0   # seznam se pošlje znova z novo različico sličice
+            self._odgovor(b'{"ok":true}')
+        elif pot == "/python":
             # Počaka na izvedbo na glavni niti in vrne izpis, napako in spremenljivko "rezultat".
             odgovor = {"konec": threading.Event(), "izpis": "", "napaka": "", "rezultat": None}
             STANJE.vrsta.put(("python", podatki, odgovor))
@@ -1862,6 +2360,9 @@ class Zahteva(http.server.BaseHTTPRequestHandler):
             telo = {"ok": koncano and not odgovor["napaka"], "koncano": koncano, "izpis": odgovor["izpis"],
                     "napaka": odgovor["napaka"], "rezultat": odgovor["rezultat"]}
             self._odgovor(json.dumps(telo, ensure_ascii=False, default=str).encode("utf-8"))
+        elif pot.startswith("/oblak/"):
+            koda, telo = oblak_zahteva(OBLAK, "POST", pot, podatki)
+            self._odgovor(json.dumps(telo, ensure_ascii=False).encode("utf-8"), koda=koda)
         elif pot in poti:
             STANJE.vrsta.put((poti[pot], podatki, None))
             self._odgovor(b'{"ok":true}')
@@ -1940,6 +2441,70 @@ def _vzorcni_dokument():
     return doc
 
 
+def _je_vzorec(doc):
+    """Nedotaknjen vzorčni dokument (_vzorcni_dokument): brez datoteke, le Ohisje in Cep, brez korakov razveljavitve.
+    Tak dokument nastane tudi iz Obnove dokumentov po nasilnem koncu prejšnjega primerka (ime Unnamed, oznaka Preizkus)."""
+    return (not doc.FileName and doc.Label.startswith("Preizkus")
+            and sorted(o.Name for o in doc.Objects) == ["Cep", "Ohisje"]
+            and not doc.UndoCount and not doc.RedoCount)
+
+
+# Kopije zaprtih dvojnikov (morda nosijo obnovljene spremembe), da se nič ne izgubi.
+MAPA_DVOJNIKOV = os.path.join(os.environ.get("LOCALAPPDATA") or os.path.expanduser("~"), "FreeCAD-splet", "dvojniki")
+
+
+def _zapri_dvojnike():
+    """Zapre dvojnike, ki jih pusti FreeCAD-ova Obnova dokumentov: ta odpre kopijo vsakega dokumenta iz vsakega
+    nasilno končanega primerka in ne preveri, ali je ista datoteka že odprta. Od dokumentov z isto datoteko ostane
+    tisti z najnovejšim LastModifiedDate (ob enakem prvi), ostali se pred zaprtjem shranijo kot kopija v
+    MAPA_DVOJNIKOV. Vzorčni dokumenti se zaprejo, ko je odprt kakšen drug dokument; sicer ostane en.
+    Vrne število zaprtih dokumentov."""
+    dokumenti = list(App.listDocuments().values())
+    zapri = []
+    vzorci = [d for d in dokumenti if _je_vzorec(d)]
+    zapri += vzorci if len(vzorci) < len(dokumenti) else vzorci[1:]
+    namesto = {}   # ime zaprtega dvojnika -> ime dokumenta, ki ostane (ta postane aktiven namesto njega)
+    po_poti = {}
+    for d in dokumenti:
+        if d.FileName:
+            po_poti.setdefault(os.path.normcase(os.path.normpath(d.FileName)), []).append(d)
+
+    def cas(d):
+        c = d.LastModifiedDate
+        return c if c and c[0].isdigit() else ""
+
+    for skupina in po_poti.values():
+        if len(skupina) < 2:
+            continue
+        ostane = max(skupina, key=cas)
+        for d in skupina:
+            if d is ostane:
+                continue
+            try:
+                os.makedirs(MAPA_DVOJNIKOV, exist_ok=True)
+                kopija = os.path.join(MAPA_DVOJNIKOV, "%s (%s) %s.FCStd" % (
+                    os.path.splitext(os.path.basename(d.FileName))[0], d.Name, time.strftime("%Y%m%d-%H%M%S")))
+                d.saveCopy(kopija)
+                _log("dvojnik %s (%s): kopija %s" % (d.Name, d.FileName, kopija))
+            except Exception as e:  # noqa: BLE001
+                _log("dvojnik %s ostane odprt, kopija ni uspela: %r" % (d.Name, e))
+                continue
+            zapri.append(d)
+            namesto[d.Name] = ostane.Name
+    imena = [d.Name for d in zapri]
+    aktivni = App.ActiveDocument.Name if App.ActiveDocument is not None else None
+    if aktivni in imena:
+        ostali = [d.Name for d in dokumenti if d.Name not in imena]
+        if aktivni in namesto:
+            App.setActiveDocument(namesto[aktivni])
+        elif ostali:
+            App.setActiveDocument(ostali[0])
+    for ime in imena:
+        _log("zapiram dvojnik ali vzorec: %s" % ime)
+        App.closeDocument(ime)
+    return len(imena)
+
+
 # ---------------------------------------------------------------------------
 # Zagon
 
@@ -1981,6 +2546,10 @@ def _qt_izbira_datotek(aplikacija):
             skupina.SetBool("DontUseNativeDialog", prej)
         else:
             skupina.RemBool("DontUseNativeDialog")
+        try:
+            OBLAK.odkleni_vse()   # PDM: tudi ob zaprtju okna z X zaklepi ne ostanejo v oblaku
+        except Exception as e:  # noqa: BLE001
+            _log("oblak: odklep ob koncu: %r" % e)
         _pobrisi_povezavo()
 
     aplikacija.aboutToQuit.connect(vrni)

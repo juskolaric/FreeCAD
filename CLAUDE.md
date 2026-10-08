@@ -41,6 +41,9 @@ pixi run freecad-release     # install-release + zagon .pixi/envs/default/Librar
 FreeCAD je motor, vmesnik in grafika nastajata v brskalniku (plan, korak 8 naprej). Dokaz koncepta:
 
 - Zagon: `lastno\splet\ZAZENI-SPLET.bat` (FreeCAD s strežnikom, odpre brskalnik) ali `FreeCAD.exe lastno/splet/streznik.py`.
+  Skripta od 2026-10-07 pixi zažene **brez vidne konzole** (PowerShell `Start-Process -WindowStyle Hidden`, `pixi run -q --no-progress`);
+  izpis FreeCAD-a gre v `build/splet-zagon.log` in `build/splet-zagon-napake.log`. Program se konča z gumbom Izhod v brskalniku;
+  `SPLET_KONZOLA=vidna` vrne pomanjšano konzolo. Okoljski `PIXI_NO_PROGRESS` ne nastavljaj na `1` (pixi sprejme le `true`/`false`).
   Naslov `http://127.0.0.1:3020/` (vrata po `Photolandia-Apps/ports.json`). Okolje: `SPLET_VRATA`, `SPLET_BRSKALNIK=0` ne odpre brskalnika,
   `SPLET_OKNO=vidno` pusti okno FreeCAD-a vidno (privzeto je **skrito** in se samo od sebe nikoli ne pokaže; gumba v
   brskalniku: Pokaži/Skrij FreeCAD in Izhod). Možnost `--hidden` FreeCAD-a ni uporabna: po skripti se program konča.
@@ -55,11 +58,21 @@ FreeCAD je motor, vmesnik in grafika nastajata v brskalniku (plan, korak 8 napre
   vrne `izpis`, `napaka`, `rezultat`), `POST /obrazec`. Vsak POST potrebuje glavo `X-Zeton` (žeton nastane ob
   zagonu in je vpisan v stran), da tuja spletna stran v brskalniku ne more poganjati kode v FreeCAD-u.
 - Vir resnice za izbiro je FreeCAD (`Gui.Selection`): brskalnik pošlje klik, obarva pa šele to, kar FreeCAD javi.
+- Posnetek geometrije (od 2026-10-07) ima **predpomnilnik po objektih** (`_PREDPOMNILNIK`, ključ: oblika prek povezanega objekta /
+  otrok skupine, lega, barve, oznaka; vnos je že serializiran JSON). Ob preklopu dokumenta ali ponovnem izračunu se teselirajo le
+  spremenjeni objekti (soba: 6 s -> 0,3 s). Oblika se ne kopira (`copy()` izgubi mrežo); točke se prestavijo z `getGlobalPlacement`.
+  Skupine (`App::DocumentObjectGroup`) niso v posnetku (njihov `Shape` je le sestav otrok, ki so v posnetku vsak zase). Ob preklopu
+  dokumenta se posnetek zgradi takoj (brez zamika 300 ms). Dnevnik: `posnetek N: X objektov (Y iz predpomnilnika), kB, s`.
 - Pogled (3D) se vodi kot v SolidWorksu (lasten nadzor `nadzor` v `index.html`, ne OrbitControls): srednji gumb vrti
-  prosto okoli središča modela ali okoli točke, ki jo določi klik srednjega na model; Ctrl/Shift/Alt + srednji = premik,
-  povečava, sukanje; kolešček naprej oddalji (`OBRNI_KOLESCEK`), proti kazalcu; levi gumb samo izbira. Tipke: puščice 15°,
+  prosto okoli središča modela (ko je ves v pogledu), sicer okoli točke na vidni geometriji blizu sredine zaslona
+  (kot SolidWorks; vijolična oznaka med vlekom, da povečan detajl ne odleti), ali okoli točke, ki jo določi klik srednjega na model; Ctrl/Shift/Alt + srednji = premik,
+  povečava, sukanje; kolešček naprej oddalji (`OBRNI_KOLESCEK`), proti kazalcu; levi gumb samo izbira. Projekcija je privzeto
+  **pravokotna** kot v SolidWorksu (gumb Perspektiva v vrstici pogledov ali v meniju na preslednico, stanje v `localStorage`):
+  lega pogleda živi v perspektivni `camera`, pravokotna kamera se pred izrisom in žarki uskladi z njo (`kameraPogleda()`),
+  višina okna = razdalja do cilja × tan(fov/2), zato povečava, premik in prileganje delujejo enako v obeh načinih. Tipke: puščice 15°,
   Shift 90°, Alt sukanje, Ctrl premik, Ctrl+1..7 ali 1..7 standardni pogledi (Ctrl+številke brskalnik pogosto vzame
-  sam), 8 pravokotno na izbrano ploskev, F, Z, Shift+Z, preslednica meni pogledov. Skica ostaja na `ortoControls`.
+  sam), 8 pravokotno na izbrano ploskev, F, Z, Shift+Z, preslednica meni pogledov. Isti pogledi so tudi gumbi v zgornjem desnem kotu
+  pogleda (`#pogledi`, trenutni pogled je poudarjen; v skici je vrstica skrita). Skica ostaja na `ortoControls`.
 - Ukazi v brskalniku so tisti iz orodnih vrstic okolij `DELOVNA_OKOLJA` (Snovanje delov, Skica, Del) in `HITRI_DOSTOP`;
   stanje »na voljo« se preverja vsakih 500 ms (`isActive`). Med urejanjem značilnosti je objekt v predogledu vključen v posnetek, čeprav je `Visibility` še False.
 - Skica v brskalniku (`POST /skica`, dogodek `skica`): `nova` (ravnina XY/XZ/YZ ali ploskev modela: okno Nova skica ne pokriva pogleda, ploskev se klikne med odprtim oknom; odmik, obrni, v telesu),
@@ -76,13 +89,62 @@ FreeCAD je motor, vmesnik in grafika nastajata v brskalniku (plan, korak 8 napre
   Brskalnik prestreže ukaze Nov očrt / Edit Sketch / Leave Sketch ter Izboklino in Ugrez iz izbrane skice
   (`POST /znacilnost`, dolžina se vpraša v brskalniku). Urejanje skice, ki ga začne FreeCAD sam, strežnik prekine
   (`resetEdit`) in skico odpre v brskalniku.
-- Stranski meni s projekti (od 2026-10-07, levo od pogleda, gumb ◀ ga skrije, ▶ Projekti pokaže; stanje v `localStorage`):
-  razdelki Odprti dokumenti (aktivni poudarjen, `*` ob neshranjenih, × zapre; brskalnik vpraša, če so spremembe),
-  Projekti (datoteke FCStd iz `lastno/modeli`, po podmapah; dodatne mape z okoljsko `SPLET_PROJEKTI`, ločilo `;`)
-  in Nedavne datoteke (FreeCAD-ov seznam `RecentFiles`, le obstoječe in ne tistih, ki so že med projekti). Klik odpre
-  datoteko ali preklopi na že odprti dokument. Strežnik: `GET /projekti`, dogodek `projekti` (vsaki 2 s le ob spremembi,
+- Stranski meni (od 2026-10-07, levo od pogleda, širina 520 px, **dva stolpca**: levo odprti dokumenti, desno drevo dokumenta;
+  gumb ◀ ga skrije, ▶ Dokumenti in drevo pokaže; stanje v `localStorage`). Levi stolpec:
+  samo razdelek Odprti dokumenti (aktivni poudarjen, `*` ob neshranjenih, × zapre; brskalnik vpraša, če so spremembe).
+  Razdelka Projekti (datoteke FCStd iz `%USERPROFILE%\Oblak\3D modeliranje`, okoljska `SPLET_PROJEKTI`) in Oblak · različice
+  sta 2026-10-07 odstranjena iz prikaza (strežnik `skupine` še pošilja, koda `vnosDatoteke`/`razdelekOblaka` ostaja neuporabljena);
+  razdelek Nedavne datoteke je bil odstranjen isti dan. Klik preklopi na odprti dokument. Strežnik: `GET /projekti`, dogodek `projekti` (vsaki 2 s le ob spremembi,
   takoj ob dogodkih dokumenta), `POST /projekt {dejanje: odpri|aktiviraj|zapri, pot|ime}`. Neshranjene spremembe
   pozna le `Gui.getDocument(ime).Modified` (`App.Document` te lastnosti nima).
+  Vsak vnos nosi sličico modela (render, ki ga stran izriše iz svojega 3D pogleda in pošlje s `POST /slicica`; strežnik
+  jo hrani v `%LOCALAPPDATA%\FreeCAD-splet\slicice`, streže `GET /slicica?pot=`). Render (`izrisiSlicico`): izometrija,
+  pravokotna kamera, prilegana po projiciranih ogliščih mrež (ne po krogli), prozorno ozadje, 192 px iz dvakrat večjega izrisa
+  (glajenje), brez mreže, osi in izbire; `cilj.texture.colorSpace = SRGBColorSpace`, WebGPU vrne vrstice s korakom 256 bajtov.
+  FreeCAD-ova vgrajena sličica iz FCStd je le rezerva in le, če jo `_uporabna_slicica` (Pillow) oceni kot uporabno: iz skritega
+  okna nastane prazna ali sivo odrezana (vsebina ob robu), take se ne strežejo; prazen render strežnik zavrne (400) in ga ne hrani.
+  Brez sličice stran pokaže ikono kocke (`IKONA_KOCKE`; črtkana = dokument še ni shranjen)
+  in oznako vrste **Sestav** / **Del** (`vrsta` v `/projekti`: `_vrsta_iz_tipov` po tipih objektov, za datoteke iz
+  `Document.xml` v FCStd, za odprte dokumente iz `TypeId`; sestav = Assembly, App::Link ali več App::Part, del = telesa).
+  Ikona zavihka: `/favicon.ico` (pravi ICO 16–64 px, `favicon.ico`, narejen s Pillow iz `ikona.png`) in `/ikona.png` (64 px, iz
+  `ikona.svg` prek Qt brez zaslona); v `<head>` s parametrom `?v=N` (brskalniki ikono trdovratno predpomnijo, ob zamenjavi
+  dvigni N). SVG se v `<head>` ne navaja (okno aplikacije Claude in nekateri brskalniki ga ne prikažejo).
+- Drevo dokumenta (od 2026-10-07, `lastno/splet/drevo.py`, desni stolpec stranskega menija): objekti kot v FreeCAD-ovem
+  drevesu (`ViewObject.claimChildren`, koreni so nezahtevani objekti), z ikono, vidnostjo (krogec ● / ○ -> `POST /drevo
+  {dejanje: vidnost, ime, vidno}`) in izbiro (klik -> `/select`, Ctrl doda). Pod drevesom so urejljive lastnosti edinega
+  izbranega objekta (dolžine, koti, števila, besedila, kljukice, naštevanja, lega `x; y; z`; Enter potrdi, Esc prekliče ->
+  `POST /drevo {dejanje: lastnost, ime, lastnost, vrednost}`, nato `recompute`). Posnetek `/model` nosi ključ `drevo`
+  (koreni, vozli); brez njega stran javi, da je strežnik starejši. Razprti vozli so v `localStorage` po dokumentu. Urejanje iz drevesa (od 2026-10-08): gumb ✎ v vrstici (napis Uredi ob miški in na izbrani vrstici), dvojni klik, desni klik -> Uredi ali gumb ✎ Uredi nad lastnostmi -> `POST /drevo {dejanje: uredi, ime}` (`drevo._uredi`): skica se odpre v urejevalniku skic v brskalniku, sicer `ViewObject.doubleClicked()` kot v FreeCAD-ovem drevesu (značilnost odpre opravilo -> obrazec desno, telo ali App::Part postane dejavno); med odprtim urejanjem strežnik drugo zavrne z dogodkom `obvestilo {sporocilo, slabo}`. Zajem seznamov v obrazcih: `QAbstractListModel.columnCount` je v PySide zaseben, šteje se kot en stolpec. Prikaz skice (od 2026-10-08): skica se riše nad modelom (materiali `NAD`: depthTest/depthWrite false, renderOrder), črte skice so debele (`LineSegments2` + `THREE.Line2NodeMaterial` iz addons/lines/webgpu, rezerva tanke črte), črna = v celoti določena, modra = ne (posnetek skice nosi `dolocena` = `sk.FullyConstrained`). Kote (`narisiMere`): DistanceX/Y zložene nad/pod oz. levo/desno od obsega skice s pomožnimi črtami in puščicami, Distance vzporedno, Radius/Diameter z vodilom; klik na koto odpre vnos na mestu (Enter ali klik drugam potrdi, Esc prekliče) -> `POST /skica {vrsta: nastaviMero, id, vrednost}` (`setDatum`, kot v °). Vlečenje kote (`zacniVlecenjeKote`, premik nad 4 px; brez premika je klik) jo premakne in shrani lego v omejitev kot FreeCAD (`POST /skica {vrsta: polozajMere, id, razmik, polozaj}` -> `setLabelDistance`/`setLabelPosition`, brez preračuna): razdalje: kotirna črta odmaknjena za LabelDistance po normali (-dir.y, dir.x) od druge točke, napis za LabelPosition vzdolž dir od sredine; polmer/premer: LabelPosition = kot vodila, LabelDistance = napis od kroga navzven. Privzeti vrednosti (10 in 0, pri polmeru 10 in 10) pomenita samodejno razporeditev okrog skice. `prilagodiPogledSkice` pusti prostor za kote. Skripte skic (npr. `nosilec_telo.py`) kotirajo obrise in odvečne omejitve pobrišejo po `RedundantConstraints`.
+- Različice iz oblaka (od 2026-10-07, PDM korak 2, `lastno/splet/oblak.py`, plan `PDM-PLAN.md`): ob odprtem dokumentu
+  iz mape odjemalca oblaka (privzeto iz `%APPDATA%\Oblak\nastavitve.json`: `folder`, `api`; prepis `SPLET_OBLAK_MAPA`,
+  `SPLET_OBLAK_API`) je gumb ⟲, ki odpre ploščo z različicami: prijava v oblak (strežnik se prijavi kot **lastna**
+  naprava »FreeCAD (splet)« — žetona odjemalca za Windows ne uporabljamo, ker bi oblak spremembe štel za njegove in jih
+  odjemalec ne bi prenesel; seja v `%LOCALAPPDATA%/FreeCAD-splet/oblak.json`), seznam (`GET /oblak/zgodovina?pot=`),
+  Odpri (`POST /oblak/odpri {pot, rev}`: prenos v `%LOCALAPPDATA%/FreeCAD-splet/razlicice/` in odprtje kot
+  »ime · različica N«, oznaka »ogled različice«; Label se ne nastavlja, ker bi dokument označil kot spremenjen), Povrni
+  (`POST /oblak/obnovi {pot, rev}`: nova revizija v oblaku; strežnik nato do 3 min opazuje lokalno datoteko, ki jo
+  zamenja odjemalec oblaka, odprt dokument brez neshranjenih sprememb osveži in pošlje dogodek `oblak`). Klici v oblak
+  tečejo na niti strežnika (brez FreeCAD API-ja), odpiranje in osvežitev prek vrste (`projekt`: `odpri-razlicico`,
+  `osvezi`). Lokalna pot -> prostor: `Osebno/...` osebni prostor, `<skupina>/<prostor>/...`, `<prostor>/...`.
+  Preizkusni primerek: `SPLET_VRATA=3031` (3029 pogosto zaseda drug primerek) z ločenim `LOCALAPPDATA`, da ne povozi
+  `povezava.json` glavnega primerka; `cmd /c` iz Git Basha piši kot `//c` ali uporabi PowerShell `Start-Process`.
+  Korak 3 (komentar, stanja, oznake): po shranjevanju datoteke iz mape oblaka (`slotFinishSaveDocument` v
+  `OpazovalecDokumenta`) strežnik odda dogodek `oblak` vrste `shranjeno`, brskalnik vpraša »Kaj si spremenil?« in pošlje
+  `POST /oblak/komentar {pot, komentar}`; ker datoteko v oblak pošlje odjemalec oblaka, `oblak.py` komentar pripne
+  reviziji z enakim `content_hash` (sha256 nad sha256 kosov po 4 MiB) takoj ali v ozadju do 3 min. `POST /oblak/revizija
+  {pot, rev, komentar?, stanje?}` nastavi komentar ali stanje (osnutek, v_pregledu, izdano; izdaja dodeli oznako).
+  `Document.save()` na datoteki, ki je bila ob odpiranju samo za branje, javi »read-only« tudi po odstranitvi atributa
+  (uporabi `saveAs` na isto pot); tik po pisanju lahko Windows datoteko za hip zaklene (ponovi po 2 s).
+  Korak 4 (zaklepi): `zgradi_projekte` za vsak odprt dokument iz mape oblaka pokliče `OBLAK.zaklep_dokumenta` (iz
+  predpomnilnika; ob prvem klicu sproži samodejni `POST /v1/zakleni` v ozadju), `slotDeletedDocument` zaklep sprosti,
+  `izhod` in `aboutToQuit` pokličeta `odkleni_vse` (rok 5 s). Zaklep pripada uporabniku, zato odjemalec oblaka na istem
+  računalniku datoteko še vedno pošlje; tuj zaklep pomeni 409 `locked` pri commitu drugega uporabnika. Poti:
+  `GET /oblak/zaklep?pot=`, `POST /oblak/zakleni|odkleni|prevzemi {pot}`; sprememba zaklepa v ozadju pošlje
+  `("projekt", {"dejanje": "osvezi-seznam"})` v vrsto glavne niti, da se seznam odprtih dokumentov znova zgradi.
+  Korak 5 (reference, kosovnica): bere jih oblak iz `Document.xml` (`packages/api/src/fcstd.ts`), FreeCAD le prikaže
+  (`GET /oblak/reference?pot=` → `razdelekReferenc` na dnu plošče z različicami; poti povezanih datotek se preslikajo
+  nazaj v lokalne, klik jih odpre). Odpiranje sestava s povezavami (XLink) v FreeCAD-u samodejno odpre tudi povezane
+  dokumente — vsi dobijo zaklep in ga ob izhodu sprostijo.
 - Obrazci (od 2026-10-07): **vsa** okna FreeCAD-a gredo v brskalnik, okno FreeCAD-a se ne pokaže. Filter dogodkov na
   aplikaciji vsako novo okno (pogovor, sporočilo, izbira datoteke) ob prikazu naredi nevidno (prosojnost 0, zunaj zaslona,
   brez fokusa tipkovnice; skriti ga ne sme, ker `hide()` konča modalni pogovor). Vsakih 250 ms `_zajemi_obrazec` prebere
@@ -94,6 +156,9 @@ FreeCAD je motor, vmesnik in grafika nastajata v brskalniku (plan, korak 8 napre
   `Preferences/Dialog/DontUseNativeDialog` in ga ob izhodu vrne (nastavitev je skupna z nameščenim FreeCAD-om).
   Gumb »Odpri v FreeCAD-u« v obrazcu je rezerva, če kakšnega gradnika obrazec ne zna prikazati.
 - **Skripte v FreeCAD-u brez novega okna:** `FreeCAD.exe skripta.py` vedno odpre okno; ne uporabljaj ga za pomožne skripte.
+  Od 2026-10-07 zagon **nameščenega** `C:\Program Files\FreeCAD 1.1\bin\FreeCAD.exe` (z oknom) in odpiranje `.FCStd` prek
+  povezave datotek v vseh sejah zavrne kavelj `~/.claude/hooks/blokiraj-freecad-okno.py` (pravilo v `~/.claude/CLAUDE.md`);
+  `FreeCADCmd.exe` in lastna gradnja iz `.pixi/` nista prizadeta.
   Če spletni strežnik teče, kodo poženi v njem: `.pixi/envs/default/python.exe lastno/splet/izvedi.py skripta.py`
   (ali `-c "koda"`; vrne izpis in spremenljivko `rezultat`; vrata in žeton bere iz `%LOCALAPPDATA%/FreeCAD-splet/povezava.json`).
   Brez strežnika uporabi `FreeCADCmd.exe` (brez okna). Poti v Python nizih piši kot `r"C:\..."` ali s `/`
@@ -103,6 +168,9 @@ FreeCAD je motor, vmesnik in grafika nastajata v brskalniku (plan, korak 8 napre
   (orodje jih preslika). `window.prompt` za preizkus povozi v JS.
 - Preverjanje: `curl http://127.0.0.1:3020/stanje`, stran (napis v kotu: dokument, izbira, izris WebGPU ali WebGL 2).
   Vgrajeni brskalnik aplikacije Claude klika v CSS slikovnih pikah strani, ne v merilu posnetka zaslona.
+- **Slike iz skritega FreeCAD-a:** `saveImage` deluje le za dokument, ki je nastal v tekočem primerku (`newDocument` ali skripta); dokument, odprt z `openDocument`, da prazno sliko (pogled brez velikosti). Za slike regala ga zgradi v dokumentu sobe (`soba_folija.py`) in skrij ostale kose, ali izberi objekte in `ViewSelection` + `ZoomOut`. Modeli so **zunaj repozitorija**, v Oblaku: `C:\Users\Uporabnik\Oblak\3D modeliranje\<Projekt>\` (od 2026-10-07; prej `lastno/modeli`). Vsak projekt ima datoteke FCStd/STEP/slike v korenu, skripte v podmapi `Skripte/` (izhod pišejo v mapo projekta, eno raven nad sabo) in `PREBERI.txt`. Zalogovnik folije: `Skripte/police_folija.py` v `FreeCADCmd` z `__file__` (gole oblike, DXF, kosovnica), `Skripte/zalogovnik_telo.py` (od 2026-10-07: isti kosi kot **telesa PartDesign s skicami**, žepi, zaokrožitvami, Part::Mirroring in kovice kot vrtenine prek App::Link; uvozi `police_folija.py` kot knjižnico z `SAMO_KNJIZNICA`, prostornine preveri proti golim oblikam; poganjaj prek `izvedi.py`, da dobi barve), `Skripte/soba_folija.py` v tekočem FreeCAD-u prek `izvedi.py` (brez `__file__` uporabi pot v Oblaku; zalogovnika v sobi sta App::Link na kose iz `zalogovnik.FCStd`). Past skic iz skript: skicirnik loke vodi le v nasprotni smeri urinega kazalca, zato lok podaj s središčem in kotoma (ne s tremi točkami), sicer sovpadanja potegnejo sosednje črte na napačno krajišče. Spletni posnetek povezavo (App::Link) riše prek posredovane `Shape` z lego povezave (brez lege vsebnikov; `getGlobalPlacement` povezava nima), zato povezave ne dajaj v vsebnik z lego.
+- **Dvojniki po obnovi** (od 2026-10-08): FreeCAD-ova Obnova dokumentov ob zagonu odpre kopijo vsakega dokumenta iz vsakega nasilno končanega primerka in ne preveri, ali je ista datoteka že odprta (dva ubita primerka = isti dokument dvakrat). Strežnik zato 1,5 s po zadnjem novem dokumentu (ko se nič ne nalaga in ni modalnega okna) pokliče `_zapri_dvojnike`: od dokumentov z isto datoteko obdrži tistega z najnovejšim `LastModifiedDate`, ostale shrani s `saveCopy` v `%LOCALAPPDATA%/FreeCAD-splet/dvojniki` in zapre; nedotaknjene vzorčne dokumente »Preizkus« (`_je_vzorec`) zapre, ko je odprt kakšen drug dokument. Strežnik ustavljaj z gumbom Izhod (`POST /izhod`), ne z ubijanjem procesa.
+- Če `povezava.json` manjka, strežnik pa teče (`/stanje` odgovarja), žeton piše v strani (`ZETON = '...'` v `GET /`); datoteko obnovi ročno (`vrata`, `zeton`, `pid` iz `tasklist`).
 - Veja `ukazna-vrstica`: ustavljeno delo na C++ ukazni vrstici v slogu SolidWorksa; ne razvijaj naprej brez naročila.
 
 ## Način dela

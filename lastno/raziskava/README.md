@@ -7,6 +7,7 @@ CAD programa, ko gradimo spletni vmesnik nad FreeCAD-om (`lastno/splet`, PLAN.md
 |---|---|
 | `onshape-funkcije.md` | Onshape (PTC): skica, Part Studio, sestavi, risbe, Render/PCB/CAM studii, AI, PDM, uvoz/izvoz, FeatureScript in REST API, vmesnik, arhitektura spletnega CAD-a, paketi |
 | `fusion-funkcije.md` | Autodesk Fusion: skica, Solid/Surface/Form/Mesh/Sheet Metal/Plastic, Generative Design, CAM, risbe, Render/Animation/Simulation, Electronics, podatki, uvoz/izvoz, API in MCP, AI, vmesnik, paketi |
+| `sestav-in-deli.md` | Kaj je del, telo in sestav; kako to vidijo SolidWorks, Onshape, Fusion in FreeCAD (Body, Part, Assembly, Link, Joint); kaj to pomeni za spletni pogled |
 
 Vsaka datoteka ima na koncu seznam prebranih virov in opombo, kateri deli niso bili dosegljivi.
 
