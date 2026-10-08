@@ -177,6 +177,18 @@ def _objekt_v_urejanju(doc):
         return ""
 
 
+def _v_skritem_vsebniku(obj):
+    """Ali je objekt v skritem telesu ali App::Part (tudi posredno)."""
+    vsebnik = obj.getParentGeoFeatureGroup() if hasattr(obj, "getParentGeoFeatureGroup") else None
+    for _ in range(20):
+        if vsebnik is None:
+            return False
+        if not vsebnik.Visibility:
+            return True
+        vsebnik = vsebnik.getParentGeoFeatureGroup()
+    return False
+
+
 def _vidni_objekti(doc):
     v_urejanju = _objekt_v_urejanju(doc)
     for obj in doc.Objects:
@@ -194,6 +206,9 @@ def _vidni_objekti(doc):
             # Med urejanjem značilnosti (npr. Izboklina z odprtim oknom) je objekt v FreeCAD-u
             # viden kot predogled, čeprav je Visibility še False; pokažemo ga tudi tukaj.
             if not obj.Visibility and obj.Name != v_urejanju:
+                continue
+            # kot v FreeCAD-u: skrit vsebnik (telo, App::Part) skrije vse v njem, tudi vidno značilnost (konico telesa)
+            if obj.Name != v_urejanju and _v_skritem_vsebniku(obj):
                 continue
         except Exception:  # noqa: BLE001
             pass
