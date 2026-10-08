@@ -87,6 +87,15 @@ FreeCAD je motor, vmesnik in grafika nastajata v brskalniku (plan, korak 8 napre
   (README v mapi). Zgled: `Oblak/3D modeliranje/Betonski podstavek/` (mere na objektu »Mere (uredi tukaj)«).
   STEP iz »Solid to Sheet Metal«: nekaj ploskev OCC zapiše, bralnik pa izpusti (odprta lupina) — pred izvozom jih pretvori v
   NURBS (`izvozi_step.py` v projektu); krog zapis-branje STEP v procesu spletnega FreeCAD-a sproži Access violation, zato v FreeCADCmd.
+- **SolidWorks -> FreeCAD** (2026-10-08, zgled `Oblak/3D modeliranje/Photobox Slim/Skripte/`): SolidWorks prek COM s Pythonom
+  (pywin32, `win32com.client.dynamic`; pozna vezava metodo brez argumentov pokliče že ob branju atributa). VBScript ne zna
+  brati polj objektov (`GetChildren`, telesa), PowerShell s SolidWorksovim COM ne dela. Odpiraj z `GetOpenDocSpec` +
+  `OpenDoc7` (`ReadOnly`, `Silent`), izvoz `SaveAs3(pot.step, 0, 1)`. Izvoz razgrnitev (`ExportToDWG2`) pri odprtem celem
+  sestavu je SolidWorks pripeljal do »out of memory« — dele izvažaj posamič (odpri, izvozi, zapri). Navidezni deli imajo
+  začasno pot, ki se spremeni ob vsakem zagonu. `Component2.Transform2.ArrayData`: globalna lega glede na koren, metri,
+  vrstični vektor (p' = p R + t). Gradnja z ImportGui v ločenem primerku spletnega FreeCAD-a (vrata 3031, ločen
+  LOCALAPPDATA); povezava na drug dokument zahteva, da je sestav že shranjen. Primerek s ~140 dokumenti se ob Izhodu lahko
+  obesi (Access violation) — preveri, da se je končal, preden ga zaženeš znova.
 - **Shranjevanje v strežniku** (popravljeno 2026-10-08): `FileInfo::isWritable` odpre datoteko brez deljenja; če jo kdo drži
   odprto (tudi isti proces), FreeCAD zavrne shranjevanje z »file is marked as read-only«. Strežnik je pri branju vrste
   dokumenta (`_lastnosti_fcstd`) puščal odprt tok `z.open("Document.xml")` v `ET.iterparse` -> drugo shranjevanje istega
