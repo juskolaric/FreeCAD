@@ -79,7 +79,18 @@ FreeCAD je motor, vmesnik in grafika nastajata v brskalniku (plan, korak 8 napre
   (`MainWindow::_updateActions` le pri vidnem oknu), zato `_sprozi_ukaz` dejanje omogoči sam, če `isActive()` vrne True.
   **Ne dodajaj `Gui.addDocumentObserver` s `slotChangedObject`**: FreeCAD ta signal odda že iz konstruktorja ViewProviderja,
   opazovalec takrat ustvari Python ovoj osnovnega razreda in objekti Part potem nimajo `DiffuseColor` (SheetMetal Make Wall
-  pade). Spremembe videza strežnik preverja vsako sekundo (`_videz_kljuc`). Med urejanjem značilnosti je objekt v predogledu vključen v posnetek, čeprav je `Visibility` še False.
+  pade). Spremembe videza strežnik preverja vsako sekundo (`_videz_kljuc`).
+- **Pločevina** (od 2026-10-08): znanje `lastno/raziskava/plocevina.md`; dodatek SheetMetal in networkx v `%APPDATA%\FreeCAD1-1`.
+  Lastna parametrična objekta `lastno/plocevina/lastna_plocevina.py` (`TeloVPlocevino`, `Razgrnitev`) ploskve in robove
+  poiščeta geometrijsko ob vsakem preračunu; SheetMetal objekti s shranjenimi imeni (`Face4`, `Edge14`) se ob spremembi mer
+  pod posnetimi robovi pokvarijo (`missing element reference`). Mapa je v `Mod` povezana s stičiščem `lastna_plocevina`
+  (README v mapi). Zgled: `Oblak/3D modeliranje/Betonski podstavek/` (mere na objektu »Mere (uredi tukaj)«).
+  STEP iz »Solid to Sheet Metal«: nekaj ploskev OCC zapiše, bralnik pa izpusti (odprta lupina) — pred izvozom jih pretvori v
+  NURBS (`izvozi_step.py` v projektu); krog zapis-branje STEP v procesu spletnega FreeCAD-a sproži Access violation, zato v FreeCADCmd.
+- **Shranjevanje v strežniku** (popravljeno 2026-10-08): `FileInfo::isWritable` odpre datoteko brez deljenja; če jo kdo drži
+  odprto (tudi isti proces), FreeCAD zavrne shranjevanje z »file is marked as read-only«. Strežnik je pri branju vrste
+  dokumenta (`_lastnosti_fcstd`) puščal odprt tok `z.open("Document.xml")` v `ET.iterparse` -> drugo shranjevanje istega
+  dokumenta iz brskalnika ni uspelo. Tokove iz zipa vedno zapiraj z `with`. Kdo drži datoteko: Restart Manager (`RmGetList`). Med urejanjem značilnosti je objekt v predogledu vključen v posnetek, čeprav je `Visibility` še False.
 - Skica v brskalniku (`POST /skica`, dogodek `skica`): `nova` (ravnina XY/XZ/YZ ali ploskev modela: okno Nova skica ne pokriva pogleda, ploskev se klikne med odprtim oknom; odmik, obrni, v telesu),
   `odpri`, `zapri`, `crta` (s `spoji1`/`spoji2` za sovpadanje), `pravokotnik` (4 črte + sovpadanja + vodoravno/navpično),
   `krog`, `tocka`, `premakni` (movePoint, reševalnik), `izbrisi`, `mera` (Distance/Radius), `omejitev`, `gradbena`.

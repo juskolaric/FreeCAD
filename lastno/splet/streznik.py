@@ -1481,11 +1481,15 @@ def _lastnosti_fcstd(pot, st):
                 r["slicica"] = "thumbnails/Thumbnail.png" in imena and _uporabna_slicica(z.read("thumbnails/Thumbnail.png"))
                 if "Document.xml" in imena:
                     tipi = []
-                    for _, e in ET.iterparse(z.open("Document.xml")):
-                        if e.tag == "Object" and e.get("type"):
-                            tipi.append(e.get("type"))
-                        if e.tag in ("Object", "Property"):
-                            e.clear()
+                    # tok zapri izrecno: iterparse ga ne zapre, ZipFile pa datoteko zapre šele, ko so zaprti vsi
+                    # tokovi; sicer jo proces drži odprto do pospravljanja smeti in FreeCAD zavrne naslednje
+                    # shranjevanje (»file is marked as read-only«, FileInfo::isWritable odpre brez deljenja)
+                    with z.open("Document.xml") as tok:
+                        for _, e in ET.iterparse(tok):
+                            if e.tag == "Object" and e.get("type"):
+                                tipi.append(e.get("type"))
+                            if e.tag in ("Object", "Property"):
+                                e.clear()
                     r.update(_vrsta_iz_tipov(tipi))
         except Exception:  # noqa: BLE001
             _log("lastnosti %s: %s" % (pot, traceback.format_exc().splitlines()[-1]))

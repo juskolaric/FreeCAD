@@ -416,3 +416,25 @@ pogleda (`Gui.addDocumentObserver` s `slotChangedObject`) je pokvaril vse objekt
 strežnika (brez `DiffuseColor`; Make Wall je padel) — odstranjen, videz se preverja vsako sekundo.
 
 **Kaj še ni preizkušeno:** primer iz 7.5 prek `izvedi.py` (z GUI, skice razgrnitve z ločenimi sloji), prikaz objektov SheetMetal v spletnem pogledu in drevesu, napaka interpolacije K v V2.
+
+---
+
+## 9. Izkušnje iz prvega kosa (betonski podstavek, 8. 10. 2026)
+
+Prenos kosa iz SolidWorksa (`Oblak/3D modeliranje/Betonski podstavek/`): SLDPRT se prebere tako, da se SolidWorks
+zažene prek COM brez okna (VBScript `GetOpenDocSpec` + `OpenDoc7` z `ReadOnly`, `SaveAs3` v STEP; PowerShell s
+SolidWorksovim COM ne dela), mere se odčitajo iz STEP v FreeCADCmd. Kar se je pokazalo:
+
+- **»Solid to Sheet Metal« (SMFromSolid)** je najhitrejša pot za škatle in korita: parametrično telo (PartDesign) ->
+  odstrani dno, razreže navpične robove. Ravne ploskve ob prostih robovih obreže za 0,1 mm (reža na vogalih), tudi
+  ob dnu — telo naredi 0,1 mm višje.
+- **Shranjena imena ploskev in robov se ob spremembi mer pokvarijo** (posneti robovi, FreeCAD 1.x): zato
+  `lastno/plocevina/lastna_plocevina.py` (`TeloVPlocevino`, `Razgrnitev`) izbiro poišče geometrijsko ob vsakem preračunu.
+- **Mere na enem objektu** (`App::FeaturePython` z lastnostmi Length): spletni pogled jih pokaže kot urejljiva polja;
+  skice, izboklina, posnetje in pločevina se nanje vežejo z izrazi (številke v izrazih z enoto: `- 40 mm`).
+- **STEP**: nekaj ploskev iz pretvorbe bralnik izpusti (odprta lupina, čeprav je zapis MANIFOLD_SOLID_BREP); popravi
+  jih pretvorba samo teh ploskev v NURBS (preizkus vsake ploskve z zapisom in branjem). Po izvozu vedno preberi STEP
+  nazaj in preveri, da je zaprto telo.
+- **DXF za laser** iz zgornje ploskve razgrnitve (zanke, poravnane na XY), brez upogibnih črt.
+- **Preverjanje**: prostornina in prekrivanje z izvirnikom (`common`), raztegovanje na kopiji (več naborov mer in
+  vrnitev na izvirne), slike iz STL z lastnim izrisovalnikom.
