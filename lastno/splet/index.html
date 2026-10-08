@@ -126,6 +126,10 @@
   #drevoVsebina .vozel .urediVrstico:hover { background: #e3eefb; border-color: var(--poudarek); }
   #drevoVsebina .vozel .urediVrstico .napis { display: none; }
   #drevoVsebina .vozel:hover .urediVrstico .napis, #drevoVsebina .vozel.izbran .urediVrstico .napis { display: inline; }
+  #drevoVsebina .telesa { border-top: 1px solid var(--crta); margin-top: 6px; padding-top: 2px; }
+  #drevoVsebina .telo .stevilka { flex: none; min-width: 16px; text-align: right; color: #889; font-size: 11px; font-variant-numeric: tabular-nums; }
+  #drevoVsebina .telo .kolicina { flex: none; margin-left: auto; color: #889; font-size: 11px; font-variant-numeric: tabular-nums; }
+  #drevoVsebina .telo .kolicina + .kolicina { margin-left: 8px; }
   #drevoVsebina .lastnost { display: flex; align-items: center; gap: 5px; padding: 2px 10px; font-size: 12px; }
   #drevoVsebina .lastnost .imeLastnosti { flex: 0 0 46%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #445; }
   #drevoVsebina .lastnost input[type=text], #drevoVsebina .lastnost select { flex: 1 1 auto; min-width: 0; width: 60px; border: 1px solid var(--crta); border-radius: 3px; padding: 1px 4px; font: inherit; font-size: 12px; }
@@ -670,7 +674,30 @@ function narisiDrevo(d) {
   if (!d.koreni.length) r.append(el('div', 'prazno', 'dokument je prazen'));
   for (const k of d.koreni) { const v = vozelDrevesa(d, k, 0, []); if (v) r.append(v); }
   drevoVsebina.append(r);
+  narisiTelesa(d);
   narisiLastnosti(d);
+}
+// Telesa dokumenta (kot »Solid Bodies« v SolidWorksu): pod drevesom, ko jih je več kot eno. Oštevilčena po vrstnem redu
+// v drevesu; ime je oznaka objekta (preimenuješ jo v lastnostih, Label). Objekt z več ločenimi telesi pokaže njihovo število.
+function narisiTelesa(d) {
+  const telesa = d.telesa || [];
+  const skupaj = telesa.reduce((n, t) => n + t.solidov, 0);
+  if (skupaj < 2) return;
+  const r = el('div', 'razdelek telesa');
+  r.append(el('div', 'naslovRazdelka', 'Telesa (' + skupaj + ')'));
+  telesa.forEach((t, i) => {
+    const vrstica = el('div', 'vozel telo' + (t.viden ? '' : ' neviden') + (stanje.izbira.some(s => s.objekt === t.ime) ? ' izbran' : ''));
+    vrstica.dataset.ime = t.ime;
+    vrstica.title = t.oznaka + (t.prostornina != null ? ' · ' + t.prostornina.toLocaleString('sl-SI') + ' cm³' : '') + '\nKlik: izbere telo; krogec: pokaže ali skrije';
+    const oko = el('button', 'oko', t.viden ? '●' : '○'); oko.type = 'button'; oko.title = t.viden ? 'Skrij telo' : 'Pokaži telo';
+    oko.addEventListener('click', e => { e.stopPropagation(); drevoDejanje({ dejanje: 'vidnost', ime: t.ime, vidno: !t.viden }); });
+    vrstica.append(el('span', 'stevilka', String(i + 1)), oko, el('span', 'ime', t.oznaka));
+    if (t.solidov > 1) vrstica.append(el('span', 'kolicina', t.solidov + ' telesa'));
+    if (t.prostornina != null) vrstica.append(el('span', 'kolicina', t.prostornina.toLocaleString('sl-SI') + ' cm³'));
+    vrstica.addEventListener('click', e => objavi('/select', { objekt: t.ime, element: '', dodaj: e.ctrlKey }).catch(pokaziNapako));
+    r.append(vrstica);
+  });
+  drevoVsebina.append(r);
 }
 function narisiLastnosti(d) {
   const star = drevoVsebina.querySelector('.lastnosti'); if (star) star.remove();

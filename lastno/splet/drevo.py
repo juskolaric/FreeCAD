@@ -107,7 +107,32 @@ def drevo_dokumenta(doc, ikona_uri=None):
         vozli[obj.Name] = {"ime": obj.Name, "oznaka": obj.Label, "tip": obj.TypeId, "viden": viden,
                            "ikona": ikona, "otroci": otroci, "lastnosti": _lastnosti(obj)}
     koreni = [o.Name for o in doc.Objects if o.Name not in zahtevani]
-    return {"koreni": koreni, "vozli": vozli}
+    return {"koreni": koreni, "vozli": vozli, "telesa": _telesa(doc, koreni)}
+
+
+def _telesa(doc, koreni):
+    """Končna telesa dokumenta (kot mapa »Solid Bodies« v SolidWorksu): koreni drevesa, ki imajo trdno obliko
+    (skice, ravnine, skupine in objekti brez oblike ne štejejo). Objekt z več ločenimi telesi (npr. rez, ki je kos
+    razdelil) nosi njihovo število. Vidnost se ne upošteva: tudi skrito telo je del dokumenta."""
+    telesa = []
+    for ime in koreni:
+        obj = doc.getObject(ime)
+        if obj is None or obj.TypeId.startswith(("Sketcher::", "App::Origin", "App::DocumentObjectGroup")):
+            continue
+        try:
+            oblika = obj.Shape
+            stevilo = len(oblika.Solids)
+        except Exception:  # noqa: BLE001
+            continue
+        if stevilo == 0:
+            continue
+        try:
+            prostornina = round(oblika.Volume / 1000.0, 1)
+        except Exception:  # noqa: BLE001
+            prostornina = None
+        telesa.append({"ime": obj.Name, "oznaka": obj.Label, "solidov": stevilo, "prostornina": prostornina,
+                       "viden": bool(getattr(obj, "Visibility", True))})
+    return telesa
 
 
 def _pretvori(obj, ime, vrednost):

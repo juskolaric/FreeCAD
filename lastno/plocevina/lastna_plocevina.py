@@ -102,6 +102,9 @@ class Razgrnitev:
         if not obj.Standard:
             obj.Standard = ["ANSI", "DIN"]
             obj.Standard = "ANSI"
+        _lastnost(obj, "App::PropertyBool", "ObStrani", "Razgrnitev",
+                  "Razgrnitev leži ob kosu (desno, na višini dna), ne na mestu zgornje ploskve", True)
+        _lastnost(obj, "App::PropertyLength", "Razmik", "Razgrnitev", "Razmik med kosom in razgrnitvijo", 50.0)
 
     def onDocumentRestored(self, obj):
         self._lastnosti(obj)
@@ -121,7 +124,60 @@ class Razgrnitev:
         from SheetMetalNewUnfolder import BendAllowanceCalculator, getUnfold
         bac = BendAllowanceCalculator.from_single_value(obj.KFaktor, obj.Standard.lower())
         _koren, ravno, _pregibi, _normala, _info = getUnfold(bac, obj.Kos, self.korenska_ploskev(obj.Kos.Shape))
+        premik = App.Vector()
+        if obj.ObStrani:   # desno od kosa, na višini dna, da se ne prekrivata
+            k, r = obj.Kos.Shape.BoundBox, ravno.BoundBox
+            premik = App.Vector(k.XMax + obj.Razmik.Value - r.XMin, (k.YMin + k.YMax - r.YMin - r.YMax) / 2, k.ZMin - r.ZMin)
         obj.Shape = ravno
+        # premik gre v lego objekta: lego oblike Part::FeaturePython po izračunu nastavi na obj.Placement
+        nova = App.Placement(premik, App.Rotation())
+        if not obj.Placement.isSame(nova, 1e-7):   # le ob spremembi, sicer bi se objekt sam označil kot spremenjen
+            obj.Placement = nova
+
+    def dumps(self):
+        return None
+
+    def loads(self, stanje):
+        return None
+
+
+def _ikona_sheetmetal(ime):
+    pot = os.path.join(App.getUserAppDataDir(), "Mod", "sheetmetal", "Resources", "icons", ime)
+    return pot if os.path.exists(pot) else ""
+
+
+class PogledTelesaVPlocevino:
+    """Pogled: osnovno telo je v drevesu pod pločevino (kot pri FreeCAD-ovih značilnostih)."""
+
+    def __init__(self, vobj):
+        vobj.Proxy = self
+
+    def attach(self, vobj):
+        self.Object = vobj.Object
+
+    def claimChildren(self):
+        o = getattr(self, "Object", None)
+        return [o.Osnova] if o is not None and getattr(o, "Osnova", None) is not None else []
+
+    def getIcon(self):
+        return _ikona_sheetmetal("SheetMetal_FromSolid.svg")
+
+    def dumps(self):
+        return None
+
+    def loads(self, stanje):
+        return None
+
+
+class PogledRazgrnitve:
+    def __init__(self, vobj):
+        vobj.Proxy = self
+
+    def attach(self, vobj):
+        self.Object = vobj.Object
+
+    def getIcon(self):
+        return _ikona_sheetmetal("SheetMetal_Unfold.svg")
 
     def dumps(self):
         return None

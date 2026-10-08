@@ -90,7 +90,12 @@ FreeCAD je motor, vmesnik in grafika nastajata v brskalniku (plan, korak 8 napre
 - **Shranjevanje v strežniku** (popravljeno 2026-10-08): `FileInfo::isWritable` odpre datoteko brez deljenja; če jo kdo drži
   odprto (tudi isti proces), FreeCAD zavrne shranjevanje z »file is marked as read-only«. Strežnik je pri branju vrste
   dokumenta (`_lastnosti_fcstd`) puščal odprt tok `z.open("Document.xml")` v `ET.iterparse` -> drugo shranjevanje istega
-  dokumenta iz brskalnika ni uspelo. Tokove iz zipa vedno zapiraj z `with`. Kdo drži datoteko: Restart Manager (`RmGetList`). Med urejanjem značilnosti je objekt v predogledu vključen v posnetek, čeprav je `Visibility` še False.
+  dokumenta iz brskalnika ni uspelo. Tokove iz zipa vedno zapiraj z `with`. Kdo drži datoteko: Restart Manager (`RmGetList`).
+  Shranjevanje prek `App.Document.save()/saveAs()` v GUI ne počisti oznake »neshranjeno« (to naredi le `Gui::Document::save`):
+  po shranjevanju iz skripte nastavi `Gui.getDocument(ime).Modified = False`.
+- **Telesa pod drevesom** (od 2026-10-08): posnetek drevesa nosi `telesa` (koreni drevesa s trdno obliko, `drevo._telesa`);
+  stran pokaže razdelek »Telesa (N)« pod drevesom, ko jih je več kot eno (številka, ime = Label, število ločenih teles, cm³).
+  Imena teles: »<kos> – <stanje>« (npr. »Podstavek – upognjen«, »Podstavek – razgrnitev«). Med urejanjem značilnosti je objekt v predogledu vključen v posnetek, čeprav je `Visibility` še False.
 - Skica v brskalniku (`POST /skica`, dogodek `skica`): `nova` (ravnina XY/XZ/YZ ali ploskev modela: okno Nova skica ne pokriva pogleda, ploskev se klikne med odprtim oknom; odmik, obrni, v telesu),
   `odpri`, `zapri`, `crta` (s `spoji1`/`spoji2` za sovpadanje), `pravokotnik` (4 črte + sovpadanja + vodoravno/navpično),
   `krog`, `tocka`, `premakni` (movePoint, reševalnik), `izbrisi`, `mera` (Distance/Radius), `omejitev`, `gradbena`.
