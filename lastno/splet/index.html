@@ -93,7 +93,8 @@
   #stranski .vnos img.slicica { width: 48px; height: 48px; object-fit: contain; padding: 2px; box-sizing: border-box; background: linear-gradient(#fff, #eef1f5); border: 1px solid var(--crta); border-radius: 6px; box-shadow: 0 1px 2px rgba(0,0,0,.06); }
   #stranski .vnos img.slicica.ikonaNamesto { padding: 7px; background: #f7f8fa; box-shadow: none; }
   #stranski .vnos .besedilo { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
-  #stranski .vnos .ime { flex: 1 1 auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  /* Celo ime, tudi dolgo: prelomi se (najraje pri vezaju), da se razlikujeta npr. »…-mini-4« in »…-mini-4-v2«. */
+  #stranski .vnos .ime { flex: 1 1 auto; white-space: normal; overflow-wrap: anywhere; line-height: 1.25; }
   #stranski .vnos.aktiven .ime { font-weight: 600; }
   #stranski .vnos .podatek { font-size: 11px; color: #778; white-space: nowrap; }
   #stranski .vnos .vrstica2 { display: flex; align-items: center; gap: 6px; font-size: 11px; color: #778; white-space: nowrap; overflow: hidden; }
@@ -765,7 +766,7 @@ function narisiProjekte(p) {
   if (!odprti.length) r1.append(el('div', 'prazno', 'ni odprtih dokumentov'));
   for (const o of odprti) {
     const v = el('div', 'vnos' + (o.aktiven ? ' aktiven' : ' odprt'));
-    v.title = (o.pot || 'še ni shranjen') + '\nKlik: preklopi na dokument';
+    v.title = o.oznaka + '\n' + (o.pot || 'še ni shranjen') + '\nKlik: preklopi na dokument';
     v.append(slikaVnosa(o, o.pot ? 'Std_Open' : 'Std_New'));
     const b = el('div', 'besedilo');
     b.append(el('span', 'ime', o.oznaka + (o.spremenjen ? ' *' : '')));
