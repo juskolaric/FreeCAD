@@ -2187,6 +2187,17 @@ class Stanje:
             if IMA_OKNO and self.obrazec is not None and podatki.get("kljuc") == self.obrazec.get("kljuc"):
                 _obrazec_dejanje(self.obrazec_mapa, podatki)
                 self.zadnji_obrazec = 0.0  # novo stanje obrazca takoj nazaj v brskalnik
+        elif ukaz == "posnetek":
+            doc = App.listDocuments().get(podatki.get("ime", ""))
+            if doc is not None and odgovor is not None:
+                objekti = []
+                for obj in _vidni_objekti(doc):
+                    try:
+                        objekti.append(_geometrija_predpomnjena(doc, obj)[0])
+                    except Exception:  # noqa: BLE001
+                        pass
+                odgovor["rezultat"] = ('{"dokument":%s,"objekti":[%s]}' % (
+                    json.dumps(doc.Label), ",".join(objekti))).encode("utf-8")
         elif ukaz == "python":
             # Koda iz brskalnika ali iz izvedi.py; izpis in spremenljivka "rezultat" gresta v odgovor.
             import contextlib
@@ -2359,6 +2370,17 @@ class Zahteva(http.server.BaseHTTPRequestHandler):
                 self._odgovor(slika, "image/png", predpomni=True)
         elif pot == "/model":
             self._odgovor(STANJE.posnetek())
+        elif pot == "/posnetek":
+            # Geometrija poljubnega odprtega dokumenta (brez preklopa nanj) za sličico v seznamu odprtih dokumentov;
+            # zgradi jo glavna nit (FreeCAD API), nit strežnika le počaka.
+            import urllib.parse
+            q = urllib.parse.parse_qs(self.path.partition("?")[2])
+            odgovor = {"konec": threading.Event(), "izpis": "", "napaka": "", "rezultat": None}
+            STANJE.vrsta.put(("posnetek", {"ime": (q.get("ime") or [""])[0]}, odgovor))
+            if not odgovor["konec"].wait(60) or odgovor["rezultat"] is None:
+                self._odgovor(b'{"napaka":"ni posnetka"}', koda=404)
+            else:
+                self._odgovor(odgovor["rezultat"])
         elif pot == "/ukazi":
             self._odgovor(STANJE.ukazi())
         elif pot == "/projekti":

@@ -13,7 +13,9 @@
   :root { --ozadje: #eef0f3; --plosca: #f7f8fa; --crta: #d3d7dd; --poudarek: #1e88e5; --besedilo: #222; }
   html, body { margin: 0; height: 100%; overflow: hidden; background: var(--ozadje);
                font-family: system-ui, "Segoe UI", sans-serif; color: var(--besedilo); font-size: 13px; }
-  body { display: flex; flex-direction: column; }
+  /* Stranski stolpec (dokumenti in drevo) čez celo višino levo; desno glava (zavihki, ukazi, podatki) in pogled */
+  body { display: flex; flex-direction: row; }
+  #desno { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; }
   button { font: inherit; color: inherit; }
 
   /* Glava: hitri dostop, zavihki, podatki */
@@ -128,6 +130,10 @@
   #drevoVsebina .vozel .urediVrstico:hover { background: #e3eefb; border-color: var(--poudarek); }
   #drevoVsebina .vozel .urediVrstico .napis { display: none; }
   #drevoVsebina .vozel:hover .urediVrstico .napis, #drevoVsebina .vozel.izbran .urediVrstico .napis { display: inline; }
+  #drevoVsebina .vozel img.slicicaVozla { width: 40px; height: 40px; flex: none; object-fit: contain; border-radius: 4px;
+    background: linear-gradient(#fff, #eef1f5); border: 1px solid var(--crta); box-sizing: border-box; padding: 1px; }
+  #drevoVsebina .vozel img.slicicaVozla.prazna { background: #f4f6f9; }
+  #drevoVsebina .vozel.neviden img.slicicaVozla { opacity: .45; }
   #drevoVsebina .telesa { border-top: 1px solid var(--crta); margin-top: 6px; padding-top: 2px; }
   #drevoVsebina .telo .stevilka { flex: none; min-width: 16px; text-align: right; color: #889; font-size: 11px; font-variant-numeric: tabular-nums; }
   #drevoVsebina .telo .kolicina { flex: none; margin-left: auto; color: #889; font-size: 11px; font-variant-numeric: tabular-nums; }
@@ -311,6 +317,17 @@
 </script>
 </head>
 <body>
+  <aside id="stranski">
+    <div class="glavaStranski"><span>Dokumenti in drevo</span>
+      <button type="button" id="stranskiOsvezi" title="Znova prebere seznam odprtih dokumentov">&#8635;</button>
+      <button type="button" id="stranskiSkrij" title="Skrije stranski meni">&#9664;</button>
+    </div>
+    <div id="stranskiStolpca">
+      <div id="stranskiVsebina"><div class="prazno">Nalagam …</div></div>
+      <div id="drevoVsebina"><div class="prazno">Nalagam …</div></div>
+    </div>
+  </aside>
+<div id="desno">
 <div id="glava">
   <div id="vrstica1">
     <div id="hitri"></div>
@@ -338,16 +355,6 @@
   </div>
 </div>
 <div id="telo">
-  <aside id="stranski">
-    <div class="glavaStranski"><span>Dokumenti in drevo</span>
-      <button type="button" id="stranskiOsvezi" title="Znova prebere seznam odprtih dokumentov">&#8635;</button>
-      <button type="button" id="stranskiSkrij" title="Skrije stranski meni">&#9664;</button>
-    </div>
-    <div id="stranskiStolpca">
-      <div id="stranskiVsebina"><div class="prazno">Nalagam …</div></div>
-      <div id="drevoVsebina"><div class="prazno">Nalagam …</div></div>
-    </div>
-  </aside>
 <div id="pogled">
   <button type="button" id="stranskiPokazi" class="skrit" title="Pokaže stranski meni z odprtimi dokumenti in drevesom">&#9654; Dokumenti in drevo</button>
   <div id="pogledi" title="Standardni pogledi (tudi tipke 1–8 ali preslednica)"></div>
@@ -364,6 +371,7 @@
   <div id="obvestilo"></div>
   <div id="komentarVnos"></div>
   <div id="namig">Srednji gumb: vrtenje (Ctrl premik, Shift povečava, Alt sukanje, klik na model: središče vrtenja) · kolešček: povečava · klik: izbira (Ctrl doda) · puščice · 1–8 ali gumbi zgoraj desno: pogledi (gumb Perspektiva preklopi projekcijo) · preslednica: meni pogledov · F: prilagodi</div>
+</div>
 </div>
 </div>
 <div id="dialogSkica" class="skrit">
@@ -644,6 +652,13 @@ function vozelDrevesa(d, ime, globina, pot) {
   oko.addEventListener('click', e => { e.stopPropagation(); drevoDejanje({ dejanje: 'vidnost', ime, vidno: !v.viden }); });
   vrstica.append(oko);
   if (v.ikona) { const i = el('img'); i.src = v.ikona; i.alt = ''; vrstica.append(i); }
+  if (objekti.has(ime)) {   // izris samega kosa (nariše se v ozadju), da se takoj vidi, kateri kos je
+    const s = el('img', 'slicicaVozla'); s.alt = ''; const url = slicicaVozla(ime);
+    if (url) s.src = url; else s.classList.add('prazna');
+    vrstica.append(s);
+    vrstica.addEventListener('mouseenter', () => osvetli(ime));
+    vrstica.addEventListener('mouseleave', () => osvetli(null));
+  }
   vrstica.append(el('span', 'ime', v.oznaka));
   if (!v.tip.startsWith('App::Origin')) {   // izhodišče (ravnine, osi) nima urejanja
     const telo = v.tip === 'PartDesign::Body' || v.tip === 'App::Part';
@@ -679,6 +694,7 @@ function narisiDrevo(d) {
   drevoVsebina.append(r);
   narisiTelesa(d);
   narisiLastnosti(d);
+  nacrtujSliciceVozlov();   // tudi ob razprtju veje (novi vozli)
 }
 // Telesa dokumenta (kot »Solid Bodies« v SolidWorksu): pod drevesom, ko jih je več kot eno. Oštevilčena po vrstnem redu
 // v drevesu; ime je oznaka objekta (preimenuješ jo v lastnostih, Label). Objekt z več ločenimi telesi pokaže njihovo število.
@@ -694,7 +710,15 @@ function narisiTelesa(d) {
     vrstica.title = t.oznaka + (t.prostornina != null ? ' · ' + t.prostornina.toLocaleString('sl-SI') + ' cm³' : '') + '\nKlik: izbere telo; krogec: pokaže ali skrije';
     const oko = el('button', 'oko', t.viden ? '●' : '○'); oko.type = 'button'; oko.title = t.viden ? 'Skrij telo' : 'Pokaži telo';
     oko.addEventListener('click', e => { e.stopPropagation(); drevoDejanje({ dejanje: 'vidnost', ime: t.ime, vidno: !t.viden }); });
-    vrstica.append(el('span', 'stevilka', String(i + 1)), oko, el('span', 'ime', t.oznaka));
+    vrstica.append(el('span', 'stevilka', String(i + 1)), oko);
+    if (objekti.has(t.ime)) {
+      const s = el('img', 'slicicaVozla'); s.alt = ''; const url = slicicaVozla(t.ime);
+      if (url) s.src = url; else s.classList.add('prazna');
+      vrstica.append(s);
+      vrstica.addEventListener('mouseenter', () => osvetli(t.ime));
+      vrstica.addEventListener('mouseleave', () => osvetli(null));
+    }
+    vrstica.append(el('span', 'ime', t.oznaka));
     if (t.solidov > 1) vrstica.append(el('span', 'kolicina', t.solidov + ' telesa'));
     if (t.prostornina != null) vrstica.append(el('span', 'kolicina', t.prostornina.toLocaleString('sl-SI') + ' cm³'));
     vrstica.addEventListener('click', e => objavi('/select', { objekt: t.ime, element: '', dodaj: e.ctrlKey }).catch(pokaziNapako));
@@ -788,6 +812,7 @@ function vnosDatoteke(d, odprti, vProjektu) {
 }
 function narisiProjekte(p) {
   stanje.projekti = p;
+  setTimeout(() => izrisiSliciceDokumentov().catch(e => console.warn(e)), 2000);
   nacrtujSlicico();   // pot aktivnega dokumenta je zdaj znana (ob prvem nalaganju še ni bila)
   const vsebina = $('stranskiVsebina'); vsebina.innerHTML = '';
   const odprti = p.odprti || [];
@@ -1396,6 +1421,7 @@ async function naloziModel() {
   oznaciIzbiro(stanje.izbira);
   osveziHud();
   nacrtujSlicico();
+  nacrtujSliciceVozlov();
 }
 
 function okvirModela() { return new THREE.Box3().setFromObject(koren); }
@@ -1422,7 +1448,32 @@ async function izrisiSlicico() {
   if (!pot || !koren.children.length || skica.posnetek) return;
   const kljuc = stanje.dokument + '@' + stanje.verzija;
   if (kljuc === slicicaZadnja) return;
-  const okvir = okvirModela(); if (okvir.isEmpty()) return;
+  const platno = await izrisiIzometrijo(null, VELIKOST_SLICICE); if (!platno) return;
+  await objavi('/slicica', { pot, png: platno.toDataURL('image/png') });
+  slicicaZadnja = kljuc;   // šele po uspešnem pošiljanju, da se ob napaki poskusi znova
+}
+
+// Izometrični izris (prozorno ozadje, prileganje po projiciranih ogliščih, nadvzorčenje) celega modela ali samo
+// enega objekta (ime): ostali objekti so med izrisom skriti. Vrne platno velikost x velikost ali null.
+let izrisTece = Promise.resolve();
+function izrisiIzometrijo(ime, velikost, zunanja) {
+  const naloga = izrisTece.then(() => izrisiIzometrijoZdaj(ime, velikost, zunanja));
+  izrisTece = naloga.catch(() => {});   // izrisi gredo po vrsti (en izrisni cilj naenkrat)
+  return naloga;
+}
+async function izrisiIzometrijoZdaj(ime, velikost, zunanja) {
+  const samo = ime ? objekti.get(ime) : null;
+  if (ime && !samo) return null;
+  if (zunanja) { scene.add(zunanja); zunanja.updateMatrixWorld(true); }
+  try {
+    return await izrisiVir(samo, zunanja, velikost);
+  } finally {
+    if (zunanja) scene.remove(zunanja);
+  }
+}
+async function izrisiVir(samo, zunanja, velikost) {
+  const vir = zunanja || (samo ? samo.skupina : koren);
+  const okvir = new THREE.Box3().setFromObject(vir); if (okvir.isEmpty()) return null;
   const sredisce = okvir.getCenter(new THREE.Vector3()), r = Math.max(okvir.getSize(new THREE.Vector3()).length() / 2, 1e-3);
   const v = STANDARDNI_POGLEDI[6];
   const kam = new THREE.OrthographicCamera(-1, 1, 1, -1, 0.1, r * 10);
@@ -1434,10 +1485,11 @@ async function izrisiSlicico() {
   const inv = kam.matrixWorldInverse, t = new THREE.Vector3(), m = new THREE.Matrix4();
   let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity;
   const razsiri = () => { x0 = Math.min(x0, t.x); x1 = Math.max(x1, t.x); y0 = Math.min(y0, t.y); y1 = Math.max(y1, t.y); };
-  koren.traverse(n => {
-    if (!n.isMesh || !n.visible) return;
+  vir.traverse(n => {
+    if (!n.isMesh || (!samo && !zunanja && !n.visible)) return;
     const p = n.geometry.getAttribute('position'); m.multiplyMatrices(inv, n.matrixWorld);
-    for (let i = 0; i < p.count; i++) { t.fromBufferAttribute(p, i).applyMatrix4(m); razsiri(); }
+    const korakT = Math.max(1, Math.floor(p.count / 20000));   // pri velikih mrežah zadošča vzorec oglišč
+    for (let i = 0; i < p.count; i += korakT) { t.fromBufferAttribute(p, i).applyMatrix4(m); razsiri(); }
   });
   if (x0 === Infinity) for (let i = 0; i < 8; i++) {
     t.set(i & 1 ? okvir.max.x : okvir.min.x, i & 2 ? okvir.max.y : okvir.min.y, i & 4 ? okvir.max.z : okvir.min.z).applyMatrix4(inv); razsiri();
@@ -1445,12 +1497,16 @@ async function izrisiSlicico() {
   const pol = Math.max(x1 - x0, y1 - y0, 1e-3) / 2 * 1.1, cx = (x0 + x1) / 2, cy = (y0 + y1) / 2;
   kam.left = cx - pol; kam.right = cx + pol; kam.bottom = cy - pol; kam.top = cy + pol;
   kam.updateProjectionMatrix();
-  const skriti = []; for (const o of scene.children) if (o !== koren && !o.isLight && o.visible) { o.visible = false; skriti.push(o); }
+  const skriti = []; for (const o of scene.children) if (o !== koren && o !== zunanja && !o.isLight && o.visible) { o.visible = false; skriti.push(o); }
+  if (zunanja && koren.visible) { koren.visible = false; skriti.push(koren); }   // drug dokument: aktivni model skrij
+  const vidnost = [];   // samo en objekt: ostale skupine skrij, izbrani pokaži tudi, če je v pogledu skrit
+  if (samo) for (const z of objekti.values()) { vidnost.push([z.skupina, z.skupina.visible]); z.skupina.visible = z === samo; }
   const izbira = stanje.izbira; oznaciIzbiro([]);
+  const osvetljen = osvetljenObjekt; osvetli(null);
   const ozadje = scene.background; scene.background = null;
   const barvaCiscenja = renderer.getClearColor(new THREE.Color()), alfaCiscenja = renderer.getClearAlpha();
-  renderer.setClearColor(0xffffff, 0);   // prozorno ozadje; podlago da CSS v stranskem meniju
-  const V = VELIKOST_SLICICE * NADVZORCENJE;
+  renderer.setClearColor(0xffffff, 0);   // prozorno ozadje; podlago da CSS
+  const V = velikost * NADVZORCENJE;
   const cilj = new THREE.RenderTarget(V, V);
   cilj.texture.colorSpace = THREE.SRGBColorSpace;   // sicer so prebrane barve linearne (pretemne)
   let piksli;
@@ -1460,7 +1516,8 @@ async function izrisiSlicico() {
   } finally {
     renderer.setRenderTarget(null); scene.background = ozadje; renderer.setClearColor(barvaCiscenja, alfaCiscenja);
     for (const o of skriti) o.visible = true;
-    oznaciIzbiro(izbira); cilj.dispose();
+    for (const [sk, vid] of vidnost) sk.visible = vid;
+    oznaciIzbiro(izbira); osvetli(osvetljen); cilj.dispose();
   }
   const veliko = document.createElement('canvas'); veliko.width = veliko.height = V;
   const vctx = veliko.getContext('2d'), slika = vctx.createImageData(V, V);
@@ -1469,11 +1526,83 @@ async function izrisiSlicico() {
   const korak = piksli.length > w * V ? Math.ceil(w / 256) * 256 : w;
   for (let y = 0; y < V; y++) { const izvor = obrni ? V - 1 - y : y; slika.data.set(piksli.subarray(izvor * korak, izvor * korak + w), y * w); }
   vctx.putImageData(slika, 0, 0);
-  const platno = document.createElement('canvas'); platno.width = platno.height = VELIKOST_SLICICE;
+  const platno = document.createElement('canvas'); platno.width = platno.height = velikost;
   const ctx = platno.getContext('2d'); ctx.imageSmoothingEnabled = true; ctx.imageSmoothingQuality = 'high';
-  ctx.drawImage(veliko, 0, 0, VELIKOST_SLICICE, VELIKOST_SLICICE);
-  await objavi('/slicica', { pot, png: platno.toDataURL('image/png') });
-  slicicaZadnja = kljuc;   // šele po uspešnem pošiljanju, da se ob napaki poskusi znova
+  ctx.drawImage(veliko, 0, 0, velikost, velikost);
+  return platno;
+}
+
+// --- sličice kosov v drevesu in osvetlitev kosa ob miški ---------------------------------------
+// Vsak vozel drevesa, ki ima v pogledu svojo geometrijo (povezava, kos, značilnost), dobi majhen izometrični izris
+// samo tega kosa. Izrisi se delajo po vrsti v ozadju in hranijo po dokumentu, imenu in obliki (število oglišč),
+// zato se ob vsakem posnetku ne rišejo znova. Ob prehodu z miško čez vrstico se kos v pogledu obarva oranžno.
+// Sličice dokumentov v seznamu odprtih, ki jih še ni (npr. deli, ki jih je odprl sestav): stran po vrsti prenese
+// geometrijo dokumenta (GET /posnetek?ime=, brez preklopa), jo izriše v ločeni skupini in pošlje kot sličico.
+const sliciceDokumentovPoskus = new Set();
+let sliciceDokumentovTece = false;
+async function izrisiSliciceDokumentov() {
+  if (sliciceDokumentovTece || skica.posnetek) return;
+  sliciceDokumentovTece = true;
+  try {
+    for (;;) {
+      const odprti = (stanje.projekti && stanje.projekti.odprti) || [];
+      const o = odprti.find(o => o.pot && !o.slicica && !o.aktiven && !sliciceDokumentovPoskus.has(o.pot + '|' + (o.spremenjeno || 0)));
+      if (!o) break;
+      sliciceDokumentovPoskus.add(o.pot + '|' + (o.spremenjeno || 0));
+      try {
+        const r = await fetch('/posnetek?ime=' + encodeURIComponent(o.ime), { cache: 'no-store' });
+        if (!r.ok) continue;
+        const model = await r.json();
+        if (!model.objekti || !model.objekti.length) continue;
+        const skupina = new THREE.Group();
+        for (const ob of model.objekti) skupina.add(zgradiObjekt(ob).skupina);
+        const platno = await izrisiIzometrijo(null, VELIKOST_SLICICE, skupina);
+        skupina.traverse(n => { if (n.geometry) n.geometry.dispose(); });
+        if (platno) await objavi('/slicica', { pot: o.pot, png: platno.toDataURL('image/png') });
+      } catch (e) { console.warn('sličica dokumenta', o.oznaka, e); }
+    }
+  } finally { sliciceDokumentovTece = false; }
+}
+
+const VELIKOST_SLICICE_VOZLA = 40;
+const slicicePoVozlih = new Map();   // ključ -> dataURL
+function kljucSliciceVozla(ime) {
+  const z = objekti.get(ime); if (!z) return '';
+  const o = z.podatki;
+  return stanje.dokument + '|' + ime + '|' + (o.tocke ? o.tocke.length : 0) + '|' + (o.trikotniki ? o.trikotniki.length : 0);
+}
+function slicicaVozla(ime) {
+  const k = kljucSliciceVozla(ime);
+  return k ? slicicePoVozlih.get(k) || '' : '';
+}
+let sliciceCasovnik = 0;
+function nacrtujSliciceVozlov() { clearTimeout(sliciceCasovnik); sliciceCasovnik = setTimeout(izrisiSliciceVozlov, 400); }
+async function izrisiSliciceVozlov() {
+  if (skica.posnetek) return;
+  const dokument = stanje.dokument;
+  for (const vrstica of [...drevoVsebina.querySelectorAll('.vozel[data-ime]')]) {
+    if (stanje.dokument !== dokument) return;   // medtem drug dokument
+    const ime = vrstica.dataset.ime, k = kljucSliciceVozla(ime);
+    if (!k || slicicePoVozlih.has(k)) continue;
+    let url = '';
+    try { const p = await izrisiIzometrijo(ime, VELIKOST_SLICICE_VOZLA); url = p ? p.toDataURL('image/png') : ''; }
+    catch (e) { console.warn('sličica vozla', ime, e); }
+    slicicePoVozlih.set(k, url);
+    for (const img of drevoVsebina.querySelectorAll('.vozel[data-ime="' + CSS.escape(ime) + '"] img.slicicaVozla')) {
+      if (url) { img.src = url; img.classList.remove('prazna'); }
+    }
+  }
+}
+const materialOsvetlitve = new THREE.MeshStandardMaterial({ color: 0xff9a3c, metalness: 0.05, roughness: 0.5, side: THREE.DoubleSide,
+                                                            emissive: 0x7a3a00, emissiveIntensity: 0.35 });
+let osvetljenObjekt = null;
+function osvetli(ime) {
+  if (osvetljenObjekt === ime) return;
+  const prej = osvetljenObjekt && objekti.get(osvetljenObjekt);
+  if (prej && prej.mesh) prej.mesh.material = materialPloskev;
+  osvetljenObjekt = null;
+  const z = ime && objekti.get(ime);
+  if (z && z.mesh) { z.mesh.material = materialOsvetlitve; osvetljenObjekt = ime; }
 }
 window.splet = Object.assign(window.splet || {}, { izrisiSlicico, potDokumenta, okvirModela, renderer, scene, THREE, koren: () => koren });   // za razhroščevanje iz konzole
 

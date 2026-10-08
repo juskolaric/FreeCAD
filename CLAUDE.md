@@ -108,7 +108,12 @@ FreeCAD je motor, vmesnik in grafika nastajata v brskalniku (plan, korak 8 napre
 - **Povezave na druge datoteke v drevesu** (od 2026-10-08): vozel `App::Link` na objekt v drugem dokumentu nosi `povezava`
   {dokument, sestav}; gumb ↗ Odpri (dvojni klik, desni klik) odpre ta podsestav ali del (`drevo._odpri_povezano`: delno
   naložen dokument — `Document.Partial` — se naloži v celoti z `restore()`, nato postane dejaven). Seznam odprtih
-  dokumentov je razdeljen: zgoraj Sestavi (N), spodaj Deli (N). Med urejanjem značilnosti je objekt v predogledu vključen v posnetek, čeprav je `Visibility` še False.
+  dokumentov je razdeljen: zgoraj Sestavi (N), spodaj Deli (N).
+- **Izrisi kosov in razporeditev** (od 2026-10-08): vsak vozel drevesa z geometrijo v pogledu ima 40 px izometrični izris samo
+  tega kosa (`izrisiIzometrijo(ime, velikost, zunanja)`, izrisi gredo po vrsti, predpomnilnik po dokumentu, imenu in velikosti
+  mreže); prehod z miško čez vrstico kos v pogledu obarva oranžno (`osvetli`). Dokumenti brez sličice v seznamu odprtih se
+  izrišejo v ozadju brez preklopa: `GET /posnetek?ime=` (glavna nit zgradi geometrijo dokumenta) -> ločena skupina scene ->
+  `POST /slicica`. Stranski stolpec (dokumenti in drevo) sega čez celo višino levo; glava in pogled sta v `#desno`. Med urejanjem značilnosti je objekt v predogledu vključen v posnetek, čeprav je `Visibility` še False.
 - Skica v brskalniku (`POST /skica`, dogodek `skica`): `nova` (ravnina XY/XZ/YZ ali ploskev modela: okno Nova skica ne pokriva pogleda, ploskev se klikne med odprtim oknom; odmik, obrni, v telesu),
   `odpri`, `zapri`, `crta` (s `spoji1`/`spoji2` za sovpadanje), `pravokotnik` (4 črte + sovpadanja + vodoravno/navpično),
   `krog`, `tocka`, `premakni` (movePoint, reševalnik), `izbrisi`, `mera` (Distance/Radius), `omejitev`, `gradbena`.
