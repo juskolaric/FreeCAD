@@ -268,7 +268,7 @@ FreeCAD 1.1 in lastno gradnjo (oba Python 3.11). Posodobitev: `git -C "%APPDATA%
 | Add Base Shape | `SheetMetalBaseShapeCmd.SMBaseShape` | parametrični začetni del: Flat, L, U, Tub (korito), Hat, Box |
 | Make Base Wall | `SheetMetalBaseCmd.SMBaseBend(obj, skica)` | **zaprta skica** → plošča debeline `Thickness`; **odprta skica** → profil z zaobljenimi vogali (`Radius`), izvlečen za `Length`. `BendSide` Outside/Inside/Middle, `MidPlane`, `Reverse` |
 | Solid to Sheet Metal | `SheetMetalFromSolid.SMFromSolid` | pretvori telo/lupino (tudi uvoženo škatlo) v pločevino; izbrane ploskve odstrani, robove naredi v upogibe |
-| Make Wall (prirobnica) | `SheetMetalCmd.SMBendWall(obj, osnova, ["FaceN"])` | upogne prirobnico na izbrani ploskvi debeline ali robu (glej 7.3) |
+| Make Wall (prirobnica) | `SheetMetalCmd.SMBendWall(obj, osnova, ["EdgeN"])` | upogne prirobnico na izbranem **robu** (ukaz v GUI je na voljo le, ko so izbrani samo robovi; skripta sprejme tudi ploskev debeline); glej 7.3 |
 | Hem | `SheetMetalHem.SMHem` | zavihek: Flat, Open, Teardrop, Rolled |
 | Extend Face / Extend by Sketch | `SheetMetalExtendCmd.SMExtrudeWall` | podaljša steno ob ploskvi debeline; skica za obris |
 | Fold on Line | `SheetMetalFoldCmd.SMFoldWall` | upogne ravno ploskev po črti iz skice (`radius`, `angle`, `Position`) — tako se naredi tudi odmik Z |
@@ -405,5 +405,14 @@ de.wikipedia.org/wiki/Biegeverkürzung, lokalno `src/App/FreeCADInit.py`.
    materialom, debelino, R, K, koti, smerjo valjanja, ISO 2768-mK.
 6. Skripte modelov naj gredo v `Oblak\3D modeliranje\<Projekt>\Skripte\` kot pri drugih projektih; ploskve izbiraj
    geometrijsko.
+
+**V spletnem pogledu** (od 8. 10. 2026): zavihek **Pločevina** z vsemi 18 ukazi dodatka (FreeCAD-ove ikone, angleška imena,
+ker dodatek nima slovenskega prevoda). Preverjeno prek strežnika: skica → Make Base Wall (obrazec: debelina, polmer,
+stran) → izbran rob → Make Wall (obrazec: dolžina, način dolžine, polmer, kot, lega) → izbrana največja ravna ploskev
+→ Unfold (obrazec: K, ANSI/DIN, preglednica materiala, skica, DXF/SVG izvoz) — razgrnitev 129,398 mm pri K 0,4, točno
+po formuli. Dve pasti, ki sta se pokazali in sta popravljeni v strežniku: (1) pri skritem oknu FreeCAD ne osvežuje
+omogočenosti gumbov, zato `_sprozi_ukaz` dejanje omogoči sam, če `isActive()` vrne True; (2) Python opazovalec
+pogleda (`Gui.addDocumentObserver` s `slotChangedObject`) je pokvaril vse objekte Part, nastale med delovanjem
+strežnika (brez `DiffuseColor`; Make Wall je padel) — odstranjen, videz se preverja vsako sekundo.
 
 **Kaj še ni preizkušeno:** primer iz 7.5 prek `izvedi.py` (z GUI, skice razgrnitve z ločenimi sloji), prikaz objektov SheetMetal v spletnem pogledu in drevesu, napaka interpolacije K v V2.

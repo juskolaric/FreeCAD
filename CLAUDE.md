@@ -73,8 +73,13 @@ FreeCAD je motor, vmesnik in grafika nastajata v brskalniku (plan, korak 8 napre
   Shift 90°, Alt sukanje, Ctrl premik, Ctrl+1..7 ali 1..7 standardni pogledi (Ctrl+številke brskalnik pogosto vzame
   sam), 8 pravokotno na izbrano ploskev, F, Z, Shift+Z, preslednica meni pogledov. Isti pogledi so tudi gumbi v zgornjem desnem kotu
   pogleda (`#pogledi`, trenutni pogled je poudarjen; v skici je vrstica skrita). Skica ostaja na `ortoControls`.
-- Ukazi v brskalniku so tisti iz orodnih vrstic okolij `DELOVNA_OKOLJA` (Snovanje delov, Skica, Del) in `HITRI_DOSTOP`;
-  stanje »na voljo« se preverja vsakih 500 ms (`isActive`). Med urejanjem značilnosti je objekt v predogledu vključen v posnetek, čeprav je `Visibility` še False.
+- Ukazi v brskalniku so tisti iz orodnih vrstic okolij `DELOVNA_OKOLJA` (Snovanje delov, Skica, Del, od 2026-10-08 Pločevina =
+  dodatek SheetMetal `SMWorkbench`, če je nameščen; znanje v `lastno/raziskava/plocevina.md`) in `HITRI_DOSTOP`;
+  stanje »na voljo« se preverja vsakih 500 ms (`isActive`). Pri skritem oknu FreeCAD ne osvežuje omogočenosti dejanj
+  (`MainWindow::_updateActions` le pri vidnem oknu), zato `_sprozi_ukaz` dejanje omogoči sam, če `isActive()` vrne True.
+  **Ne dodajaj `Gui.addDocumentObserver` s `slotChangedObject`**: FreeCAD ta signal odda že iz konstruktorja ViewProviderja,
+  opazovalec takrat ustvari Python ovoj osnovnega razreda in objekti Part potem nimajo `DiffuseColor` (SheetMetal Make Wall
+  pade). Spremembe videza strežnik preverja vsako sekundo (`_videz_kljuc`). Med urejanjem značilnosti je objekt v predogledu vključen v posnetek, čeprav je `Visibility` še False.
 - Skica v brskalniku (`POST /skica`, dogodek `skica`): `nova` (ravnina XY/XZ/YZ ali ploskev modela: okno Nova skica ne pokriva pogleda, ploskev se klikne med odprtim oknom; odmik, obrni, v telesu),
   `odpri`, `zapri`, `crta` (s `spoji1`/`spoji2` za sovpadanje), `pravokotnik` (4 črte + sovpadanja + vodoravno/navpično),
   `krog`, `tocka`, `premakni` (movePoint, reševalnik), `izbrisi`, `mera` (Distance/Radius), `omejitev`, `gradbena`.

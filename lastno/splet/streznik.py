@@ -80,11 +80,15 @@ MAPE_PROJEKTOV += [os.path.normpath(m.strip()) for m in os.environ.get("SPLET_PR
 GLOBINA_PROJEKTOV = 4        # podmape pod mapo projektov, ki se še pregledajo
 
 # Delovna okolja, katerih ukazi so na voljo v brskalniku (ime, slovenski naslov, če ga FreeCAD nima).
+# Okolja, ki niso nameščena (npr. dodatek SheetMetal), se preskočijo.
 DELOVNA_OKOLJA = [
     ("PartDesignWorkbench", "Snovanje delov"),
     ("SketcherWorkbench", "Skica"),
     ("PartWorkbench", "Del"),
+    ("SMWorkbench", "Pločevina"),
 ]
+# Okolja, pri katerih velja slovenski naslov zgoraj tudi, ko ima FreeCAD svojega (dodatek nima slovenskega prevoda).
+LASTNI_NASLOVI = {"SMWorkbench"}
 # Splošne orodne vrstice (niso del zavihkov okolij).
 SPLOSNE_ORODNE = {"File", "Edit", "Clipboard", "Workbench", "Macro", "View", "Individual Views", "Structure", "Help"}
 # Vrstica hitrega dostopa (kot v SolidWorksu zgoraj levo).
@@ -444,6 +448,8 @@ def _ukaz(ime, akcija_orodne):
 
 def _naslov_okolja(ime, privzeto):
     """Prevedeno ime delovnega okolja iz dejanj izbirnika, sicer privzeto."""
+    if ime in LASTNI_NASLOVI:
+        return privzeto
     try:
         for a in Gui.Command.get("Std_Workbench").getAction():
             if a.objectName() == ime or a.data() == ime:
@@ -522,6 +528,14 @@ def _sprozi_ukaz(ime, indeks):
             akcije = [akcije] if akcije else []
     if akcije:
         akcija = akcije[indeks] if 0 <= indeks < len(akcije) else akcije[0]
+        # Pri skritem oknu FreeCAD ne osvežuje omogočenosti dejanj (MainWindow::_updateActions
+        # teče le, ko je okno vidno), zato bi trigger na onemogočenem dejanju (npr. ukaz, ki
+        # zahteva izbiro) ostal brez učinka. Naredimo isto kot Command::testActive za ta ukaz.
+        try:
+            if not akcija.isEnabled() and cmd.isActive():
+                akcija.setEnabled(True)
+        except Exception:  # noqa: BLE001
+            pass
         QtCore.QMetaObject.invokeMethod(akcija, "trigger", QtCore.Qt.ConnectionType.QueuedConnection)
     else:
         Gui.runCommand(ime, indeks)
@@ -1735,6 +1749,8 @@ class Stanje:
         self.umazano = True
         self.zadnja_gradnja = 0.0
         self.zadnji_pregled = 0.0
+        self.zadnji_videz = 0.0
+        self.odtis_videza = None           # _videz_kljuc ob zadnjem pregledu (namesto opazovalca pogleda)
         self.napaka = ""
         self.skica = ""                    # ime skice, ki se ureja v brskalniku
         self.samodejno_prikazano = False   # okno smo pokazali sami zaradi vnosa; po koncu ga spet skrijemo
@@ -1821,6 +1837,16 @@ class Stanje:
             self.preveri_vidnost()
         if self.za_dvojnike and zdaj - self.za_dvojnike > 1.5:
             self.preveri_dvojnike()
+        if IMA_OKNO and zdaj - self.zadnji_videz > 1.0:
+            self.zadnji_videz = zdaj
+            try:
+                odtis = _videz_kljuc(App.ActiveDocument)
+                if odtis != self.odtis_videza:
+                    if self.odtis_videza is not None:
+                        self.umazano = True
+                    self.odtis_videza = odtis
+            except Exception:  # noqa: BLE001
+                _log("videz: %s" % traceback.format_exc())
         if self.umazano and zdaj - self.zadnja_gradnja > 0.3:
             self.zgradi()
         if zdaj - self.zadnji_projekti > 2.0:
@@ -2212,10 +2238,26 @@ class OpazovalecDokumenta:
             _log("oblak: dogodek shranjevanja: %r" % e)
 
 
-class OpazovalecPogleda:
-    def slotChangedObject(self, vobj, prop):
-        if prop in ("ShapeAppearance", "ShapeColor", "DiffuseColor", "Visibility", "Transparency"):
-            STANJE.umazano = True
+# Opazovalca pogleda (Gui.addDocumentObserver s slotChangedObject) NE uporabljamo: FreeCAD ta signal
+# odda že iz konstruktorja ViewProviderja (ViewProvider::onChanged), DocumentObserverPython takrat
+# pokliče getPyObject() še na osnovnem razredu in si zapomni ViewProviderGeometryObjectPy namesto
+# ViewProviderPartExtPy. Objekti Part, ustvarjeni med delovanjem strežnika, potem nimajo `DiffuseColor`
+# (npr. SheetMetal Make Wall pade z AttributeError). Spremembe videza zato preverja `_videz_kljuc`.
+def _videz_kljuc(doc):
+    """Odtis videza (vidnost, prosojnost, barve) vseh objektov dokumenta, za periodično primerjavo."""
+    if doc is None:
+        return None
+    odtis = []
+    for obj in doc.Objects:
+        vo = getattr(obj, "ViewObject", None)
+        if vo is None:
+            continue
+        try:
+            barve = tuple(tuple(m.DiffuseColor[:3]) for m in vo.ShapeAppearance) if hasattr(vo, "ShapeAppearance") else ()
+        except Exception:  # noqa: BLE001
+            barve = ()
+        odtis.append((obj.Name, bool(getattr(vo, "Visibility", True)), getattr(vo, "Transparency", 0), barve))
+    return (doc.Name, tuple(odtis))
 
 
 class OpazovalecIzbire:
@@ -2604,7 +2646,6 @@ def zazeni():
 
     App.addDocumentObserver(OpazovalecDokumenta())
     if IMA_OKNO:
-        Gui.addDocumentObserver(OpazovalecPogleda())
         Gui.Selection.addObserver(OpazovalecIzbire())
         _nalozi_okolja()
         try:
