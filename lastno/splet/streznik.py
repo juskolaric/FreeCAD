@@ -61,6 +61,7 @@ TOLERANCA_PLOSKEV = 0.1   # mm, teselacija (najmanj; večji objekti relativno, g
 ODMIK_ROBOV = 0.05        # mm, diskretizacija robov (najmanj)
 RELATIVNA_PLOSKEV = 0.0005   # delež diagonale objekta: sestav 2 m -> 1 mm (sicer 190 MB posnetka in 35 s gradnje)
 RELATIVNI_ROB = 0.00025
+PRORACUN_TOCK = 150000       # na objekt: gostejša mreža (npr. uvožen hladilnik s 4200 ploskvami) se naredi grobje
 
 
 def _natancnost(oblika):
@@ -299,7 +300,7 @@ def _z3(v):
     return (round(v.x, 3), round(v.y, 3), round(v.z, 3))
 
 
-def _geometrija(obj):
+def _geometrija(obj, faktor=1.0):
     """Posnetek enega objekta: teselirane ploskve (Face{i+1}) in diskretizirani robovi (Edge{j+1}).
 
     Oblike ne kopiramo: kopija izgubi že izračunano mrežo (BRepMesh) in se teselira znova (3-4x počasneje).
@@ -315,11 +316,15 @@ def _geometrija(obj):
 
     tocke, trikotniki, ploskve = [], [], []
     toleranca, odmik_robov = _natancnost(oblika)
+    toleranca *= faktor
     osnovna, po_ploskvah = _barve(obj, len(oblika.Faces))
     for i, ploskev in enumerate(oblika.Faces):
         try:
             # grobejša mreža velikih objektov: obstoječo finejšo mrežo je treba pobrisati (OCC jo sicer ohrani)
             v, t = ploskev.tessellate(toleranca, toleranca > TOLERANCA_PLOSKEV + 1e-9)
+            if len(tocke) // 3 + len(v) > PRORACUN_TOCK and faktor < 30:
+                # proračun presežen: celoten objekt znova, trikrat grobje (obstoječa mreža se pobriše)
+                return _geometrija(obj, faktor * 3)
         except Exception:  # noqa: BLE001
             v, t = [], []
         zacetek_tock = len(tocke) // 3
@@ -389,6 +394,9 @@ def _kljuc_oblike(obj, globina=0):
         return ("L", _kljuc_oblike(povezan, globina + 1), _lega_kljuc(obj.Placement) if hasattr(obj, "Placement") else None)
     if obj.isDerivedFrom("App::DocumentObjectGroup"):
         return ("G", tuple(_kljuc_oblike(o, globina + 1) for o in obj.Group))
+    if obj.isDerivedFrom("App::Part"):   # tudi Assembly: oblika je sestav otrok, ob vsakem branju nova (hashCode ni stabilen)
+        return ("P", tuple(_kljuc_oblike(o, globina + 1) for o in obj.Group if hasattr(o, "Shape")),
+                _lega_kljuc(obj.Placement))
     oblika = obj.Shape
     return (oblika.hashCode(), _lega_kljuc(oblika.Placement))
 
