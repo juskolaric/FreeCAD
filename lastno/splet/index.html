@@ -134,6 +134,48 @@
     background: linear-gradient(#fff, #eef1f5); border: 1px solid var(--crta); box-sizing: border-box; padding: 1px; }
   #drevoVsebina .vozel img.slicicaVozla.prazna { background: #f4f6f9; }
   #drevoVsebina .vozel.neviden img.slicicaVozla { opacity: .45; }
+  /* Okno z drevesno shemo sestava (gumb Zgradba) */
+  #zgradba { position: fixed; inset: 0; z-index: 60; background: rgba(20, 30, 45, .35); display: flex; align-items: center; justify-content: center; }
+  #zgradba.skrit { display: none; }
+  #zgradba .okno { background: #fff; border-radius: 10px; box-shadow: 0 12px 40px rgba(0,0,0,.25); width: min(94vw, 1600px); height: min(90vh, 1000px);
+    display: flex; flex-direction: column; overflow: hidden; }
+  #zgradba header { display: flex; align-items: center; gap: 10px; padding: 10px 14px; border-bottom: 1px solid var(--crta); }
+  #zgradba header span { font-weight: 600; font-size: 15px; }
+  #zgradba header small { color: #667; flex: 1 1 auto; }
+  #zgradba header button { border: 1px solid var(--crta); background: #fff; border-radius: 4px; padding: 3px 9px; cursor: pointer; font-size: 12px; }
+  #zgradba header button:hover { background: #e6eaf0; }
+  #zgradba header .zapri { font-size: 16px; line-height: 1; padding: 2px 8px; }
+  #zgradba footer { padding: 6px 14px; border-top: 1px solid var(--crta); color: #778; font-size: 11px; }
+  #zgradbaVsebina { flex: 1 1 auto; overflow: auto; padding: 16px 20px; background: #f7f9fc; }
+  .shema ul { list-style: none; margin: 0; padding: 0 0 0 18px; position: relative; display: flex; flex-direction: column; }
+  .shema ul::before { content: ''; position: absolute; left: 0; top: 50%; width: 18px; border-top: 1px solid #aab6c6; }
+  .shema li { position: relative; padding: 3px 0 3px 18px; display: flex; align-items: center; }
+  .shema li::before { content: ''; position: absolute; left: 0; top: 50%; width: 18px; border-top: 1px solid #aab6c6; }
+  .shema li::after { content: ''; position: absolute; left: 0; top: 0; bottom: 0; border-left: 1px solid #aab6c6; }
+  .shema li:first-child::after { top: 50%; }
+  .shema li:last-child::after { bottom: 50%; }
+  .shema li:only-child::after { display: none; }
+  .shema .koren { display: flex; align-items: center; }
+  .shema .kartica { display: flex; align-items: center; gap: 8px; background: #fff; border: 1px solid #d3dbe6; border-left: 4px solid #9aa6b6;
+    border-radius: 6px; padding: 4px 8px 4px 4px; min-width: 190px; max-width: 280px; cursor: pointer; flex: none; box-shadow: 0 1px 2px rgba(0,0,0,.05); }
+  .shema .kartica:hover { border-color: var(--poudarek); box-shadow: 0 2px 6px rgba(30,95,184,.18); }
+  .shema .kartica.sestav { border-left-color: #1e5fb8; }
+  .shema .kartica.standardni-sestav, .shema .kartica.standardni { border-left-color: #8e6bbf; }
+  .shema .kartica.ploscevina { border-left-color: #d08a1e; }
+  .shema .kartica.skrito { opacity: .5; }
+  .shema .kartica img { width: 44px; height: 44px; object-fit: contain; flex: none; border-radius: 4px; background: linear-gradient(#fff, #eef1f5); }
+  .shema .kartica .besedilo { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+  .shema .kartica .ime { font-weight: 600; font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .shema .kartica .podatki { display: flex; gap: 6px; align-items: center; font-size: 11px; color: #667; }
+  .shema .kartica .znacka { font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: .03em; padding: 0 5px; border-radius: 3px; background: #e8ecf1; color: #445; }
+  .shema .kartica.sestav .znacka { background: #dbe8f8; color: #0d47a1; }
+  .shema .kartica.standardni .znacka, .shema .kartica.standardni-sestav .znacka { background: #ece4f7; color: #5b3a8c; }
+  .shema .kartica.ploscevina .znacka { background: #fbeed6; color: #8a5300; }
+  .shema .kartica .kolicina { font-weight: 600; color: #1e5fb8; }
+  .shema .kartica .preklop { margin-left: auto; border: none; background: transparent; cursor: pointer; color: #556; font-size: 12px; padding: 0 2px; }
+  #stranski .vnos .zgradbaVnosa { border: none; background: transparent; border-radius: 3px; padding: 0 4px; cursor: pointer; color: #556; visibility: hidden; font-size: 13px; }
+  #stranski .vnos:hover .zgradbaVnosa { visibility: visible; }
+  #stranski .vnos .zgradbaVnosa:hover { background: #d6e4f7; color: #0d47a1; }
   #drevoVsebina .telesa { border-top: 1px solid var(--crta); margin-top: 6px; padding-top: 2px; }
   #drevoVsebina .telo .stevilka { flex: none; min-width: 16px; text-align: right; color: #889; font-size: 11px; font-variant-numeric: tabular-nums; }
   #drevoVsebina .telo .kolicina { flex: none; margin-left: auto; color: #889; font-size: 11px; font-variant-numeric: tabular-nums; }
@@ -319,6 +361,7 @@
 <body>
   <aside id="stranski">
     <div class="glavaStranski"><span>Dokumenti in drevo</span>
+      <button type="button" id="gumbZgradba" title="Drevesna shema aktivnega sestava: podsestavi in deli">&#9776; Zgradba</button>
       <button type="button" id="stranskiOsvezi" title="Znova prebere seznam odprtih dokumentov">&#8635;</button>
       <button type="button" id="stranskiSkrij" title="Skrije stranski meni">&#9664;</button>
     </div>
@@ -373,6 +416,16 @@
   <div id="namig">Srednji gumb: vrtenje (Ctrl premik, Shift povečava, Alt sukanje, klik na model: središče vrtenja) · kolešček: povečava · klik: izbira (Ctrl doda) · puščice · 1–8 ali gumbi zgoraj desno: pogledi (gumb Perspektiva preklopi projekcijo) · preslednica: meni pogledov · F: prilagodi</div>
 </div>
 </div>
+</div>
+<div id="zgradba" class="skrit">
+  <div class="okno">
+    <header><span id="zgradbaNaslov">Zgradba</span><small id="zgradbaPovzetek"></small>
+      <button type="button" id="zgradbaRazpri" title="Razpre vse veje">Razpri vse</button>
+      <button type="button" id="zgradbaStrni" title="Pusti odprt le prvi nivo">Strni</button>
+      <button type="button" class="zapri" id="zgradbaZapri" title="Zapri (Esc)">×</button></header>
+    <div id="zgradbaVsebina" class="shema"></div>
+    <footer>Klik na kos ali sestav ga odpre · ▸/▾ razpre ali strne vejo · ×N = število enakih kosov · sivo = skrito v sestavu</footer>
+  </div>
 </div>
 <div id="dialogSkica" class="skrit">
   <div class="okno">
@@ -842,6 +895,11 @@ function narisiProjekte(p) {
     b.append(v2); v.append(b);
     v.addEventListener('click', () => projektDejanje({ dejanje: 'aktiviraj', ime: o.ime }));
     if (vOblaku(o.pot)) v.append(gumbRazlicic(o.pot, o.oznaka));
+    if (o.vrsta === 'sestav') {
+      const z = el('button', 'zgradbaVnosa', '☰'); z.type = 'button'; z.title = 'Drevesna shema sestava »' + o.oznaka + '«';
+      z.addEventListener('click', e => { e.stopPropagation(); odpriZgradbo(o.ime, o.oznaka); });
+      v.append(z);
+    }
     const x = el('button', 'zapri', '×'); x.type = 'button'; x.title = 'Zapri dokument';
     x.addEventListener('click', e => {
       e.stopPropagation();
@@ -1531,6 +1589,91 @@ async function izrisiVir(samo, zunanja, velikost) {
   ctx.drawImage(veliko, 0, 0, velikost, velikost);
   return platno;
 }
+
+// --- drevesna shema sestava (gumb Zgradba) ------------------------------------------------------
+// GET /zgradba?ime= vrne drevo sestava čez datoteke (podsestavi in deli, enaki združeni s količino). Okno ga nariše
+// kot shemo od leve proti desni; klik na kartico odpre ta sestav ali del, ▸/▾ razpre ali strne vejo.
+const zgradbaStrnjeno = new Set();
+let zgradbaPodatki = null;
+function vrstaKartice(v) { return v.vrsta === 'pločevina' ? 'ploscevina' : v.vrsta.replace(' ', '-'); }
+const NAPISI_VRST = { 'sestav': 'sestav', 'standardni sestav': 'std. sestav', 'standardni': 'standardni', 'pločevina': 'pločevina', 'del': 'del' };
+function kosovSkupaj(v, n = 1) { return v.otroci.reduce((s, o) => s + (o.otroci.length ? kosovSkupaj(o, n * (o.kolicina || 1)) : n * (o.kolicina || 1)), 0); }
+function karticaZgradbe(v, pot) {
+  const k = el('div', 'kartica ' + vrstaKartice(v) + (v.skrito ? ' skrito' : ''));
+  k.title = v.oznaka + (v.primerki && v.primerki.length ? '\nV sestavu: ' + v.primerki.join(', ') : '') + '\nKlik: odpri';
+  const img = el('img'); img.alt = '';
+  if (v.pot) { img.src = '/slicica?pot=' + encodeURIComponent(v.pot); img.addEventListener('error', () => { img.src = IKONA_KOCKE(false); }, { once: true }); }
+  else img.src = IKONA_KOCKE(true);
+  const b = el('div', 'besedilo'); b.append(el('span', 'ime', v.oznaka));
+  const pd = el('div', 'podatki'); pd.append(el('span', 'znacka', NAPISI_VRST[v.vrsta] || v.vrsta));
+  if ((v.kolicina || 1) > 1) pd.append(el('span', 'kolicina', '×' + v.kolicina));
+  if (v.otroci.length) pd.append(el('span', '', v.otroci.length + (v.otroci.length === 1 ? ' skupina' : ' skupin')));
+  b.append(pd); k.append(img, b);
+  if (v.otroci.length) {
+    const odprto = !zgradbaStrnjeno.has(pot);
+    const t = el('button', 'preklop', odprto ? '▾' : '▸'); t.type = 'button'; t.title = odprto ? 'Strni vejo' : 'Razpri vejo';
+    t.addEventListener('click', e => { e.stopPropagation(); if (odprto) zgradbaStrnjeno.add(pot); else zgradbaStrnjeno.delete(pot); narisiZgradbo(); });
+    k.append(t);
+  }
+  k.addEventListener('click', () => { zapriZgradbo(); projektDejanje({ dejanje: 'aktiviraj', ime: v.dokument }); });
+  return k;
+}
+function vejaZgradbe(v, pot) {
+  if (!v.otroci.length || zgradbaStrnjeno.has(pot)) return null;
+  const ul = el('ul');
+  v.otroci.forEach((o, i) => {
+    const p = pot + '/' + i, li = el('li');
+    li.append(karticaZgradbe(o, p));
+    const pod = vejaZgradbe(o, p); if (pod) li.append(pod);
+    ul.append(li);
+  });
+  return ul;
+}
+function narisiZgradbo() {
+  const c = $('zgradbaVsebina'); c.innerHTML = '';
+  const v = zgradbaPodatki; if (!v) return;
+  const koren = el('div', 'koren'); koren.append(karticaZgradbe(v, 'k'));
+  const pod = vejaZgradbe(v, 'k'); if (pod) koren.append(pod);
+  c.append(koren);
+}
+function prestejZgradbo(v, s = { sestavov: 0, delov: 0, standardnih: 0, plocevina: 0 }) {
+  for (const o of v.otroci) {
+    if (o.otroci.length || o.vrsta.includes('sestav')) s.sestavov++;
+    else { s.delov++; if (o.vrsta === 'standardni') s.standardnih++; if (o.vrsta === 'pločevina') s.plocevina++; }
+    prestejZgradbo(o, s);
+  }
+  return s;
+}
+function postaviStrnjeno(v, pot, globina, meja) {
+  v.otroci.forEach((o, i) => { const p = pot + '/' + i; if (o.otroci.length) { if (globina >= meja) zgradbaStrnjeno.add(p); postaviStrnjeno(o, p, globina + 1, meja); } });
+}
+async function odpriZgradbo(ime, oznaka) {
+  $('zgradbaNaslov').textContent = 'Zgradba · ' + (oznaka || stanje.dokument || '');
+  $('zgradbaPovzetek').textContent = 'nalagam …';
+  $('zgradbaVsebina').innerHTML = '';
+  $('zgradba').classList.remove('skrit');
+  try {
+    const r = await fetch('/zgradba?ime=' + encodeURIComponent(ime || ''), { cache: 'no-store' });
+    if (!r.ok) throw new Error('strežnik ne pozna zgradbe (ponovno zaženi FreeCAD)');
+    zgradbaPodatki = await r.json();
+  } catch (e) { $('zgradbaPovzetek').textContent = String(e.message || e); return; }
+  $('zgradbaNaslov').textContent = 'Zgradba · ' + zgradbaPodatki.oznaka;
+  const s = prestejZgradbo(zgradbaPodatki);
+  $('zgradbaPovzetek').textContent = s.sestavov + ' podsestavov · ' + s.delov + ' različnih delov (' + s.plocevina + ' pločevina, ' +
+    s.standardnih + ' standardnih) · ' + kosovSkupaj(zgradbaPodatki) + ' kosov skupaj';
+  zgradbaStrnjeno.clear(); postaviStrnjeno(zgradbaPodatki, 'k', 1, 1);   // privzeto odprt prvi nivo podsestavov
+  narisiZgradbo();
+}
+function zapriZgradbo() { $('zgradba').classList.add('skrit'); }
+$('gumbZgradba').addEventListener('click', () => {
+  const o = ((stanje.projekti && stanje.projekti.odprti) || []).find(o => o.aktiven);
+  odpriZgradbo(o ? o.ime : '', o ? o.oznaka : '');
+});
+$('zgradbaZapri').addEventListener('click', zapriZgradbo);
+$('zgradba').addEventListener('click', e => { if (e.target.id === 'zgradba') zapriZgradbo(); });
+$('zgradbaRazpri').addEventListener('click', () => { zgradbaStrnjeno.clear(); narisiZgradbo(); });
+$('zgradbaStrni').addEventListener('click', () => { zgradbaStrnjeno.clear(); if (zgradbaPodatki) postaviStrnjeno(zgradbaPodatki, 'k', 1, 1); narisiZgradbo(); });
+document.addEventListener('keydown', e => { if (e.key === 'Escape' && !$('zgradba').classList.contains('skrit')) { zapriZgradbo(); e.stopPropagation(); } }, true);
 
 // --- sličice kosov v drevesu in osvetlitev kosa ob miški ---------------------------------------
 // Vsak vozel drevesa, ki ima v pogledu svojo geometrijo (povezava, kos, značilnost), dobi majhen izometrični izris

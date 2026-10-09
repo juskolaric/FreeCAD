@@ -79,14 +79,36 @@ MAPE_PROJEKTOV = [os.path.normpath(MAPA_OBLAK)]
 MAPE_PROJEKTOV += [os.path.normpath(m.strip()) for m in os.environ.get("SPLET_PROJEKTI", "").split(";") if m.strip()]
 GLOBINA_PROJEKTOV = 4        # podmape pod mapo projektov, ki se še pregledajo
 
-# Delovna okolja, katerih ukazi so na voljo v brskalniku (ime, slovenski naslov, če ga FreeCAD nima).
-# Okolja, ki niso nameščena (npr. dodatek SheetMetal), se preskočijo.
+# Delovna okolja, katerih ukazi so na voljo v brskalniku (ime, slovenski naslov, če ga FreeCAD nima), v vrstnem redu
+# zavihkov. Okolja, ki niso nameščena (npr. dodatek SheetMetal), se preskočijo; nameščena okolja, ki jih ni na seznamu
+# (dodatki), pridejo na konec. Ob zagonu se naložijo le ZACETNA_OKOLJA, ostala ob prvem kliku na zavihek (BIM, FEM, CAM
+# ... bi zagon podaljšala za več sekund).
 DELOVNA_OKOLJA = [
     ("PartDesignWorkbench", "Snovanje delov"),
     ("SketcherWorkbench", "Skica"),
     ("PartWorkbench", "Del"),
+    ("AssemblyWorkbench", "Sestav"),
+    ("TechDrawWorkbench", "Tehnična risba"),
     ("SMWorkbench", "Pločevina"),
+    ("DraftWorkbench", "Osnutek"),
+    ("BIMWorkbench", "BIM"),
+    ("SurfaceWorkbench", "Ploskve"),
+    ("MeshWorkbench", "Mreže"),
+    ("PointsWorkbench", "Točke"),
+    ("ReverseEngineeringWorkbench", "Povratni inženiring"),
+    ("InspectionWorkbench", "Pregled odstopanj"),
+    ("FemWorkbench", "MKE"),
+    ("CAMWorkbench", "CAM"),
+    ("OpenSCADWorkbench", "OpenSCAD"),
+    ("SpreadsheetWorkbench", "Preglednica"),
+    ("MaterialWorkbench", "Material"),
+    ("RobotWorkbench", "Robot"),
 ]
+ZACETNA_OKOLJA = {"PartDesignWorkbench", "SketcherWorkbench", "PartWorkbench", "SMWorkbench"}
+# Zavihki, ki so vedno vidni; ostala okolja so v meniju »Več« (zavihek dobijo, ko so dejavna).
+GLAVNI_ZAVIHKI = {"PartDesignWorkbench", "SketcherWorkbench", "PartWorkbench", "AssemblyWorkbench",
+                  "TechDrawWorkbench", "SMWorkbench"}
+IZPUSCENA_OKOLJA = {"NoneWorkbench", "TestWorkbench"}
 # Okolja, pri katerih velja slovenski naslov zgoraj tudi, ko ima FreeCAD svojega (dodatek nima slovenskega prevoda).
 LASTNI_NASLOVI = {"SMWorkbench"}
 # Splošne orodne vrstice (niso del zavihkov okolij).
@@ -187,6 +209,48 @@ def _v_skritem_vsebniku(obj):
             return True
         vsebnik = vsebnik.getParentGeoFeatureGroup()
     return False
+
+
+def _vrsta_objekta(obj):
+    """sestav / pločevina / standardni / lastni (iz lastnosti Vrsta, ki jo zapišejo skripte prenosa, sicer po tipu)."""
+    v = str(getattr(obj, "Vrsta", "") or "").lower()
+    if obj.TypeId == "Assembly::AssemblyObject" or "sestav" in v:
+        return "standardni sestav" if "standardni" in v else "sestav"
+    if "standardni" in v:
+        return "standardni"
+    if "pločevina" in v:
+        return "pločevina"
+    return "del"
+
+
+def _zgradba_dokumenta(doc, globina=0, pot=()):
+    """Drevo sestava: vozel {ime, oznaka, dokument, pot, vrsta, kolicina, skrito, otroci}. Otroci so povezave
+    (App::Link) v sestavu, enaki (isti cilj) združeni s količino; sledi povezavam v druge datoteke."""
+    asm = next((o for o in doc.Objects if o.TypeId == "Assembly::AssemblyObject"), None)
+    koren = asm or next((o for o in doc.Objects if "Izvor" in o.PropertiesList and not o.Name.startswith("Razgrnitev")), None)
+    vozel = {"oznaka": doc.Label, "dokument": doc.Name, "pot": doc.FileName,
+             "vrsta": _vrsta_objekta(koren) if koren is not None else ("sestav" if asm else "del"), "otroci": []}
+    if asm is None or globina > 12 or doc.Name in pot:
+        return vozel
+    skupine = {}
+    for o in asm.Group if hasattr(asm, "Group") else []:
+        if o.TypeId != "App::Link":
+            continue
+        cilj = o.LinkedObject[0] if isinstance(o.LinkedObject, tuple) else o.LinkedObject
+        if cilj is None:
+            continue
+        k = cilj.Document.Name + "#" + cilj.Name
+        if k not in skupine:
+            otrok = _zgradba_dokumenta(cilj.Document, globina + 1, pot + (doc.Name,))
+            otrok.update({"kolicina": 0, "skrito": True, "primerki": []})
+            skupine[k] = otrok
+            vozel["otroci"].append(otrok)
+        skupine[k]["kolicina"] += 1
+        skupine[k]["primerki"].append(o.Label)
+        if o.Visibility:
+            skupine[k]["skrito"] = False
+    vozel["otroci"].sort(key=lambda v: (0 if "sestav" in v["vrsta"] else 1, v["oznaka"].lower()))
+    return vozel
 
 
 def _vidni_objekti(doc):
@@ -2187,6 +2251,10 @@ class Stanje:
             if IMA_OKNO and self.obrazec is not None and podatki.get("kljuc") == self.obrazec.get("kljuc"):
                 _obrazec_dejanje(self.obrazec_mapa, podatki)
                 self.zadnji_obrazec = 0.0  # novo stanje obrazca takoj nazaj v brskalnik
+        elif ukaz == "zgradba":
+            doc = App.listDocuments().get(podatki.get("ime", "")) or App.ActiveDocument
+            if doc is not None and odgovor is not None:
+                odgovor["rezultat"] = _zgradba_dokumenta(doc)
         elif ukaz == "posnetek":
             doc = App.listDocuments().get(podatki.get("ime", ""))
             if doc is not None and odgovor is not None:
@@ -2370,6 +2438,16 @@ class Zahteva(http.server.BaseHTTPRequestHandler):
                 self._odgovor(slika, "image/png", predpomni=True)
         elif pot == "/model":
             self._odgovor(STANJE.posnetek())
+        elif pot == "/zgradba":
+            # Drevesna shema sestava čez datoteke (povezave App::Link); zgradi jo glavna nit.
+            import urllib.parse
+            q = urllib.parse.parse_qs(self.path.partition("?")[2])
+            odgovor = {"konec": threading.Event(), "izpis": "", "napaka": "", "rezultat": None}
+            STANJE.vrsta.put(("zgradba", {"ime": (q.get("ime") or [""])[0]}, odgovor))
+            if not odgovor["konec"].wait(60) or odgovor["rezultat"] is None:
+                self._odgovor(b'{"napaka":"ni zgradbe"}', koda=404)
+            else:
+                self._odgovor(json.dumps(odgovor["rezultat"], ensure_ascii=False).encode("utf-8"))
         elif pot == "/posnetek":
             # Geometrija poljubnega odprtega dokumenta (brez preklopa nanj) za sličico v seznamu odprtih dokumentov;
             # zgradi jo glavna nit (FreeCAD API), nit strežnika le počaka.

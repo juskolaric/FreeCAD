@@ -114,7 +114,10 @@ FreeCAD je motor, vmesnik in grafika nastajata v brskalniku (plan, korak 8 napre
   tega kosa (`izrisiIzometrijo(ime, velikost, zunanja)`, izrisi gredo po vrsti, predpomnilnik po dokumentu, imenu in velikosti
   mreže); prehod z miško čez vrstico kos v pogledu obarva oranžno (`osvetli`). Dokumenti brez sličice v seznamu odprtih se
   izrišejo v ozadju brez preklopa: `GET /posnetek?ime=` (glavna nit zgradi geometrijo dokumenta) -> ločena skupina scene ->
-  `POST /slicica`. Stranski stolpec (dokumenti in drevo) sega čez celo višino levo; glava in pogled sta v `#desno`. Med urejanjem značilnosti je objekt v predogledu vključen v posnetek, čeprav je `Visibility` še False.
+  `POST /slicica`. Stranski stolpec (dokumenti in drevo) sega čez celo višino levo; glava in pogled sta v `#desno`.
+- **Zgradba sestava** (od 2026-10-09): gumb ☰ Zgradba v glavi stranskega stolpca (aktivni dokument) in ☰ pri vsakem sestavu v
+  seznamu odpre okno z drevesno shemo od leve proti desni (`GET /zgradba?ime=` -> `_zgradba_dokumenta`: sledi App::Link čez
+  datoteke, enake cilje združi s količino, vrsta iz lastnosti Vrsta). Klik na kartico odpre sestav ali del; ▸/▾ veja. Med urejanjem značilnosti je objekt v predogledu vključen v posnetek, čeprav je `Visibility` še False.
 - Skica v brskalniku (`POST /skica`, dogodek `skica`): `nova` (ravnina XY/XZ/YZ ali ploskev modela: okno Nova skica ne pokriva pogleda, ploskev se klikne med odprtim oknom; odmik, obrni, v telesu),
   `odpri`, `zapri`, `crta` (s `spoji1`/`spoji2` za sovpadanje), `pravokotnik` (4 črte + sovpadanja + vodoravno/navpično),
   `krog`, `tocka`, `premakni` (movePoint, reševalnik), `izbrisi`, `mera` (Distance/Radius), `omejitev`, `gradbena`.
