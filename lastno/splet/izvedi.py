@@ -28,7 +28,8 @@ def main(argumenti):
     if argumenti[0] == "-c":
         koda = " ".join(argumenti[1:])
     elif argumenti[0] == "-":
-        koda = sys.stdin.read()
+        # bajti kot UTF-8: sys.stdin na Windows bere v kodni strani sistema (cp1252) in pokvari šumnike in pomišljaje
+        koda = sys.stdin.buffer.read().decode("utf-8-sig")
     else:
         with open(argumenti[0], encoding="utf-8") as f:
             koda = f.read()
