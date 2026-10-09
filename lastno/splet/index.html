@@ -1683,6 +1683,9 @@ document.addEventListener('keydown', e => { if (e.key === 'Escape' && !$('zgradb
 // geometrijo dokumenta (GET /posnetek?ime=, brez preklopa), jo izriše v ločeni skupini in pošlje kot sličico.
 const sliciceDokumentovPoskus = new Set();
 let sliciceDokumentovTece = false;
+let zadnjaAkcija = 0;   // risanje sličic v ozadju počaka, dokler uporabnik nekaj sekund ne klika in ne tipka
+for (const dogodek of ['pointerdown', 'keydown', 'wheel']) window.addEventListener(dogodek, () => { zadnjaAkcija = Date.now(); }, true);
+const pocakajMir = async () => { while (Date.now() - zadnjaAkcija < 4000) await new Promise(r => setTimeout(r, 500)); };
 async function izrisiSliciceDokumentov() {
   if (sliciceDokumentovTece || skica.posnetek) return;
   sliciceDokumentovTece = true;
@@ -1692,6 +1695,8 @@ async function izrisiSliciceDokumentov() {
       const o = odprti.find(o => o.pot && !o.slicica && !o.aktiven && !sliciceDokumentovPoskus.has(o.pot + '|' + (o.spremenjeno || 0)));
       if (!o) break;
       sliciceDokumentovPoskus.add(o.pot + '|' + (o.spremenjeno || 0));
+      await pocakajMir();
+      await new Promise(r => setTimeout(r, 600));   // premor med dokumenti
       try {
         const r = await fetch('/posnetek?ime=' + encodeURIComponent(o.ime), { cache: 'no-store' });
         if (!r.ok) continue;

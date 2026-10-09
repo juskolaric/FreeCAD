@@ -57,8 +57,19 @@ except Exception:  # noqa: BLE001
     IMA_OKNO = False
 
 VRATA = int(os.environ.get("SPLET_VRATA", "3020"))
-TOLERANCA_PLOSKEV = 0.1   # mm, teselacija
-ODMIK_ROBOV = 0.05        # mm, diskretizacija robov
+TOLERANCA_PLOSKEV = 0.1   # mm, teselacija (najmanj; večji objekti relativno, glej _natancnost)
+ODMIK_ROBOV = 0.05        # mm, diskretizacija robov (najmanj)
+RELATIVNA_PLOSKEV = 0.0005   # delež diagonale objekta: sestav 2 m -> 1 mm (sicer 190 MB posnetka in 35 s gradnje)
+RELATIVNI_ROB = 0.00025
+
+
+def _natancnost(oblika):
+    """Natančnost mreže glede na velikost objekta: majhni deli 0,1 mm / 0,05 mm, veliki sestavi sorazmerno grobje."""
+    try:
+        d = oblika.BoundBox.DiagonalLength
+    except Exception:  # noqa: BLE001
+        d = 0.0
+    return max(TOLERANCA_PLOSKEV, d * RELATIVNA_PLOSKEV), max(ODMIK_ROBOV, d * RELATIVNI_ROB)
 ODPRI_BRSKALNIK = os.environ.get("SPLET_BRSKALNIK", "1") == "1"
 # Okno FreeCAD-a: "skrito" (privzeto; pokaže se le, ko potrebuje vnos) ali "vidno".
 OKNO_SKRITO = os.environ.get("SPLET_OKNO", "skrito") != "vidno"
@@ -303,10 +314,12 @@ def _geometrija(obj):
     pretvori = None if premik.isIdentity(1e-9) else premik.multVec
 
     tocke, trikotniki, ploskve = [], [], []
+    toleranca, odmik_robov = _natancnost(oblika)
     osnovna, po_ploskvah = _barve(obj, len(oblika.Faces))
     for i, ploskev in enumerate(oblika.Faces):
         try:
-            v, t = ploskev.tessellate(TOLERANCA_PLOSKEV)
+            # grobejša mreža velikih objektov: obstoječo finejšo mrežo je treba pobrisati (OCC jo sicer ohrani)
+            v, t = ploskev.tessellate(toleranca, toleranca > TOLERANCA_PLOSKEV + 1e-9)
         except Exception:  # noqa: BLE001
             v, t = [], []
         zacetek_tock = len(tocke) // 3
@@ -326,7 +339,7 @@ def _geometrija(obj):
     rob_tocke, robovi, rob_info = [], [], []
     for rob in oblika.Edges:
         try:
-            pts = rob.discretize(Deflection=ODMIK_ROBOV)
+            pts = rob.discretize(Deflection=odmik_robov)
         except Exception:  # noqa: BLE001
             pts = [v.Point for v in rob.Vertexes]
         if pretvori is not None:
@@ -1820,6 +1833,7 @@ def _projekt_dejanje(stanje, podatki):
 class Stanje:
     def __init__(self):
         self.vrsta = queue.Queue()          # zahteve iz brskalnika -> glavna nit
+        self.vrsta_ozadje = queue.Queue()   # nizka prednost (geometrija za sličice): le ko ni drugega dela, ena na obhod
         self.odjemalci = []                 # vrste SSE odjemalcev
         self.kljuc = threading.Lock()
         self._posnetek = b'{"dokument":"","verzija":0,"objekti":[]}'
@@ -1894,11 +1908,18 @@ class Stanje:
 
     # -- glavna nit --
     def obdelaj(self):
+        ozadje = False
         while True:
             try:
                 ukaz, podatki, odgovor = self.vrsta.get_nowait()
             except queue.Empty:
-                break
+                if ozadje:
+                    break
+                ozadje = True   # zahteve iz ozadja (sličice) šele, ko je vrsta prazna, in samo ena
+                try:
+                    ukaz, podatki, odgovor = self.vrsta_ozadje.get_nowait()
+                except queue.Empty:
+                    break
             try:
                 self._izvedi(ukaz, podatki, odgovor)
             except Exception:  # noqa: BLE001
@@ -2454,7 +2475,7 @@ class Zahteva(http.server.BaseHTTPRequestHandler):
             import urllib.parse
             q = urllib.parse.parse_qs(self.path.partition("?")[2])
             odgovor = {"konec": threading.Event(), "izpis": "", "napaka": "", "rezultat": None}
-            STANJE.vrsta.put(("posnetek", {"ime": (q.get("ime") or [""])[0]}, odgovor))
+            STANJE.vrsta_ozadje.put(("posnetek", {"ime": (q.get("ime") or [""])[0]}, odgovor))
             if not odgovor["konec"].wait(60) or odgovor["rezultat"] is None:
                 self._odgovor(b'{"napaka":"ni posnetka"}', koda=404)
             else:
