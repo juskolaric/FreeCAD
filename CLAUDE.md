@@ -85,6 +85,7 @@ FreeCAD je motor, vmesnik in grafika nastajata v brskalniku (plan, korak 8 napre
   poiščeta geometrijsko ob vsakem preračunu; SheetMetal objekti s shranjenimi imeni (`Face4`, `Edge14`) se ob spremembi mer
   pod posnetimi robovi pokvarijo (`missing element reference`). Mapa je v `Mod` povezana s stičiščem `lastna_plocevina`
   (README v mapi). Zgled: `Oblak/3D modeliranje/Betonski podstavek/` (mere na objektu »Mere (uredi tukaj)«).
+  Razgrnitev je v dokumentu dela privzeto skrita (`Visibility = False`; uporabnik je ne želi videti ob kosu).
   STEP iz »Solid to Sheet Metal«: nekaj ploskev OCC zapiše, bralnik pa izpusti (odprta lupina) — pred izvozom jih pretvori v
   NURBS (`izvozi_step.py` v projektu); krog zapis-branje STEP v procesu spletnega FreeCAD-a sproži Access violation, zato v FreeCADCmd.
 - **SolidWorks -> FreeCAD** (2026-10-08, zgled `Oblak/3D modeliranje/Photobox Slim/Skripte/`): SolidWorks prek COM s Pythonom
