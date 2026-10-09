@@ -11,6 +11,8 @@ Samo glavna nit FreeCAD-a: kliče ga Stanje.zgradi (posnetek) in Stanje._izvedi 
 """
 import FreeCAD as App
 
+from baza import oznaka_vozla, tarca
+
 try:
     import FreeCADGui as Gui
 except ImportError:  # FreeCADCmd
@@ -89,6 +91,7 @@ def drevo_dokumenta(doc, ikona_uri=None):
         return {"koreni": [], "vozli": {}}
     vozli = {}
     zahtevani = set()
+    koreni_kosa = [tarca(doc)] if doc.FileName else []   # glavni objekt dokumenta-kosa se označi kot standardni
     for obj in doc.Objects:
         otroci = [o.Name for o in _otroci(obj) if o.Document is doc]
         zahtevani.update(otroci)
@@ -110,6 +113,10 @@ def drevo_dokumenta(doc, ikona_uri=None):
         if cilj is not None:   # povezava na podsestav ali del v drugi datoteki: Uredi ga odpre
             vozli[obj.Name]["povezava"] = {"dokument": cilj.Document.Label,
                                            "sestav": cilj.TypeId in ("Assembly::AssemblyObject", "App::Part")}
+        if cilj is not None or obj in koreni_kosa:
+            std = oznaka_vozla(obj)   # kos v svoji datoteki: standardni / v bazi (meni Standardni del)
+            if std is not None:
+                vozli[obj.Name]["standardni"] = std
     koreni = [o.Name for o in doc.Objects if o.Name not in zahtevani]
     return {"koreni": koreni, "vozli": vozli, "telesa": _telesa(doc, koreni)}
 

@@ -84,6 +84,7 @@ ZETON = secrets.token_hex(16)
 if MAPA not in sys.path:
     sys.path.insert(0, MAPA)
 from drevo import drevo_dejanje, drevo_dokumenta  # noqa: E402
+from baza import baza_dejanje  # noqa: E402
 from oblak import Oblak, obdelaj_zahtevo as oblak_zahteva  # noqa: E402
 
 MAPA_OBLAK = os.path.join(os.path.expanduser("~"), "Oblak", "3D modeliranje")
@@ -2276,6 +2277,18 @@ class Stanje:
             _projekt_dejanje(self, podatki)
         elif ukaz == "drevo":
             drevo_dejanje(self, podatki)
+        elif ukaz == "standardni":
+            # Baza standardnih delov (baza.py): označi kos kot standardni -> premik v bazo, preusmeritev sestavov.
+            rezultat = baza_dejanje(self, podatki)
+            for stara in getattr(self, "premaknjene_poti", []):
+                try:
+                    OBLAK.dokument_zaprt(stara)   # PDM: zaklep stare poti ne sme ostati
+                except Exception as e:  # noqa: BLE001
+                    _log("oblak: odklep premaknjenega: %r" % e)
+            self.premaknjene_poti = []
+            _log("standardni: %s" % rezultat.get("sporocilo", ""))
+            if odgovor is not None:
+                odgovor["rezultat"] = rezultat
         elif ukaz == "obrazec":
             if IMA_OKNO and self.obrazec is not None and podatki.get("kljuc") == self.obrazec.get("kljuc"):
                 _obrazec_dejanje(self.obrazec_mapa, podatki)
@@ -2358,6 +2371,8 @@ class OpazovalecDokumenta:
         # PDM (oblak.py): po shranjevanju datoteke iz mape oblaka brskalnik vpraša »Kaj si spremenil?«;
         # komentar se zapiše k reviziji, ki jo bo oblaku poslal odjemalec oblaka.
         STANJE.zadnji_projekti = 0.0
+        if getattr(STANJE, "tiho_shranjevanje", False):
+            return   # premik v bazo standardnih delov shrani več sestavov naenkrat; vsebina se ni spremenila
         try:
             if ime and OBLAK.prijavljen() and OBLAK.v_oblaku(ime) and not OBLAK.je_razlicica(ime):
                 STANJE.oddaj("oblak", {"vrsta": "shranjeno", "pot": ime, "ime": doc.Label})
@@ -2553,6 +2568,17 @@ class Zahteva(http.server.BaseHTTPRequestHandler):
         elif pot.startswith("/oblak/"):
             koda, telo = oblak_zahteva(OBLAK, "POST", pot, podatki)
             self._odgovor(json.dumps(telo, ensure_ascii=False).encode("utf-8"), koda=koda)
+        elif pot == "/standardni":
+            # Baza standardnih delov: glavna nit premakne kos in shrani sestave; brskalnik počaka na sporočilo.
+            odgovor = {"konec": threading.Event(), "izpis": "", "napaka": "", "rezultat": None}
+            STANJE.vrsta.put(("standardni", podatki, odgovor))
+            if not odgovor["konec"].wait(300):
+                telo = {"ok": False, "sporocilo": "FreeCAD še dela (premik traja dlje kot 5 min); poglej čez nekaj časa."}
+            elif odgovor["napaka"]:
+                telo = {"ok": False, "sporocilo": "Napaka v FreeCAD-u: " + odgovor["napaka"].strip().splitlines()[-1]}
+            else:
+                telo = odgovor["rezultat"]
+            self._odgovor(json.dumps(telo, ensure_ascii=False).encode("utf-8"))
         elif pot in poti:
             STANJE.vrsta.put((poti[pot], podatki, None))
             self._odgovor(b'{"ok":true}')

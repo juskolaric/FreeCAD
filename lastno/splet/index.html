@@ -134,6 +134,20 @@
     background: linear-gradient(#fff, #eef1f5); border: 1px solid var(--crta); box-sizing: border-box; padding: 1px; }
   #drevoVsebina .vozel img.slicicaVozla.prazna { background: #f4f6f9; }
   #drevoVsebina .vozel.neviden img.slicicaVozla { opacity: .45; }
+  /* standardni del: modra značka = v bazi, oranžna črtkana = označen, a še v projektu */
+  #drevoVsebina .vozel .std { flex: none; margin-left: 6px; font-size: 10px; font-weight: 700; letter-spacing: .03em; line-height: 14px;
+    padding: 0 4px; border-radius: 3px; color: #fff; background: #1e5fb8; cursor: pointer; }
+  #drevoVsebina .vozel .std.zunaj { color: #b35c00; background: #fff4e5; border: 1px dashed #e08a00; }
+  #dialogBaza { position: fixed; inset: 0; z-index: 40; display: flex; align-items: center; justify-content: center; background: rgba(0,0,0,.15); }
+  #dialogBaza .okno { background: #fff; border-radius: 8px; padding: 16px 20px; width: 420px; max-width: calc(100vw - 32px); box-sizing: border-box; box-shadow: 0 8px 30px rgba(0,0,0,.3); }
+  #dialogBaza h3 { margin: 0 0 8px; font-size: 15px; }
+  #dialogBaza p { font-size: 13px; color: #444; margin: 0 0 10px; }
+  #dialogBaza label { display: block; font-size: 13px; margin: 6px 0; }
+  #dialogBaza input[type=text] { width: 100%; box-sizing: border-box; padding: 4px 6px; margin-top: 4px; font: inherit; }
+  #dialogBaza .gumbi { display: flex; justify-content: flex-end; gap: 8px; margin-top: 14px; }
+  #dialogBaza .gumbi button { border: 1px solid var(--crta); background: #fff; border-radius: 4px; padding: 5px 12px; cursor: pointer; }
+  #dialogBaza .gumbi button.glavni { background: var(--poudarek); color: #fff; border-color: var(--poudarek); }
+  #dialogBaza .gumbi button:disabled { opacity: .5; cursor: wait; }
   /* Okno z drevesno shemo sestava (gumb Zgradba) */
   #zgradba { position: fixed; inset: 0; z-index: 60; background: rgba(20, 30, 45, .35); display: flex; align-items: center; justify-content: center; }
   #zgradba.skrit { display: none; }
@@ -445,6 +459,16 @@
     <div class="noga"><button type="button" id="obrazecFreecad" title="Pokaže to okno v namiznem FreeCAD-u, če ga tu ni mogoče izpolniti">Odpri v FreeCAD-u</button></div>
   </div>
 </div>
+<div id="dialogBaza" class="skrit">
+  <div class="okno">
+    <h3 id="bazaNaslov">Standardni del</h3>
+    <p id="bazaOpis"></p>
+    <label>Kategorija v bazi (mapa; podmapo loči s /)
+      <input type="text" id="bazaKategorija" list="bazaKategorije" placeholder="npr. Elektro"></label>
+    <datalist id="bazaKategorije"></datalist>
+    <div class="gumbi"><button type="button" id="bazaPreklici">Prekliči</button><button type="button" class="glavni" id="bazaOk">Premakni v bazo</button></div>
+  </div>
+</div>
 <div id="opis" class="skrit"></div>
 <div id="meni" class="skrit"></div>
 <div id="napaka"></div>
@@ -686,10 +710,62 @@ function odpriMeniDrevesa(x, y, v) {
   };
   dodaj(napisUrejanja(v), () => urediObjekt(v.ime), true);
   dodaj(v.viden ? 'Skrij' : 'Pokaži', () => drevoDejanje({ dejanje: 'vidnost', ime: v.ime, vidno: !v.viden }));
+  const s = v.standardni;
+  if (s) {   // kos v svoji datoteki: uporabnik sam odloči, ali je standardni (standardni gre v skupno bazo)
+    if (!s.standardni) dodaj('★ Označi kot standardni ' + (s.sestav ? 'sestav' : 'del') + ' …', () => odpriDialogBaze(v));
+    else if (!s.vBazi) dodaj('★ Premakni v bazo standardnih …', () => odpriDialogBaze(v));
+    if (s.standardni) dodaj('Ni standardni' + (s.vBazi ? ' (vrni iz baze v projekt)' : ''), () => odznaciStandardni(v));
+  }
   meni.classList.remove('skrit');
   meni.style.left = Math.max(8, Math.min(x, window.innerWidth - meni.offsetWidth - 8)) + 'px';
   meni.style.top = Math.max(8, Math.min(y, window.innerHeight - meni.offsetHeight - 8)) + 'px';
 }
+// Baza standardnih delov (strežnik: baza.py, POST /standardni). Uporabnik sam označi kos kot standardni; tak se premakne
+// v skupno bazo (3D modeliranje/Standardni deli/<kategorija>), sestavi, ki ga uporabljajo, se preusmerijo nanj.
+async function standardni(telo) {
+  const r = await fetch('/standardni', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Zeton': ZETON }, body: JSON.stringify(telo) });
+  if (!r.ok) throw new Error('/standardni: ' + r.status);
+  return r.json();
+}
+let bazaVozel = null;
+async function odpriDialogBaze(v) {
+  zapriMeni();
+  let p;
+  try { p = await standardni({ dejanje: 'podatki', ime: v.ime }); } catch (e) { pokaziNapako(e); return; }
+  if (!p.ok) { obvesti(p.sporocilo, true); return; }
+  bazaVozel = v;
+  const vrsta = p.sestav ? 'sestav' : 'del';
+  $('bazaNaslov').textContent = 'Standardni ' + vrsta + ': ' + p.ime;
+  $('bazaOpis').textContent = '»' + p.ime + '« se premakne v skupno bazo standardnih delov (Oblak › 3D modeliranje › Standardni deli). '
+    + (p.uporablja ? 'Sestavi, ki ga uporabljajo (' + p.uporablja + '), se preusmerijo nanj in shranijo. ' : '')
+    + 'Če je v izbrani mapi že enak kos, se sestavi preusmerijo nanj.';
+  const dl = $('bazaKategorije'); dl.innerHTML = '';
+  for (const k of p.kategorije) { const o = el('option'); o.value = k; dl.append(o); }
+  $('bazaKategorija').value = p.predlog || '';
+  $('bazaOk').disabled = false;
+  $('dialogBaza').classList.remove('skrit');
+  $('bazaKategorija').focus();
+}
+function zapriDialogBaze() { $('dialogBaza').classList.add('skrit'); bazaVozel = null; }
+async function potrdiDialogBaze() {
+  if (!bazaVozel) return;
+  const kategorija = $('bazaKategorija').value.trim();
+  if (!kategorija) { $('bazaKategorija').focus(); return; }
+  $('bazaOk').disabled = true;
+  obvesti('Premikam v bazo …');
+  try {
+    const r = await standardni({ dejanje: 'oznaci', ime: bazaVozel.ime, kategorija });
+    if (r.ok) { zapriDialogBaze(); obvesti(r.sporocilo); } else { obvesti(r.sporocilo, true); $('bazaOk').disabled = false; }
+  } catch (e) { pokaziNapako(e); $('bazaOk').disabled = false; }
+}
+async function odznaciStandardni(v) {
+  const s = v.standardni;
+  if (s.vBazi && !confirm('»' + v.oznaka + '« ni standardni?\nIz baze se premakne v projekt, ki ga uporablja (če ga uporablja več projektov, ostane v bazi).')) return;
+  try { const r = await standardni({ dejanje: 'odznaci', ime: v.ime }); obvesti(r.sporocilo, !r.ok); } catch (e) { pokaziNapako(e); }
+}
+$('bazaPreklici').addEventListener('click', zapriDialogBaze);
+$('bazaOk').addEventListener('click', potrdiDialogBaze);
+$('bazaKategorija').addEventListener('keydown', e => { e.stopPropagation(); if (e.key === 'Enter') potrdiDialogBaze(); if (e.key === 'Escape') zapriDialogBaze(); });
 function vozelDrevesa(d, ime, globina, pot) {
   const v = d.vozli[ime]; if (!v) return null;
   const vrstica = el('div', 'vozel' + (v.viden ? '' : ' neviden') + (stanje.izbira.some(s => s.objekt === ime) ? ' izbran' : ''));
@@ -713,6 +789,13 @@ function vozelDrevesa(d, ime, globina, pot) {
     vrstica.addEventListener('mouseleave', () => osvetli(null));
   }
   vrstica.append(el('span', 'ime', v.oznaka));
+  if (v.standardni && v.standardni.standardni) {
+    const z = el('span', 'std' + (v.standardni.vBazi ? '' : ' zunaj'), 'STD');
+    z.title = v.standardni.vBazi ? 'Standardni ' + (v.standardni.sestav ? 'sestav' : 'del') + ' iz skupne baze (desni klik: možnosti)'
+      : 'Označen kot standardni, a je še v projektu – klik ga premakne v bazo';
+    if (!v.standardni.vBazi) z.addEventListener('click', e => { e.stopPropagation(); odpriDialogBaze(v); });
+    vrstica.append(z);
+  }
   if (!v.tip.startsWith('App::Origin')) {   // izhodišče (ravnine, osi) nima urejanja
     const telo = v.tip === 'PartDesign::Body' || v.tip === 'App::Part';
     const gumb = el('button', 'urediVrstico', v.povezava ? '↗' : (telo ? '◉' : '✎')); gumb.type = 'button';

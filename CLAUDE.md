@@ -118,6 +118,18 @@ FreeCAD je motor, vmesnik in grafika nastajata v brskalniku (plan, korak 8 napre
 - **Zgradba sestava** (od 2026-10-09): gumb ☰ Zgradba v glavi stranskega stolpca (aktivni dokument) in ☰ pri vsakem sestavu v
   seznamu odpre okno z drevesno shemo od leve proti desni (`GET /zgradba?ime=` -> `_zgradba_dokumenta`: sledi App::Link čez
   datoteke, enake cilje združi s količino, vrsta iz lastnosti Vrsta). Klik na kartico odpre sestav ali del; ▸/▾ veja. Med urejanjem značilnosti je objekt v predogledu vključen v posnetek, čeprav je `Visibility` še False.
+- **Baza standardnih delov** (od 2026-10-09, `lastno/splet/baza.py`, `POST /standardni {dejanje: podatki|oznaci|odznaci, ime |
+  dokument, kategorija}`, brskalnik počaka na `{ok, sporocilo}`): uporabnik sam označi kos (dokument dela ali sestava) kot standardni
+  z desnim klikom v drevesu. Oznaka je lastnost `Vrsta` (»standardni del« / »standardni sestav«) na glavnem objektu (`tarca`).
+  Označen kos se **premakne** (`os.replace`, nato `saveAs`, brez .FCBak) v `Oblak/3D modeliranje/Standardni deli/<kategorija>/`
+  (prepis `SPLET_BAZA`, `SPLET_MODELIRANJE`); s kosom gresta STEP in `DXF/<ime>.dxf`. Pred premikom se odprejo vsi FCStd iz 3D
+  modeliranja, katerih `<XLink file=...>` v Document.xml kaže na kos (`kdo_uporablja`), delno naloženi se naložijo v celoti
+  (delnega ni mogoče shraniti). FreeCAD ob `saveAs` dela sam popravi poti v odprtih sestavih (DocInfo::slotSaveDocument); ti se
+  shranijo, kar je odprto le za to, se zapre. Ob premiku **sestava** njegove odhodne povezave obdržijo staro relativno pot:
+  `_osvezi_povezave` jih nastavi znova (None, nato ista vrednost). Enak kos z istim imenom v bazi (telesa, ploskve, prostornina,
+  površina, lokalna škatla) -> sestavi se preusmerijo nanj, drugačen -> zavrnitev. »Ni standardni« vrne kos iz baze v projekt, ki ga
+  uporablja (Deli/Ostali, Deli/Pločevina, Sestavi); če ga uporablja več projektov ali sestav v bazi, ostane. Med premikom
+  `STANJE.tiho_shranjevanje` utiša vprašanje »Kaj si spremenil?«. Drevo nosi `standardni {standardni, vBazi, sestav}` (značka STD).
 - Skica v brskalniku (`POST /skica`, dogodek `skica`): `nova` (ravnina XY/XZ/YZ ali ploskev modela: okno Nova skica ne pokriva pogleda, ploskev se klikne med odprtim oknom; odmik, obrni, v telesu),
   `odpri`, `zapri`, `crta` (s `spoji1`/`spoji2` za sovpadanje), `pravokotnik` (4 črte + sovpadanja + vodoravno/navpično),
   `krog`, `tocka`, `premakni` (movePoint, reševalnik), `izbrisi`, `mera` (Distance/Radius), `omejitev`, `gradbena`.
