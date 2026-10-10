@@ -1,0 +1,623 @@
+<!doctype html>
+<html lang="sl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Oblikovanje</title>
+<style>
+  :root { --poudarek: #7c3aed; --poudarekTemno: #6d28d9; --poudarekMehko: #ede9fe; --crta: #e5e7eb; --crtaMocna: #d1d5db; --besedilo: #1f2937;
+    --besedilo2: #4b5563; --besedilo3: #6b7280; --plosca: #f8fafc; --lebdenje: #f3f4f6; --senca2: 0 10px 30px rgba(15,23,42,.14);
+    --napaka: #b91c1c; --zvezdica: #f59e0b; }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; font: 13px system-ui, "Segoe UI", sans-serif; color: var(--besedilo); background: #fff; overflow: hidden; }
+  #ovoj { display: grid; grid-template-columns: 250px minmax(0, 1fr) 380px; grid-template-rows: auto minmax(0, 1fr) auto auto; height: 100%; }
+  #ovoj.brezKlepeta { grid-template-columns: 250px minmax(0, 1fr) 0; }
+  #ovoj.brezKlepeta #klepet { display: none; }
+
+  /* vrstica orodij */
+  #vrstica { grid-column: 1 / 4; display: flex; align-items: center; gap: 4px; padding: 6px 10px; border-bottom: 1px solid var(--crta); background: #fff; flex-wrap: wrap; }
+  #vrstica .skupina { display: flex; gap: 2px; align-items: center; padding-right: 8px; margin-right: 4px; border-right: 1px solid var(--crta); }
+  #vrstica .napis { font-size: 11px; color: var(--besedilo3); margin-right: 4px; }
+  button.g { height: 30px; padding: 0 10px; border: 1px solid transparent; border-radius: 8px; background: none; cursor: pointer; font: inherit; color: var(--besedilo); display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
+  button.g:hover { background: var(--lebdenje); border-color: var(--crta); }
+  button.g.glavni { background: var(--poudarek); color: #fff; font-weight: 600; }
+  button.g.glavni:hover { background: var(--poudarekTemno); }
+  button.g:disabled { opacity: .45; cursor: default; }
+  #naslov { margin-left: auto; color: var(--besedilo2); font-size: 12px; display: flex; gap: 8px; align-items: center; }
+  #naslov b { color: var(--besedilo); font-size: 13px; }
+  .znacka { display: inline-block; padding: 1px 7px; border-radius: 999px; background: var(--lebdenje); color: var(--besedilo2); font-size: 11px; font-weight: 600; }
+  .znacka.vij { background: var(--poudarekMehko); color: var(--poudarekTemno); }
+  .znacka.ora { background: #fef3c7; color: #92400e; }
+
+  /* levo */
+  #stranski { border-right: 1px solid var(--crta); background: var(--plosca); overflow: auto; padding: 10px 8px; display: flex; flex-direction: column; gap: 14px; min-height: 0; }
+  #stranski h3 { margin: 2px 6px 6px; font-size: 11px; text-transform: uppercase; letter-spacing: .05em; color: var(--besedilo3); display: flex; align-items: center; gap: 6px; }
+  #stranski h3 button { margin-left: auto; border: 0; background: none; color: var(--poudarek); cursor: pointer; font: inherit; font-size: 11px; font-weight: 600; text-transform: none; letter-spacing: 0; }
+  .vrsta { display: flex; align-items: center; gap: 6px; padding: 5px 6px; border-radius: 8px; cursor: pointer; min-width: 0; }
+  .vrsta:hover { background: var(--lebdenje); }
+  .vrsta.izbran { background: var(--poudarekMehko); }
+  .vrsta .ime { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .vrsta .ime small { color: var(--besedilo3); margin-left: 4px; }
+  .vrsta img { width: 34px; height: 26px; object-fit: cover; border-radius: 4px; background: #e5e7eb; flex: none; }
+  .vrsta button { border: 0; background: none; cursor: pointer; color: var(--besedilo3); padding: 2px 4px; border-radius: 6px; font-size: 13px; }
+  .vrsta button:hover { background: #fff; color: var(--besedilo); }
+  .vrsta.skrit .ime { opacity: .45; }
+  #ideje { max-height: 32vh; overflow: auto; }
+  .prazno { color: var(--besedilo3); font-size: 12px; padding: 4px 8px; line-height: 1.5; }
+  .drsnik { padding: 4px 8px 8px; }
+  .drsnik .glava { display: flex; justify-content: space-between; font-size: 12px; color: var(--besedilo2); margin-bottom: 2px; }
+  .drsnik .glava b { color: var(--besedilo); font-weight: 600; font-variant-numeric: tabular-nums; }
+  .drsnik input { width: 100%; accent-color: var(--poudarek); }
+  #info { margin: 0 6px; font-size: 12px; color: var(--besedilo2); line-height: 1.6; }
+
+  /* pogled */
+  #pogled { position: relative; min-width: 0; min-height: 0; background: linear-gradient(#f7f8fa, #dfe3e8); }
+  #pogled canvas { display: block; width: 100%; height: 100%; }
+  #namig { position: absolute; left: 10px; bottom: 8px; font-size: 11px; color: var(--besedilo3); background: rgba(255,255,255,.75); padding: 3px 8px; border-radius: 6px; pointer-events: none; }
+  #prazno { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; pointer-events: none; }
+  #prazno div { background: rgba(255,255,255,.9); padding: 16px 20px; border-radius: 12px; color: var(--besedilo2); line-height: 1.6; text-align: center; max-width: 440px; box-shadow: var(--senca2); }
+  #delaPasica { position: absolute; top: 10px; left: 50%; transform: translateX(-50%); background: rgba(124,58,237,.95); color: #fff; padding: 6px 14px; border-radius: 999px; font-size: 12px; font-weight: 600; box-shadow: var(--senca2); }
+  #delaPasica.skrit { display: none; }
+
+  /* klepet */
+  #klepet { grid-row: 2 / 4; grid-column: 3; border-left: 1px solid var(--crta); display: flex; flex-direction: column; min-height: 0; background: #fff; }
+  #klepet header { display: flex; align-items: center; gap: 8px; padding: 10px 12px; border-bottom: 1px solid var(--crta); }
+  #klepet header b { font-size: 13px; }
+  #klepet header small { color: var(--besedilo3); }
+  #koraki { flex: 1 1 auto; overflow: auto; padding: 10px 12px; display: flex; flex-direction: column; gap: 8px; min-height: 0; }
+  .korak { line-height: 1.5; font-size: 12.5px; }
+  .korak.uporabnik { align-self: flex-end; background: var(--poudarekMehko); color: #2e1065; padding: 7px 11px; border-radius: 12px 12px 3px 12px; max-width: 92%; white-space: pre-wrap; }
+  .korak.besedilo { white-space: pre-wrap; }
+  .korak.razmislek { color: var(--besedilo3); font-size: 11.5px; font-style: italic; white-space: pre-wrap; max-height: 110px; overflow: auto;
+    border-left: 2px solid var(--crta); padding-left: 8px; }
+  .korak.orodje { color: var(--besedilo2); font-size: 12px; }
+  .korak.orodje summary { cursor: pointer; list-style: none; display: flex; gap: 6px; align-items: center; }
+  .korak.orodje summary::-webkit-details-marker { display: none; }
+  .korak.orodje pre { background: #0f172a; color: #e2e8f0; padding: 8px 10px; border-radius: 8px; font-size: 11px; max-height: 260px; overflow: auto; white-space: pre-wrap; margin: 6px 0 0; }
+  .korak.orodje .izid { background: var(--plosca); color: var(--besedilo2); border: 1px solid var(--crta); }
+  .korak.pogled img { width: 100%; border-radius: 8px; border: 1px solid var(--crta); cursor: zoom-in; margin-top: 4px; }
+  .korak.napaka { color: var(--napaka); font-size: 12px; white-space: pre-wrap; }
+  .korak.stanje { color: var(--besedilo3); font-size: 12px; }
+  .korak.razlicica button { border: 1px solid var(--crtaMocna); background: #fff; border-radius: 999px; padding: 2px 10px; font: inherit; font-size: 12px; cursor: pointer; }
+  .korak .cas { color: var(--besedilo3); font-size: 10.5px; margin-left: auto; }
+  #aiStanje { padding: 0 12px 6px; font-size: 12px; color: var(--poudarekTemno); min-height: 18px; }
+  #vnos { border-top: 1px solid var(--crta); padding: 8px 10px 10px; display: flex; flex-direction: column; gap: 6px; }
+  #vnos textarea { width: 100%; min-height: 64px; max-height: 200px; resize: vertical; border: 1px solid var(--crtaMocna); border-radius: 10px; padding: 8px 10px; font: inherit; }
+  #vnos textarea:focus { outline: 2px solid var(--poudarekMehko); border-color: var(--poudarek); }
+  #vnos .gumbi { display: flex; gap: 6px; align-items: center; }
+  #vnos .gumbi .g.glavni { margin-left: auto; }
+  #priloge { display: flex; gap: 6px; flex-wrap: wrap; }
+  #priloge span { position: relative; }
+  #priloge img { width: 54px; height: 42px; object-fit: cover; border-radius: 6px; border: 1px solid var(--crta); }
+  #priloge button { position: absolute; top: -6px; right: -6px; width: 18px; height: 18px; border-radius: 50%; border: 0; background: #111827; color: #fff; font-size: 11px; cursor: pointer; line-height: 18px; padding: 0; }
+  #brezKljuca { margin: 10px 12px; padding: 10px 12px; border-radius: 10px; background: #fef3c7; color: #92400e; font-size: 12px; line-height: 1.5; }
+
+  /* različice */
+  #razlicice { grid-column: 1 / 3; border-top: 1px solid var(--crta); display: flex; gap: 8px; padding: 8px 10px; overflow-x: auto; background: var(--plosca); min-height: 104px; align-items: stretch; }
+  #razlicice .prazno { align-self: center; }
+  .karta { flex: none; width: 116px; border: 2px solid transparent; border-radius: 10px; background: #fff; cursor: pointer; padding: 0; overflow: hidden; display: flex; flex-direction: column; box-shadow: 0 1px 2px rgba(0,0,0,.06); font: inherit; text-align: left; }
+  .karta:hover { border-color: var(--crtaMocna); }
+  .karta.trenutna { border-color: var(--poudarek); }
+  .karta .slika { height: 64px; background: #eef0f3 center / contain no-repeat; position: relative; }
+  .karta .zv { position: absolute; top: 2px; right: 4px; font-size: 15px; color: #cbd5e1; background: none; border: 0; cursor: pointer; padding: 0; }
+  .karta .zv.da { color: var(--zvezdica); }
+  .karta .spodaj { padding: 4px 6px; display: flex; gap: 4px; align-items: center; font-size: 11px; }
+  .karta .spodaj b { font-size: 11.5px; }
+  .karta .op { padding: 0 6px 5px; font-size: 10.5px; color: var(--besedilo3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+  #statusna { grid-column: 1 / 4; display: flex; gap: 12px; padding: 4px 10px; border-top: 1px solid var(--crta); font-size: 11.5px; color: var(--besedilo3); background: #fff; }
+  #statusna .desno { margin-left: auto; }
+  #meni { position: fixed; z-index: 50; background: #fff; border: 1px solid var(--crta); border-radius: 10px; box-shadow: var(--senca2); padding: 4px; min-width: 260px; max-height: 60vh; overflow: auto; }
+  #meni.skrit { display: none; }
+  #meni button { display: block; width: 100%; text-align: left; border: 0; background: none; padding: 7px 10px; border-radius: 7px; cursor: pointer; font: inherit; }
+  #meni button:hover { background: var(--lebdenje); }
+  #obvestilo { position: fixed; left: 50%; bottom: 130px; transform: translateX(-50%); background: #111827; color: #fff; padding: 8px 14px; border-radius: 9px; font-size: 12.5px; opacity: 0; transition: opacity .2s; pointer-events: none; z-index: 70; max-width: 80vw; }
+  #obvestilo.viden { opacity: .94; }
+  #obvestilo.slabo { background: var(--napaka); }
+  @media (max-width: 1100px) { #ovoj { grid-template-columns: 210px minmax(0, 1fr) 320px; } }
+</style>
+<script type="importmap">
+{ "imports": {
+  "three": "https://cdn.jsdelivr.net/npm/three@0.186.1/build/three.module.js",
+  "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.186.1/examples/jsm/"
+} }
+</script>
+</head>
+<body>
+<div id="ovoj">
+  <div id="vrstica">
+    <div class="skupina"><span class="napis">Ideja</span>
+      <button class="g" id="gNovaIdeja" title="Nova ideja: mapa z različicami in pogovorom s Claudom">Nova ideja</button>
+      <button class="g" id="gShraniRazlicico" title="Shrani trenutno sceno kot novo različico ideje (Ctrl+S)">Shrani različico</button>
+      <button class="g" id="gBlender" title="Odpri trenutno sceno v oknu Blenderja (kiparjenje, ročno urejanje). Ko tam shraniš, se vrne kot nova različica.">Odpri v Blenderju</button>
+    </div>
+    <div class="skupina"><span class="napis">Dodaj</span>
+      <button class="g" data-oblika="kocka" title="Gladka kletka: kocka s Subdivision Surface — osnova za organske oblike">Gladka kocka</button>
+      <button class="g" data-oblika="krogla">Krogla</button>
+      <button class="g" data-oblika="valj">Valj</button>
+      <button class="g" data-oblika="torus">Torus</button>
+      <button class="g" data-oblika="kaplja" title="Zlivajoča se telesa (metaball)">Kaplje</button>
+    </div>
+    <div class="skupina">
+      <button class="g" id="gIzvozi" title="Izvozi vidne objekte kot STL (mm) za tisk">Izvozi STL</button>
+      <button class="g" id="gNatisni" title="Pošlji vidne objekte v ploščo Tiskaj: odpre se zavihek Tiskanje z oknom Pripravi (tiskalnik, orientacija, polnilo)">&#128424; 3D natisni</button>
+      <button class="g glavni" id="gRender" title="Fotorealističen render trenutnega pogleda (Blender Cycles)">Render</button>
+      <button class="g" id="gKlepet" title="Pokaži ali skrij klepet s Claudom">Claude ▸</button>
+    </div>
+    <div id="naslov"></div>
+  </div>
+  <aside id="stranski">
+    <section><h3>Ideje <button id="gNovaIdeja2" type="button">+ nova</button></h3><div id="ideje"></div></section>
+    <section id="drsnikiOkvir"><h3>Drsniki oblike</h3><div id="drsniki"></div></section>
+    <section><h3>Objekti</h3><div id="seznam"></div><div id="info"></div></section>
+  </aside>
+  <div id="pogled">
+    <div id="prazno"><div><b>Oblikovanje</b><br>Opiši idejo Claudu v klepetu desno (npr. »ergonomska ročka za vrtno lopatko, 120 mm«) —
+      zgradil bo obliko z drsniki, jo pogledal in popravil. Lahko dodaš tudi skico ali fotografijo. Vsak odgovor je nova različica spodaj.</div></div>
+    <div id="delaPasica" class="skrit">Claude oblikuje …</div>
+    <div id="namig">Srednji gumb: vrtenje · Shift/Ctrl + srednji ali desni: premik · kolešček: povečava · klik: izbira · F: prilagodi · 1–7: pogledi</div>
+  </div>
+  <aside id="klepet">
+    <header><b>Claude</b><small>oblikovalec · gradi, pogleda, popravi</small></header>
+    <div id="koraki"></div>
+    <div id="aiStanje"></div>
+    <div id="vnos">
+      <div id="priloge"></div>
+      <textarea id="sporocilo" placeholder="Opiši obliko ali spremembo … (Enter pošlje, Shift+Enter nova vrstica; skico prilepi s Ctrl+V)"></textarea>
+      <div class="gumbi">
+        <button class="g" id="gPriloga" title="Dodaj sliko (skica, fotografija, referenca)">📎 Slika</button>
+        <input type="file" id="datotekaSlike" accept="image/*" multiple hidden>
+        <button class="g" id="gUstavi" title="Ustavi Clauda" disabled>Ustavi</button>
+        <button class="g glavni" id="gPoslji">Pošlji</button>
+      </div>
+    </div>
+  </aside>
+  <div id="razlicice"></div>
+  <div id="statusna"><span id="hud">Povezujem z Blenderjem …</span><span class="desno" id="hud2"></span></div>
+</div>
+<div id="meni" class="skrit"></div>
+<div id="obvestilo"></div>
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+import { odpriRender } from '/render-plosca.js';
+
+const ZETON = '__ZETON__';
+const $ = id => document.getElementById(id);
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+
+// --- 3D pogled (Z gor kot v FreeCAD-u in Blenderju) -----------------------------------------------------------
+const pogled = $('pogled');
+// logaritemska globina: ploskve, ki skoraj sovpadajo (nalepke, napisi, okvirji na vratih), se sicer prepletajo
+const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, logarithmicDepthBuffer: true });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.toneMapping = THREE.NeutralToneMapping;
+pogled.prepend(renderer.domElement);
+const scene = new THREE.Scene();
+const pmrem = new THREE.PMREMGenerator(renderer);
+scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+scene.environmentRotation = new THREE.Euler(Math.PI / 2, 0, 0);
+scene.environmentIntensity = 0.55;
+const luc = new THREE.DirectionalLight(0xffffff, 2.0); luc.position.set(1, -1.2, 2.2); scene.add(luc); scene.add(luc.target);
+const luc2 = new THREE.DirectionalLight(0xffffff, 0.5); luc2.position.set(-1.5, 1, 0.6); scene.add(luc2);
+const camera = new THREE.PerspectiveCamera(35, 1, 0.1, 100000);
+camera.up.set(0, 0, 1);
+camera.position.set(160, -190, 140);
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.mouseButtons = { LEFT: -1, MIDDLE: THREE.MOUSE.ROTATE, RIGHT: THREE.MOUSE.PAN };
+controls.zoomToCursor = true;
+controls.enableDamping = true; controls.dampingFactor = 0.18;
+const koren = new THREE.Group(); scene.add(koren);
+window.__oblikovanje = { THREE, camera, controls, koren, scene };   // za preverjanje iz konzole
+const tla = new THREE.Mesh(new THREE.CircleGeometry(1, 64), new THREE.ShadowMaterial({ opacity: 0.12 }));
+tla.receiveShadow = true; tla.visible = false; scene.add(tla);
+renderer.shadowMap.enabled = true; renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+luc.castShadow = true; luc.shadow.mapSize.set(2048, 2048);
+
+let vidno = true;
+function velikost() {
+  const w = pogled.clientWidth, h = pogled.clientHeight;
+  if (!w || !h) return;
+  renderer.setSize(w, h, false); camera.aspect = w / h; camera.updateProjectionMatrix();
+}
+new ResizeObserver(velikost).observe(pogled);
+renderer.setAnimationLoop(() => { if (!vidno) return; controls.update(); renderer.render(scene, camera); });
+
+// --- posnetek iz Blenderja -------------------------------------------------------------------------------------
+const objekti = new Map();
+let model = { objekti: [], seznam: [], parametri: [] }, verzija = -1, prilagodiOb = true;
+const okvirModela = new THREE.Box3();
+
+function material(m) {
+  return new THREE.MeshPhysicalMaterial({
+    color: new THREE.Color().setRGB(...m.barva, THREE.SRGBColorSpace), metalness: m.kovinskost, roughness: m.hrapavost,
+    transparent: m.prosojnost > 0.01, opacity: 1 - m.prosojnost, clearcoat: m.kovinskost < 0.5 ? 0.15 : 0,
+    envMapIntensity: m.kovinskost >= 0.5 ? 2.2 : 1.0, side: THREE.DoubleSide, vertexColors: !!m.poOgliscih,
+  });
+}
+function zgradiObjekt(o) {
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(o.tocke, 3));
+  g.setAttribute('normal', new THREE.Float32BufferAttribute(o.normale, 3));
+  if (o.barve) { const b = new THREE.Float32BufferAttribute(o.barve, 3); for (let i = 0; i < b.array.length; i++) { const c = b.array[i]; b.array[i] = c <= 0.04045 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4); } g.setAttribute('color', b); }
+  const n = o.tocke.length / 3;
+  g.setIndex(n > 65535 ? new THREE.Uint32BufferAttribute(o.trikotniki, 1) : new THREE.Uint16BufferAttribute(o.trikotniki, 1));
+  const mats = o.materiali.map(material);
+  for (const [t0, nt, mi] of o.skupine) g.addGroup(t0 * 3, nt * 3, Math.min(mi, mats.length - 1));
+  const mesh = new THREE.Mesh(g, mats);
+  mesh.castShadow = true; mesh.userData.ime = o.ime;
+  return mesh;
+}
+async function naloziModel() {
+  model = await (await fetch('/model', { cache: 'no-store' })).json();
+  for (const z of objekti.values()) { koren.remove(z); z.geometry.dispose(); for (const m of z.material) m.dispose(); }
+  objekti.clear();
+  for (const o of model.objekti) { const m = zgradiObjekt(o); koren.add(m); objekti.set(o.ime, m); }
+  okvirModela.setFromObject(koren);
+  if (!okvirModela.isEmpty()) {
+    const c = okvirModela.getCenter(new THREE.Vector3()), r2 = okvirModela.getBoundingSphere(new THREE.Sphere()).radius;
+    tla.position.set(c.x, c.y, okvirModela.min.z - 0.001); tla.scale.setScalar(r2 * 6); tla.visible = true;
+    const s = luc.shadow.camera; s.left = s.bottom = -r2 * 2; s.right = s.top = r2 * 2; s.near = 0.1; s.far = r2 * 20;
+    luc.position.copy(c).add(new THREE.Vector3(1, -1.2, 2.2).normalize().multiplyScalar(r2 * 6)); luc.target.position.copy(c); luc.target.updateMatrixWorld();
+    s.updateProjectionMatrix();
+  } else tla.visible = false;
+  $('prazno').style.display = model.objekti.length ? 'none' : '';
+  if (prilagodiOb && model.objekti.length) { prilagodi(); prilagodiOb = false; }
+  osveziIzbiro(); narisiSeznam(); narisiDrsnike();
+  preveriSlicico();
+}
+
+function narisiSeznam() {
+  const s = $('seznam'); s.innerHTML = '';
+  if (!(model.seznam || []).length) s.innerHTML = '<div class="prazno">Scena je prazna.</div>';
+  for (const o of model.seznam || []) {
+    const v = document.createElement('div'); v.className = 'vrsta' + (o.izbran ? ' izbran' : '') + (o.vidno ? '' : ' skrit');
+    const ime = document.createElement('span'); ime.className = 'ime'; ime.textContent = o.ime;
+    if (o.modifikatorji.length) { const m = document.createElement('small'); m.textContent = o.modifikatorji.map(x => x === 'SUBSURF' ? 'gladko' : x.toLowerCase()).join(', '); ime.appendChild(m); }
+    const oko = document.createElement('button'); oko.textContent = o.vidno ? '👁' : '◌'; oko.title = o.vidno ? 'Skrij' : 'Pokaži';
+    oko.addEventListener('click', e => { e.stopPropagation(); ukaz({ dejanje: 'vidnost', ime: o.ime, vidno: !o.vidno }); });
+    const x = document.createElement('button'); x.textContent = '✕'; x.title = 'Odstrani iz scene';
+    x.addEventListener('click', e => { e.stopPropagation(); if (confirm('Odstranim »' + o.ime + '« iz scene?')) ukaz({ dejanje: 'odstrani', ime: o.ime }); });
+    v.append(ime, oko, x);
+    v.addEventListener('click', e => ukaz({ dejanje: 'izberi', ime: o.ime, dodaj: e.ctrlKey }));
+    s.appendChild(v);
+  }
+  const izbran = (model.seznam || []).filter(o => o.izbran).map(o => o.ime);
+  const o = model.objekti.find(x => x.ime === izbran[0]);
+  $('info').textContent = '';
+  if (o) {
+    const d = o.okvir[1].map((v, i) => v - o.okvir[0][i]);
+    $('info').textContent = o.ime + ': ' + d.map(v => v.toFixed(1)).join(' × ') + ' mm · ' + (o.trikotniki.length / 3).toLocaleString('sl') + ' trikotnikov';
+  }
+}
+function osveziIzbiro() {
+  const izbrani = new Set((model.seznam || []).filter(o => o.izbran).map(o => o.ime));
+  for (const [ime, m] of objekti) for (const mat of m.material) mat.emissive.setHex(izbrani.has(ime) ? 0x3b1d8f : 0x000000);
+}
+
+// --- drsniki parametrične oblike ---------------------------------------------------------------------------------
+// Premik drsnika pošlje novo vrednost; med čakanjem na Blender se zberejo le zadnje vrednosti (brez zastoja vrste).
+const drsniki = { cakajoce: null, poteka: false, vlecem: false };
+function oblikujStevilo(v, korak) { const d = korak >= 1 ? 0 : Math.min(3, Math.ceil(-Math.log10(korak))); return Number(v).toFixed(d); }
+function narisiDrsnike() {
+  const okvir = $('drsniki'), par = model.parametri || [];
+  $('drsnikiOkvir').style.display = par.length ? '' : 'none';
+  if (drsniki.vlecem) return;   // ne prerisuj pod prstom
+  okvir.innerHTML = '';
+  for (const p of par) {
+    const d = document.createElement('div'); d.className = 'drsnik';
+    d.innerHTML = `<div class="glava"><span>${esc(p.oznaka)}</span><b></b></div><input type="range">`;
+    const vnos = d.querySelector('input'), napis = d.querySelector('b');
+    vnos.min = p.min; vnos.max = p.max; vnos.step = p.korak || 'any'; vnos.value = p.vrednost;
+    const pokazi = () => { napis.textContent = oblikujStevilo(vnos.value, p.korak) + (p.enota ? ' ' + p.enota : ''); };
+    pokazi();
+    vnos.addEventListener('pointerdown', () => { drsniki.vlecem = true; });
+    vnos.addEventListener('input', () => { pokazi(); posljiDrsnik({ [p.ime]: Number(vnos.value) }); });
+    vnos.addEventListener('change', () => { drsniki.vlecem = false; });
+    okvir.appendChild(d);
+  }
+}
+async function posljiDrsnik(vrednosti) {
+  drsniki.cakajoce = { ...(drsniki.cakajoce || {}), ...vrednosti };
+  if (drsniki.poteka) return;
+  drsniki.poteka = true;
+  while (drsniki.cakajoce) {
+    const v = drsniki.cakajoce; drsniki.cakajoce = null;
+    await ukaz({ dejanje: 'parameter', vrednosti: v }, true);
+  }
+  drsniki.poteka = false;
+}
+addEventListener('pointerup', () => { if (drsniki.vlecem) { drsniki.vlecem = false; } });
+
+// --- strežnik --------------------------------------------------------------------------------------------------
+function obvesti(besedilo, slabo) {
+  const o = $('obvestilo'); o.textContent = besedilo; o.className = 'viden' + (slabo ? ' slabo' : '');
+  clearTimeout(obvesti.t); obvesti.t = setTimeout(() => { o.className = ''; }, slabo ? 7000 : 3500);
+}
+async function post(pot, telo) {
+  const r = await fetch(pot, { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Zeton': ZETON }, body: JSON.stringify(telo) });
+  return r.json();
+}
+async function ukaz(telo, tiho) {
+  try {
+    const d = await post('/ukaz', telo);
+    if (d.ok === false && d.sporocilo) obvesti(d.sporocilo, true);
+    else if (d.sporocilo && !tiho) obvesti(d.sporocilo);
+    await osvezi(true);
+    return d;
+  } catch (e) { obvesti('Blender ne odgovarja: ' + e.message, true); return {}; }
+}
+let stanje = {}, verzijaIdeje = -1, ideja = null;
+async function osvezi(takoj) {
+  try {
+    stanje = await (await fetch('/stanje', { cache: 'no-store' })).json();
+    if (stanje.verzija !== verzija) { verzija = stanje.verzija; await naloziModel(); }
+    if (stanje.verzijaIdeje !== verzijaIdeje) { verzijaIdeje = stanje.verzijaIdeje; await naloziIdeje(); }
+    if (stanje.ai === 'dela' || ai.dela) await osveziAI();
+    narisiNaslov();
+  } catch (e) { $('hud').textContent = 'Blender ne odgovarja …'; }
+  if (!takoj) setTimeout(osvezi, vidno ? 700 : 3000);
+}
+function narisiNaslov() {
+  $('hud').textContent = 'Blender ' + stanje.blender + ' · ' + (model.objekti || []).length + ' objektov' + (stanje.napaka ? ' · napaka posnetka (dnevnik)' : '');
+  const n = $('naslov'); n.innerHTML = '';
+  if (stanje.ideja) {
+    const b = document.createElement('b'); b.textContent = stanje.ideja; n.append(b);
+    if (stanje.razlicica) { const z = document.createElement('span'); z.className = 'znacka vij'; z.textContent = stanje.razlicica; n.append(z); }
+  } else n.append('Brez ideje');
+  if (stanje.spremenjeno) { const z = document.createElement('span'); z.className = 'znacka ora'; z.textContent = 'neshranjeno'; n.append(z); }
+  if (stanje.vBlenderju) { const z = document.createElement('span'); z.className = 'znacka'; z.textContent = 'odprto v Blenderju'; n.append(z); }
+  $('gShraniRazlicico').disabled = !stanje.ideja;
+}
+
+// --- ideje in različice ------------------------------------------------------------------------------------------
+async function naloziIdeje() {
+  const [seznam, opis] = await Promise.all([fetch('/ideje', { cache: 'no-store' }).then(r => r.json()), fetch('/ideja', { cache: 'no-store' }).then(r => r.json())]);
+  ideja = opis && opis.ime ? opis : null;
+  const okvir = $('ideje'); okvir.innerHTML = '';
+  if (!seznam.ideje.length) okvir.innerHTML = '<div class="prazno">Še ni idej. Napiši Claudu ali klikni + nova.</div>';
+  for (const i of seznam.ideje) {
+    const v = document.createElement('div'); v.className = 'vrsta' + (i.odprta ? ' izbran' : '');
+    const img = document.createElement('img'); img.alt = '';
+    if (i.zadnja) img.src = '/ideja/slicica?ideja=' + encodeURIComponent(i.ime) + '&r=' + i.zadnja + '&v=' + verzijaIdeje;
+    img.onerror = () => { img.style.visibility = 'hidden'; };
+    if (!i.zadnja) img.style.visibility = 'hidden';
+    const ime = document.createElement('span'); ime.className = 'ime'; ime.textContent = i.ime; ime.title = i.opis || i.ime;
+    const st = document.createElement('small'); st.textContent = i.razlicic; ime.appendChild(st);
+    v.append(img, ime);
+    v.addEventListener('click', () => { if (i.odprta) return; if (stanje.spremenjeno && !confirm('Trenutna scena ni shranjena kot različica. Vseeno odprem drugo idejo?')) return; prilagodiOb = true; ukaz({ dejanje: 'odpri-idejo', ime: i.ime }); });
+    okvir.appendChild(v);
+  }
+  narisiRazlicice();
+  preveriSlicico();
+  const kljucIdeje = ideja ? ideja.mapa : '';
+  if (kljucIdeje !== ai.ideja) { ai.ideja = kljucIdeje; ai.koraki = []; ai.od = 0; $('koraki').innerHTML = ''; await osveziAI(true); }
+}
+function narisiRazlicice() {
+  const okvir = $('razlicice'); okvir.innerHTML = '';
+  if (!ideja) { okvir.innerHTML = '<div class="prazno">Različice se pokažejo tu, ko odpreš ali ustvariš idejo.</div>'; return; }
+  if (!ideja.razlicice.length) { okvir.innerHTML = '<div class="prazno">Ideja še nima različic. Shrani različico ali naroči obliko Claudu.</div>'; return; }
+  for (const r of [...ideja.razlicice].reverse()) {
+    const k = document.createElement('button'); k.type = 'button'; k.className = 'karta' + (r.id === ideja.trenutna ? ' trenutna' : '');
+    k.title = (r.opomba || '') + '\n' + r.cas.replace('T', ' ') + ' · ' + r.vir + (r.izhaja ? ' · iz ' + r.izhaja : '');
+    k.innerHTML = `<div class="slika"><span class="zv${r.zvezdica ? ' da' : ''}" title="Označi kot priljubljeno">★</span></div>
+      <div class="spodaj"><b>${esc(r.id)}</b><span class="znacka${r.vir === 'AI' ? ' vij' : ''}">${esc(r.vir)}</span></div><div class="op">${esc(r.opomba || '')}</div>`;
+    if (r.slicica) k.querySelector('.slika').style.backgroundImage = `url("/ideja/slicica?ideja=${encodeURIComponent(ideja.ime)}&r=${r.id}&v=${verzijaIdeje}")`;
+    k.querySelector('.zv').addEventListener('click', e => { e.stopPropagation(); ukaz({ dejanje: 'uredi-razlicico', id: r.id, zvezdica: !r.zvezdica }, true); });
+    k.addEventListener('click', () => {
+      if (r.id === ideja.trenutna && !stanje.spremenjeno) return;
+      if (stanje.spremenjeno && !confirm('Neshranjene spremembe (npr. premaknjeni drsniki) se izgubijo. Odprem ' + r.id + '?')) return;
+      ukaz({ dejanje: 'odpri-razlicico', id: r.id }, true);
+    });
+    okvir.appendChild(k);
+  }
+}
+async function novaIdeja() {
+  const ime = prompt('Ime nove ideje:', '');
+  if (!ime) return;
+  let obdrzi = false;
+  if ((model.seznam || []).length) obdrzi = confirm('Obdržim trenutno sceno kot izhodišče nove ideje?\n(Prekliči = začni s prazno sceno)');
+  const d = await ukaz({ dejanje: 'nova-ideja', ime, obdrzi }, true);
+  if (d.ok && obdrzi) await ukaz({ dejanje: 'shrani-razlicico', opomba: 'Izhodišče' }, true);
+  prilagodiOb = true;
+}
+$('gNovaIdeja').addEventListener('click', novaIdeja);
+$('gNovaIdeja2').addEventListener('click', novaIdeja);
+async function shraniRazlicico() {
+  if (!stanje.ideja) { obvesti('Najprej ustvari ali odpri idejo.', true); return; }
+  const opomba = prompt('Kratka opomba k različici (neobvezno):', '');
+  if (opomba === null) return;
+  const d = await ukaz({ dejanje: 'shrani-razlicico', opomba }, true);
+  if (d.ok) obvesti('Shranjeno kot ' + d.id);
+}
+$('gShraniRazlicico').addEventListener('click', shraniRazlicico);
+$('gBlender').addEventListener('click', () => ukaz({ dejanje: 'odpri-v-blenderju' }));
+
+// Sličica trenutne različice: izris iz tega pogleda (izometrija, prilegano) v ozadju, brez vpliva na zaslon.
+let slicicaPoslana = '';
+async function preveriSlicico() {
+  if (!ideja || !stanje.razlicica || stanje.spremenjeno || !model.objekti.length) return;
+  const r = ideja.razlicice.find(x => x.id === stanje.razlicica);
+  const kljuc = ideja.ime + '/' + stanje.razlicica;
+  if (!r || r.slicica || slicicaPoslana === kljuc) return;
+  slicicaPoslana = kljuc;
+  const W = 320, H = 240;
+  const cam = new THREE.PerspectiveCamera(30, W / H, 0.1, 100000); cam.up.set(0, 0, 1);
+  const s = okvirModela.getBoundingSphere(new THREE.Sphere());
+  cam.position.copy(s.center).add(new THREE.Vector3(1, -1.25, 0.9).normalize().multiplyScalar(s.radius / Math.sin(THREE.MathUtils.degToRad(15)) * 1.05));
+  cam.lookAt(s.center);
+  const rt = new THREE.WebGLRenderTarget(W, H, { samples: 4 }); rt.texture.colorSpace = THREE.SRGBColorSpace;
+  renderer.setRenderTarget(rt); renderer.setClearColor(0x000000, 0); renderer.clear(); renderer.render(scene, cam); renderer.setRenderTarget(null);
+  const px = new Uint8Array(W * H * 4); renderer.readRenderTargetPixels(rt, 0, 0, W, H, px); rt.dispose();
+  const c = document.createElement('canvas'); c.width = W; c.height = H;
+  const ctx = c.getContext('2d'), slika = ctx.createImageData(W, H);
+  for (let y = 0; y < H; y++) slika.data.set(px.subarray((H - 1 - y) * W * 4, (H - y) * W * 4), y * W * 4);
+  ctx.putImageData(slika, 0, 0);
+  await post('/slicica', { razlicica: stanje.razlicica, png: c.toDataURL('image/png') }).catch(() => {});
+}
+
+// --- klepet s Claudom --------------------------------------------------------------------------------------------
+const ai = { koraki: [], od: 0, dela: false, priloge: [] };
+async function osveziAI(takoj) {
+  let d;
+  try { d = await (await fetch('/ai/stanje?od=' + Math.max(0, ai.od - 1), { cache: 'no-store' })).json(); } catch (e) { return; }
+  const zacetek = Math.max(0, ai.od - 1);
+  d.koraki.forEach((k, i) => { ai.koraki[zacetek + i] = k; });
+  ai.od = d.skupaj;
+  const prej = ai.dela;
+  ai.dela = d.stanje === 'dela';
+  narisiKorake(zacetek);
+  $('aiStanje').textContent = ai.dela ? (d.sporocilo || 'Claude dela …') : '';
+  $('gUstavi').disabled = !ai.dela; $('gPoslji').disabled = ai.dela;
+  $('delaPasica').classList.toggle('skrit', !ai.dela);
+  $('delaPasica').textContent = 'Claude: ' + (d.sporocilo || 'oblikuje …');
+  let opozorilo = $('brezKljuca');
+  if (!d.kljuc && !opozorilo) {
+    opozorilo = document.createElement('div'); opozorilo.id = 'brezKljuca';
+    opozorilo.textContent = 'Ključ za Claude (ANTHROPIC_API_KEY) ni nastavljen. Vpiši ga v datoteko kljuci.env v mapi FreeCAD-splet (LOCALAPPDATA) ali v .env plošče Tiskaj.';
+    $('koraki').before(opozorilo);
+  } else if (d.kljuc && opozorilo) opozorilo.remove();
+  if (prej && !ai.dela) prilagodiOb = false;
+}
+function narisiKorake(od) {
+  const okvir = $('koraki');
+  const naDnu = okvir.scrollHeight - okvir.scrollTop - okvir.clientHeight < 40;
+  while (okvir.children.length > od) okvir.lastChild.remove();
+  if (!ai.koraki.length && !okvir.children.length) {
+    okvir.innerHTML = '<div class="prazno">Opiši idejo — Claude zgradi obliko z drsniki, jo pogleda v štirih pogledih in popravi. '
+      + 'Nadaljuj z navodili (»tanjši vrat«, »bolj organsko«, »dodaj luknjo za vijak M4«). Vsak odgovor je nova različica.</div>';
+    return;
+  }
+  if (okvir.querySelector('.prazno')) okvir.innerHTML = '';
+  for (let i = okvir.children.length; i < ai.koraki.length; i++) okvir.appendChild(elementKoraka(ai.koraki[i]));
+  if (naDnu) okvir.scrollTop = okvir.scrollHeight;
+}
+function elementKoraka(k) {
+  const e = document.createElement('div'); e.className = 'korak ' + k.vrsta;
+  if (k.vrsta === 'uporabnik') e.textContent = k.besedilo + (k.slik ? '  📎' + k.slik : '');
+  else if (k.vrsta === 'besedilo') e.innerHTML = esc(k.besedilo).replace(/\*\*(.+?)\*\*/g, '<b>$1</b>').replace(/`([^`\n]+)`/g, '<code>$1</code>');
+  else if (k.vrsta === 'koda' || k.vrsta === 'pogled' || (k.vrsta === 'napaka' && k.koda !== undefined)) {
+    e.className = 'korak orodje' + (k.vrsta === 'pogled' ? ' pogled' : '') + (k.vrsta === 'napaka' ? ' napaka' : '');
+    const ikona = k.vrsta === 'pogled' ? '👁' : k.vrsta === 'napaka' ? '⚠' : '🔧';
+    const par = (k.parametri || []).map(p => p.oznaka).join(', ');
+    e.innerHTML = `<details><summary>${ikona} ${esc(k.besedilo)}${par ? ' · drsniki: ' + esc(par) : ''}<span class="cas">${k.trajanje ?? ''} s</span></summary>`
+      + (k.koda ? `<pre>${esc(k.koda)}</pre>` : '') + (k.izid ? `<pre class="izid">${esc(k.izid)}</pre>` : '') + '</details>';
+    if (k.slika) {
+      const img = document.createElement('img'); img.src = '/ai/slika?ime=' + encodeURIComponent(k.slika); img.title = 'Kar je Claude videl (klik: večja slika)';
+      img.addEventListener('click', () => window.open(img.src, '_blank'));
+      e.appendChild(img);
+    }
+  } else if (k.vrsta === 'razlicica') {
+    const b = document.createElement('button'); b.textContent = '✓ ' + k.besedilo; b.title = 'Odpri to različico';
+    b.addEventListener('click', () => ukaz({ dejanje: 'odpri-razlicico', id: k.razlicica }, true));
+    e.appendChild(b);
+  } else e.textContent = k.besedilo;
+  return e;
+}
+async function poslji() {
+  const besedilo = $('sporocilo').value.trim();
+  if (!besedilo || ai.dela) return;
+  if (stanje.spremenjeno && stanje.ideja) {
+    // trenutno stanje (npr. premaknjeni drsniki) ostane v sceni; Claude dela na njem, različica nastane ob koncu odgovora
+  }
+  $('gPoslji').disabled = true;
+  const d = await post('/ai', { sporocilo: besedilo, slike: ai.priloge.map(p => p.url) }).catch(e => ({ ok: false, sporocilo: e.message }));
+  if (!d.ok) { obvesti(d.sporocilo || 'Pošiljanje ni uspelo.', true); $('gPoslji').disabled = false; return; }
+  $('sporocilo').value = ''; ai.priloge = []; narisiPriloge();
+  ai.dela = true;
+  osvezi(true);
+}
+$('gPoslji').addEventListener('click', poslji);
+$('sporocilo').addEventListener('keydown', e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); poslji(); } });
+$('gUstavi').addEventListener('click', () => post('/ai/ustavi', {}));
+// priloge: gumb, lepljenje, povleci in spusti; slika se pomanjša na največ 1400 px
+async function dodajSliko(datoteka) {
+  if (!datoteka || !datoteka.type.startsWith('image/')) return;
+  const bm = await createImageBitmap(datoteka);
+  const k = Math.min(1, 1400 / Math.max(bm.width, bm.height));
+  const c = document.createElement('canvas'); c.width = Math.round(bm.width * k); c.height = Math.round(bm.height * k);
+  c.getContext('2d').drawImage(bm, 0, 0, c.width, c.height);
+  ai.priloge.push({ url: c.toDataURL('image/jpeg', 0.9) }); narisiPriloge();
+}
+function narisiPriloge() {
+  const o = $('priloge'); o.innerHTML = '';
+  ai.priloge.forEach((p, i) => {
+    const s = document.createElement('span'); s.innerHTML = `<img src="${p.url}" alt=""><button type="button" title="Odstrani">×</button>`;
+    s.querySelector('button').addEventListener('click', () => { ai.priloge.splice(i, 1); narisiPriloge(); });
+    o.appendChild(s);
+  });
+}
+$('gPriloga').addEventListener('click', () => $('datotekaSlike').click());
+$('datotekaSlike').addEventListener('change', e => { for (const f of e.target.files) dodajSliko(f); e.target.value = ''; });
+$('sporocilo').addEventListener('paste', e => { for (const it of e.clipboardData.items) if (it.type.startsWith('image/')) { e.preventDefault(); dodajSliko(it.getAsFile()); } });
+$('klepet').addEventListener('dragover', e => e.preventDefault());
+$('klepet').addEventListener('drop', e => { e.preventDefault(); for (const f of e.dataTransfer.files) dodajSliko(f); });
+$('gKlepet').addEventListener('click', () => { $('ovoj').classList.toggle('brezKlepeta'); $('gKlepet').textContent = $('ovoj').classList.contains('brezKlepeta') ? 'Claude ◂' : 'Claude ▸'; });
+
+// --- ostali gumbi ----------------------------------------------------------------------------------------------
+for (const g of document.querySelectorAll('[data-oblika]')) g.addEventListener('click', () => { prilagodiOb = true; ukaz({ dejanje: 'dodaj', vrsta: g.dataset.oblika, velikost: 40 }, true); });
+// 3D natisni: Blender izvozi STL, strežnik FreeCAD-a (okno okoli te strani) ga prestavi v vhod plošče Tiskaj in odpre Pripravi
+$('gNatisni').addEventListener('click', async () => {
+  if (!(model.objekti || []).length) { obvesti('Ni vidnih objektov za tisk.', true); return; }
+  obvesti('Izvažam za tisk …');
+  const d = await ukaz({ dejanje: 'izvozi-za-tisk' }, true);
+  if (!d.ok) return;
+  if (parent !== window) parent.postMessage({ vir: 'oblikovanje', dejanje: 'natisni', pot: d.pot }, '*');
+  else obvesti('STL za tisk: ' + d.pot + ' — za pošiljanje v ploščo Tiskaj odpri Oblikovanje v zavihku spletnega FreeCAD-a.');
+});
+$('gIzvozi').addEventListener('click', async () => { const d = await ukaz({ dejanje: 'izvozi' }, true); if (d.ok) obvesti('STL: ' + d.pot); });
+$('gRender').addEventListener('click', () => odpriRender({
+  zeton: () => ZETON,
+  razmerje: () => camera.aspect,
+  kamera: () => ({ polozaj: camera.position.toArray(), cilj: controls.target.toArray(), gor: [0, 0, 1], fov: camera.fov, pravokotna: false }),
+}));
+document.addEventListener('click', e => { if (!e.target.closest('#meni')) $('meni').classList.add('skrit'); });
+
+// --- izbira s klikom, pogledi ------------------------------------------------------------------------------------
+const raycaster = new THREE.Raycaster();
+let dol = null;
+renderer.domElement.addEventListener('pointerdown', e => { if (e.button === 0) dol = [e.clientX, e.clientY]; });
+renderer.domElement.addEventListener('pointerup', e => {
+  if (e.button !== 0 || !dol || Math.hypot(e.clientX - dol[0], e.clientY - dol[1]) > 4) return;
+  const r = renderer.domElement.getBoundingClientRect();
+  raycaster.setFromCamera(new THREE.Vector2((e.clientX - r.left) / r.width * 2 - 1, -(e.clientY - r.top) / r.height * 2 + 1), camera);
+  const zadetek = raycaster.intersectObjects([...objekti.values()], false)[0];
+  ukaz({ dejanje: 'izberi', ime: zadetek ? zadetek.object.userData.ime : '', dodaj: e.ctrlKey }, true);
+});
+function prilagodi() {
+  if (okvirModela.isEmpty()) return;
+  const s = okvirModela.getBoundingSphere(new THREE.Sphere());
+  const smer = camera.position.clone().sub(controls.target);
+  if (smer.lengthSq() < 1e-6) smer.set(1, -1.15, 0.85);
+  smer.normalize();
+  const razdalja = s.radius / Math.sin(THREE.MathUtils.degToRad(camera.fov / 2) * Math.min(1, camera.aspect)) * 1.15;
+  controls.target.copy(s.center); camera.position.copy(s.center).addScaledVector(smer, razdalja);
+}
+const POGLEDI = { 1: [0, -1, 0], 2: [0, 1, 0], 3: [1, 0, 0], 4: [-1, 0, 0], 5: [0, 0, 1], 6: [0, 0, -1], 7: [1, -1.15, 0.85] };
+addEventListener('keydown', e => {
+  if (e.target.closest && e.target.closest('input, textarea, select')) return;
+  if (e.key === 's' && e.ctrlKey) { e.preventDefault(); shraniRazlicico(); return; }
+  if (e.key === 'f' || e.key === 'F') prilagodi();
+  else if (POGLEDI[e.key]) {
+    const v = new THREE.Vector3(...POGLEDI[e.key]).normalize();
+    const d = camera.position.distanceTo(controls.target) || 1000;   // razdaljo izmeri pred premikom kamere
+    camera.position.copy(controls.target).addScaledVector(v, d);
+    if (Math.abs(v.z) > 0.99) camera.up.set(0, v.z > 0 ? 1 : -1, 0); else camera.up.set(0, 0, 1);
+    controls.update(); camera.up.set(0, 0, 1);
+  }
+});
+
+// --- okvir v spletnem FreeCAD-u -------------------------------------------------------------------------------
+addEventListener('message', e => {
+  const m = e.data || {};
+  if (m.dejanje === 'skrit') vidno = false;
+  if (m.dejanje === 'viden') { vidno = true; osvezi(true); }
+});
+if (parent !== window) parent.postMessage({ vir: 'oblikovanje', dejanje: 'pripravljen' }, '*');
+velikost();
+narisiKorake(0);
+osvezi();
+</script>
+</body>
+</html>

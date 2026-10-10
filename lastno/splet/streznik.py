@@ -62,6 +62,7 @@ ODMIK_ROBOV = 0.05        # mm, diskretizacija robov (najmanj)
 RELATIVNA_PLOSKEV = 0.0005   # delež diagonale objekta: sestav 2 m -> 1 mm (sicer 190 MB posnetka in 35 s gradnje)
 RELATIVNI_ROB = 0.00025
 PRORACUN_TOCK = 150000       # na objekt: gostejša mreža (npr. uvožen hladilnik s 4200 ploskvami) se naredi grobje
+MIROVANJE_OGREVANJA = 3.0    # s brez zahtev iz brskalnika, preden strežnik vnaprej pripravlja posnetke (Stanje.ogrej)
 
 
 def _natancnost(oblika):
@@ -84,13 +85,268 @@ ZETON = secrets.token_hex(16)
 if MAPA not in sys.path:
     sys.path.insert(0, MAPA)
 from drevo import drevo_dejanje, drevo_dokumenta  # noqa: E402
-from baza import baza_dejanje  # noqa: E402
+from baza import baza_dejanje, v_bazi as _v_bazi, tarca as _tarca_baze, BAZA as MAPA_BAZE  # noqa: E402
+import videz  # noqa: E402
 from oblak import Oblak, obdelaj_zahtevo as oblak_zahteva  # noqa: E402
+import mcp_orodja  # noqa: E402  (orodja za AI prek MCP: GET /mcp/orodja, POST /mcp/orodje; most lastno/mcp)
+import pomocnik  # noqa: E402  (pomočnik AI v stranski plošči strani: GET/POST /pomocnik, isti katalog orodij)
 
 MAPA_OBLAK = os.path.join(os.path.expanduser("~"), "Oblak", "3D modeliranje")
 MAPE_PROJEKTOV = [os.path.normpath(MAPA_OBLAK)]
 MAPE_PROJEKTOV += [os.path.normpath(m.strip()) for m in os.environ.get("SPLET_PROJEKTI", "").split(";") if m.strip()]
 GLOBINA_PROJEKTOV = 4        # podmape pod mapo projektov, ki se še pregledajo
+
+# ---------------------------------------------------------------------------
+# Tiskanje: nadzorna plošča Tiskaj (3D print/tiskaj, lasten proces na vratih 3021 po Photolandia-Apps/ports.json).
+# V brskalniku je zavihek »Tiskanje« (okvir na ploščo), »Natisni« iz drevesa izvozi STEP v njeno vhodno mapo, vrstica
+# stanja kaže tiskalnike. Ta strežnik je le posrednik (GET /tiskaj/stanje, nit strežnika) in zaganjalnik (POST
+# /tiskaj/zazeni); plošča teče naprej tudi brez FreeCAD-a (MQTT, kamere, vrsta). Prepis: SPLET_TISKAJ_VRATA, SPLET_TISKAJ_MAPA.
+TISKAJ_VRATA = int(os.environ.get("SPLET_TISKAJ_VRATA", "3021"))
+
+
+def _najdi_tiskaj():
+    """Mapa plošče Tiskaj: ob repozitoriju FreeCAD (Apps/3D print/tiskaj do selitve, nato 3D tisk/3D print/tiskaj)."""
+    prepis = os.environ.get("SPLET_TISKAJ_MAPA", "").strip()
+    koren = os.path.normpath(os.path.join(MAPA, "..", ".."))        # repozitorij FreeCAD
+    kandidati = [prepis] if prepis else []
+    kandidati += [os.path.join(koren, "..", "3D print", "tiskaj"),
+                  os.path.join(koren, "..", "3D tisk", "3D print", "tiskaj"),
+                  os.path.join(koren, "..", "..", "3D tisk", "3D print", "tiskaj"),
+                  os.path.join(koren, "..", "..", "3D print", "tiskaj")]
+    for k in kandidati:
+        if k and os.path.isfile(os.path.join(k, "streznik.py")):
+            return os.path.normpath(k)
+    return ""
+
+
+TISKAJ_MAPA = _najdi_tiskaj()
+_TISKAJ_KLJUCAVNICA = threading.Lock()
+_TISKAJ_PREDPOMNILNIK = {"cas": 0.0, "stanje": None}
+_TISKAJ_ROCNO_KLJUCAVNICA = threading.Lock()
+TISKAJ_ROCNO_CAKA = []        # datoteke, izvožene, ko plošča ni tekla: ob njenem zagonu se ji javijo kot ročne
+
+
+def _tiskaj_klic(metoda, pot, telo=None, cas=3.0):
+    """Klic API-ja plošče (nit strežnika, brez FreeCAD API-ja). Vrne (koda, podatki); (0, None), če plošča ne teče."""
+    import http.client
+    try:
+        p = http.client.HTTPConnection("127.0.0.1", TISKAJ_VRATA, timeout=cas)
+        glave = {"Content-Type": "application/json"} if telo is not None else {}
+        p.request(metoda, pot, body=json.dumps(telo, ensure_ascii=False).encode("utf-8") if telo is not None else None,
+                  headers=glave)
+        odg = p.getresponse()
+        surovo = odg.read()
+        p.close()
+    except (OSError, http.client.HTTPException):
+        return 0, None
+    try:
+        return odg.status, json.loads(surovo.decode("utf-8") or "null")
+    except ValueError:
+        return odg.status, None
+
+
+def tiskaj_stanje(sveze=False):
+    """Stanje plošče za vrstico stanja in zavihek Tiskanje (pomnjeno 2 s): teče, naslov, tiskalniki (skrčeno), vrsta."""
+    with _TISKAJ_KLJUCAVNICA:
+        zdaj = time.monotonic()
+        if not sveze and _TISKAJ_PREDPOMNILNIK["stanje"] is not None and zdaj - _TISKAJ_PREDPOMNILNIK["cas"] < 2.0:
+            return _TISKAJ_PREDPOMNILNIK["stanje"]
+        koda, s = _tiskaj_klic("GET", "/api/stanje", cas=4.0)
+        out = {"tece": koda == 200 and isinstance(s, dict), "vrata": TISKAJ_VRATA, "mapa": TISKAJ_MAPA,
+               "url": "http://127.0.0.1:%d/" % TISKAJ_VRATA, "tiskalniki": [], "vrsta": None, "vhod_mapa": ""}
+        if out["tece"]:
+            polja = ("ime", "serijska", "povezan", "faza", "faza_besedilo", "razred", "prost", "napredek",
+                     "preostalo_min", "preostalo_besedilo", "datoteka", "miza")
+            for t in s.get("tiskalniki") or []:
+                vnos = {k: t.get(k) for k in polja}
+                vnos["hms"] = len(t.get("hms") or [])
+                vnos["caka"] = sum(1 for x in (t.get("vrsta") or []) if x.get("stanje") == "čaka")
+                out["tiskalniki"].append(vnos)
+            v = s.get("vrsta") or {}
+            out["vrsta"] = {"caka": v.get("caka"), "aktivna": v.get("aktivna")}
+            out["vhod_mapa"] = str((s.get("mape") or {}).get("vhod") or "")
+        _TISKAJ_PREDPOMNILNIK.update(cas=zdaj, stanje=out)
+        return out
+
+
+def _tiskaj_vhod_mapa():
+    """Vhodna mapa plošče (kamor gredo STEP za tisk): iz tekoče plošče, sicer iz njenega config.json (privzeto Desktop/STEPI)."""
+    s = tiskaj_stanje()
+    if s["vhod_mapa"]:
+        return s["vhod_mapa"]
+    mapa = ""
+    if TISKAJ_MAPA:
+        try:
+            with open(os.path.join(TISKAJ_MAPA, "config.json"), encoding="utf-8") as f:
+                mapa = str(json.load(f).get("vhod_mapa") or "")
+        except (OSError, ValueError):
+            mapa = ""
+    return os.path.expanduser(mapa or "~/Desktop/STEPI")
+
+
+def _tiskaj_oznaci_rocno(datoteke):
+    """Plošči javi datoteke, ki jih je izvozil FreeCAD (pripravo vodi uporabnik v oknu Pripravi, ne samodejna priprava).
+    Če plošča ne teče, počakajo na njen zagon (_tiskaj_po_zagonu). Vrne True, če je plošča oznako prejela zdaj."""
+    with _TISKAJ_ROCNO_KLJUCAVNICA:
+        for d in datoteke:
+            if d not in TISKAJ_ROCNO_CAKA:
+                TISKAJ_ROCNO_CAKA.append(d)
+        cakajoce = list(TISKAJ_ROCNO_CAKA)
+    if not cakajoce:
+        return True
+    koda, _ = _tiskaj_klic("POST", "/api/vhod/rocno", {"datoteke": cakajoce})
+    if koda != 200:
+        return False
+    with _TISKAJ_ROCNO_KLJUCAVNICA:
+        TISKAJ_ROCNO_CAKA[:] = [d for d in TISKAJ_ROCNO_CAKA if d not in cakajoce]
+    return True
+
+
+MAPA_TISK_OBLIKOVANJA = os.path.join(os.environ.get("LOCALAPPDATA") or os.path.expanduser("~"), "FreeCAD-splet", "tisk")
+
+
+def tiskaj_datoteka(pot):
+    """3D natisni iz Oblikovanja: STL/STEP, ki ga je Blender izvozil v FreeCAD-splet/tisk, prestavi v vhod plošče in ga
+    označi za ročno pripravo (okno Pripravi). Nit strežnika, brez FreeCAD API-ja. Druge poti zavrne."""
+    import shutil
+    pot = os.path.abspath(pot or "")
+    if (os.path.normcase(os.path.dirname(pot)) != os.path.normcase(MAPA_TISK_OBLIKOVANJA)
+            or os.path.splitext(pot)[1].lower() not in (".stl", ".step", ".stp") or not os.path.isfile(pot)):
+        return {"ok": False, "sporocilo": "Datoteka za tisk ni iz Oblikovanja."}
+    mapa = _tiskaj_vhod_mapa()
+    os.makedirs(mapa, exist_ok=True)
+    ime = os.path.basename(pot)
+    cilj = os.path.join(mapa, ime)
+    shutil.copyfile(pot, cilj + ".delno")      # plošča bere le .step/.stp/.stl: pol zapisane datoteke ne vidi
+    os.replace(cilj + ".delno", cilj)
+    _log("tiskaj: iz Oblikovanja %s -> %s" % (ime, mapa))
+    return {"ok": True, "datoteke": [ime], "mapa": mapa, "plosca": _tiskaj_oznaci_rocno([ime]),
+            "sporocilo": "Za tisk poslan »%s«." % os.path.splitext(ime)[0]}
+
+
+def _tiskaj_python():
+    """Python za ploščo: sistemski (kot Nadzorna plosca.bat), ne pixi-jev iz okolja FreeCAD-a (opencv za sito mize)."""
+    import glob
+    import shutil
+    lokalno = os.environ.get("LOCALAPPDATA", "")
+    kandidati = [os.path.join(lokalno, "Programs", "Python", "Python311", "pythonw.exe")]
+    kandidati += sorted(glob.glob(os.path.join(lokalno, "Programs", "Python", "Python3*", "pythonw.exe")), reverse=True)
+    for k in kandidati:
+        if os.path.isfile(k):
+            return k
+    return shutil.which("pythonw") or shutil.which("python") or ""
+
+
+def tiskaj_zazeni():
+    """Zažene ploščo kot samostojen proces (brez okna, brez brskalnika; preživi konec FreeCAD-a). Vrne (ok, sporočilo)."""
+    import subprocess
+    if tiskaj_stanje(sveze=True)["tece"]:
+        return True, "Plošča že teče."
+    if not TISKAJ_MAPA:
+        return False, "Mape plošče Tiskaj ni (3D print/tiskaj); nastavi SPLET_TISKAJ_MAPA."
+    py = _tiskaj_python()
+    if not py:
+        return False, "Python za ploščo ni najden (pythonw.exe)."
+    okolje = {k: v for k, v in os.environ.items() if k not in ("PYTHONHOME", "PYTHONPATH", "PYTHONNOUSERSITE")}
+    zastavice = (getattr(subprocess, "DETACHED_PROCESS", 0) | getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
+                 | getattr(subprocess, "CREATE_NO_WINDOW", 0))
+    try:
+        subprocess.Popen([py, "streznik.py", "--brez-brskalnika", "--vrata", str(TISKAJ_VRATA)], cwd=TISKAJ_MAPA, env=okolje,
+                         stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, close_fds=True,
+                         creationflags=zastavice)
+    except OSError as e:
+        return False, "Zagon plošče ni uspel: %s" % e
+    _log("tiskaj: zaganjam ploščo (%s)" % py)
+    threading.Thread(target=_tiskaj_po_zagonu, daemon=True, name="tiskaj-zagon").start()
+    return True, "Plošča se zaganja."
+
+
+def _tiskaj_po_zagonu():
+    """Počaka, da plošča odgovori (do 30 s), nato ji javi datoteke, izvožene medtem ko ni tekla."""
+    for _ in range(60):
+        time.sleep(0.5)
+        if tiskaj_stanje(sveze=True)["tece"]:
+            _tiskaj_oznaci_rocno([])
+            return
+    _log("tiskaj: plošča se v 30 s ni oglasila na vratih %d" % TISKAJ_VRATA)
+
+
+def _ime_datoteke_tiska(oznaka):
+    """Ime datoteke STEP iz oznake kosa (brez znakov, ki jih Windows ne dovoli)."""
+    ime = "".join("_" if (c in '<>:"/\\|?*' or ord(c) < 32) else c for c in str(oznaka)).strip(" .")
+    return (ime[:80] or "Kos")
+
+
+# ---------------------------------------------------------------------------
+# Oblikovanje in render (od 2026-10-10, plan OBLIKOVANJE-PLAN.md, mapa lastno/oblikovanje).
+# Oblikovanje je Blender v ozadju (streznik_blender.py, vrata 3030 po Photolandia-Apps/ports.json), v brskalniku zavihek
+# »Oblikovanje« kot okvir. Ta strežnik ga le zažene (POST /oblikovanje/zazeni) in vpraša, ali teče (GET /oblikovanje/stanje).
+# Render tehničnega modela: posnetek aktivnega dokumenta (isti JSON, ki ga riše brskalnik) gre v ločen proces Blenderja
+# (upodabljanje.py, render.py); vse na niti strežnika, brez FreeCAD API-ja. Prepis vrat: SPLET_OBLIKOVANJE_VRATA.
+MAPA_OBLIKOVANJA = os.path.normpath(os.path.join(MAPA, "..", "oblikovanje"))
+if MAPA_OBLIKOVANJA not in sys.path:
+    sys.path.insert(0, MAPA_OBLIKOVANJA)
+from upodabljanje import UPODABLJANJE, najdi_blender, _cisto_okolje  # noqa: E402
+OBLIKOVANJE_VRATA = int(os.environ.get("SPLET_OBLIKOVANJE_VRATA", "3030"))
+
+
+def oblikovanje_stanje():
+    """Ali Oblikovanje (Blender v ozadju) teče; nit strežnika."""
+    import http.client
+    stanje = {"tece": False, "vrata": OBLIKOVANJE_VRATA, "blender": najdi_blender() or ""}
+    try:
+        c = http.client.HTTPConnection("127.0.0.1", OBLIKOVANJE_VRATA, timeout=1.0)
+        c.request("GET", "/stanje")
+        r = c.getresponse()
+        if r.status == 200:
+            stanje.update(json.loads(r.read().decode("utf-8")), tece=True)
+        c.close()
+    except (OSError, ValueError):
+        pass
+    return stanje
+
+
+def oblikovanje_zazeni():
+    """Zažene Oblikovanje kot samostojen proces Blenderja brez okna (preživi Izhod FreeCAD-a). Vrne (ok, sporočilo)."""
+    import subprocess
+    if oblikovanje_stanje()["tece"]:
+        return True, "Oblikovanje že teče."
+    blender = najdi_blender()
+    if not blender:
+        return False, "Blender ni nameščen (Program Files/Blender Foundation; prepis SPLET_BLENDER)."
+    zastavice = (getattr(subprocess, "DETACHED_PROCESS", 0) | getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
+                 | getattr(subprocess, "CREATE_NO_WINDOW", 0))
+    try:
+        subprocess.Popen([blender, "-b", "--factory-startup", "--python", os.path.join(MAPA_OBLIKOVANJA, "streznik_blender.py"),
+                          "--", "--vrata", str(OBLIKOVANJE_VRATA)], cwd=MAPA_OBLIKOVANJA, env=_cisto_okolje(),
+                         stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, close_fds=True,
+                         creationflags=zastavice)
+    except OSError as e:
+        return False, "Zagon Blenderja ni uspel: %s" % e
+    _log("oblikovanje: zaganjam Blender (%s)" % blender)
+    return True, "Oblikovanje se zaganja."
+
+
+def render_modela(podatki):
+    """Render aktivnega dokumenta: posnetek (bajti) + kamera iz brskalnika -> naloga upodabljanja. Slika gre tudi v
+    mapo Renderji ob datoteki dokumenta. Nit strežnika."""
+    ime, kopija = "Render", None
+    try:
+        for d in json.loads(STANJE.projekti()).get("odprti", []):
+            if d.get("aktiven"):
+                ime = d.get("oznaka") or d.get("ime") or ime
+                if d.get("pot"):
+                    # v bazi standardnih delov mapa s podčrtajem: knjižnica (zgradi_knjiznico) mape _* izpusti
+                    kopija = os.path.join(os.path.dirname(d["pot"]), "_Renderji" if _v_bazi(d["pot"]) else "Renderji")
+    except ValueError:
+        pass
+    posnetek = STANJE.posnetek()
+    if b'"objekti":[]' in posnetek[:200]:
+        return {"ok": False, "sporocilo": "Aktivni dokument nima vidne geometrije."}
+    try:
+        return {"ok": True, "id": UPODABLJANJE.zacni({"posnetek_bajti": posnetek}, podatki, ime=ime, kopija=kopija)}
+    except Exception as e:  # noqa: BLE001
+        return {"ok": False, "sporocilo": str(e)}
 
 # Delovna okolja, katerih ukazi so na voljo v brskalniku (ime, slovenski naslov, če ga FreeCAD nima), v vrstnem redu
 # zavihkov. Okolja, ki niso nameščena (npr. dodatek SheetMetal), se preskočijo; nameščena okolja, ki jih ni na seznamu
@@ -116,14 +372,16 @@ DELOVNA_OKOLJA = [
     ("SpreadsheetWorkbench", "Preglednica"),
     ("MaterialWorkbench", "Material"),
     ("RobotWorkbench", "Robot"),
+    ("CablesWorkbench", "Kabli"),   # dodatek Cables (sargo-devel): žice in kabli, pripeti na sponke kosov
 ]
 ZACETNA_OKOLJA = {"PartDesignWorkbench", "SketcherWorkbench", "PartWorkbench", "SMWorkbench"}
 # Zavihki, ki so vedno vidni; ostala okolja so v meniju »Več« (zavihek dobijo, ko so dejavna).
 GLAVNI_ZAVIHKI = {"PartDesignWorkbench", "SketcherWorkbench", "PartWorkbench", "AssemblyWorkbench",
                   "TechDrawWorkbench", "SMWorkbench"}
 IZPUSCENA_OKOLJA = {"NoneWorkbench", "TestWorkbench"}
-# Okolja, pri katerih velja slovenski naslov zgoraj tudi, ko ima FreeCAD svojega (dodatek nima slovenskega prevoda).
-LASTNI_NASLOVI = {"SMWorkbench"}
+# Okolja, pri katerih velja slovenski naslov zgoraj tudi, ko ima FreeCAD svojega: FreeCAD-ov slovenski prevod imena
+# okolij pušča v angleščini (»Part Design«, »Sketcher«), dodatek SheetMetal pa prevoda nima; zavihki so tako vsi slovenski.
+LASTNI_NASLOVI = {ime for ime, _ in DELOVNA_OKOLJA}
 # Splošne orodne vrstice (niso del zavihkov okolij).
 SPLOSNE_ORODNE = {"File", "Edit", "Clipboard", "Workbench", "Macro", "View", "Individual Views", "Structure", "Help"}
 # Vrstica hitrega dostopa (kot v SolidWorksu zgoraj levo).
@@ -187,6 +445,70 @@ def _barve(obj, stevilo_ploskev):
     except Exception:  # noqa: BLE001
         pass
     return osnovna, po_ploskvah
+
+
+def _videz_dejanje(podatki):
+    """POST /videz: {dejanje: seznam} | {dejanje: nastavi, ime, videz} (objekt aktivnega dokumenta; povezava ->
+    kos v svoji datoteki, ta ostane neshranjena) | {dejanje: plocevina, shrani} (videz »pločevina« vsem kosom iz
+    pločevine, ki jih uporablja aktivni dokument — nerjavna / aluminij po MaterialSW; shrani = shrani spremenjene
+    datoteke)."""
+    dejanje = podatki.get("dejanje", "seznam")
+    if dejanje == "seznam":
+        return {"ok": True, "videzi": videz.seznam_videzov()}
+    doc = App.ActiveDocument
+    if doc is None:
+        return {"ok": False, "sporocilo": "Ni odprtega dokumenta."}
+    if dejanje == "nastavi":
+        obj = doc.getObject(podatki.get("ime", ""))
+        if obj is None:
+            return {"ok": False, "sporocilo": "Objekta ni."}
+        kljuc = podatki.get("videz", "")
+        doc.openTransaction("Videz")
+        try:
+            cilj, _ = videz.nastavi_videz(obj, kljuc)
+        finally:
+            doc.commitTransaction()
+        ime = videz.VIDEZI[kljuc]["ime"] if kljuc in videz.VIDEZI else "privzeti videz"
+        kje = "" if cilj.Document is doc else " (v datoteki »%s«, shrani jo)" % cilj.Document.Label
+        return {"ok": True, "sporocilo": "»%s«: %s%s" % (cilj.Label, ime, kje)}
+    if dejanje == "plocevina":
+        kosi = {}
+        # vsi dokumenti, ki jih aktivni uporablja (povezave čez datoteke, rekurzivno), in aktivni sam
+        obiskani, vrsta = set(), [doc]
+        while vrsta:
+            d = vrsta.pop()
+            if d.Name in obiskani:
+                continue
+            obiskani.add(d.Name)
+            for o in d.Objects:
+                if o.isDerivedFrom("App::Link"):
+                    cilj = o.getLinkedObject(True)
+                    if cilj is not None and cilj.Document.Name not in obiskani:
+                        vrsta.append(cilj.Document)
+                elif "Vrsta" in o.PropertiesList or "Debelina" in o.PropertiesList:
+                    if not o.Name.startswith(("Razgrnitev", "DXF")) and videz.je_plocevina(o):
+                        kosi[(d.Name, o.Name)] = o
+        spremenjeni = []
+        for o in kosi.values():
+            videz.nastavi_videz(o, videz.videz_plocevine(o))
+            if o.Document not in spremenjeni:
+                spremenjeni.append(o.Document)
+        shranjenih = 0
+        if podatki.get("shrani"):
+            STANJE.tiho_shranjevanje = True
+            try:
+                for d in spremenjeni:
+                    if d.FileName:
+                        d.save()
+                        shranjenih += 1
+                        if IMA_OKNO:
+                            Gui.getDocument(d.Name).Modified = False
+            finally:
+                STANJE.tiho_shranjevanje = False
+        return {"ok": True, "kosi": sorted(o.Label for o in kosi.values()),
+                "sporocilo": "Videz pločevine: %d kosov v %d datotekah%s." % (
+                    len(kosi), len(spremenjeni), ", shranjeno" if shranjenih else " (neshranjeno)")}
+    return {"ok": False, "sporocilo": "Neznano dejanje: %s" % dejanje}
 
 
 def _je_izhodisce(obj):
@@ -258,7 +580,7 @@ def _zgradba_dokumenta(doc, globina=0, pot=()):
             otrok.update({"kolicina": 0, "skrito": True, "primerki": []})
             skupine[k] = otrok
             vozel["otroci"].append(otrok)
-        skupine[k]["kolicina"] += 1
+        skupine[k]["kolicina"] += max(1, int(getattr(o, "ElementCount", 0) or 0))   # vrsta kosov (npr. spone)
         skupine[k]["primerki"].append(o.Label)
         if o.Visibility:
             skupine[k]["skrito"] = False
@@ -318,11 +640,23 @@ def _geometrija(obj, faktor=1.0):
     tocke, trikotniki, ploskve = [], [], []
     toleranca, odmik_robov = _natancnost(oblika)
     toleranca *= faktor
-    osnovna, po_ploskvah = _barve(obj, len(oblika.Faces))
+    # barva in PBR (kovinskost, hrapavost, zrnatost) po ploskvah; pri sestavu po kosih (videz.py)
+    osnovna, po_ploskvah = videz.ploskve_videza(obj, oblika.countElement("Face"), _barve)
+    # grobejša mreža velikih objektov: obstoječo finejšo mrežo je treba pobrisati (OCC jo sicer ohrani)
+    pobrisi = toleranca > TOLERANCA_PLOSKEV + 1e-9
+    try:
+        # Vse ploskve naenkrat: OCC jih mreži vzporedno (BRepMesh_IncrementalMesh, isInParallel), branje po
+        # ploskvah spodaj mrežo le prebere. Mreženje ploskev eno po eno je teklo na enem jedru (2x počasneje).
+        skupaj, _ = oblika.tessellate(toleranca, pobrisi)
+        pobrisi = False
+        if len(skupaj) > PRORACUN_TOCK and faktor < 30:
+            return _geometrija(obj, faktor * 3)   # proračun presežen že brez podvojenih točk na robovih
+        del skupaj
+    except Exception:  # noqa: BLE001
+        pass
     for i, ploskev in enumerate(oblika.Faces):
         try:
-            # grobejša mreža velikih objektov: obstoječo finejšo mrežo je treba pobrisati (OCC jo sicer ohrani)
-            v, t = ploskev.tessellate(toleranca, toleranca > TOLERANCA_PLOSKEV + 1e-9)
+            v, t = ploskev.tessellate(toleranca, pobrisi)
             if len(tocke) // 3 + len(v) > PRORACUN_TOCK and faktor < 30:
                 # proračun presežen: celoten objekt znova, trikrat grobje (obstoječa mreža se pobriše)
                 return _geometrija(obj, faktor * 3)
@@ -339,8 +673,7 @@ def _geometrija(obj, faktor=1.0):
         for a, b, c in t:
             trikotniki.extend((a + zacetek_tock, b + zacetek_tock, c + zacetek_tock))
         barva = po_ploskvah[i] if po_ploskvah else osnovna
-        ploskve.append([zacetek_tock, len(v), zacetek_trik, len(t),
-                        round(barva[0], 3), round(barva[1], 3), round(barva[2], 3)])
+        ploskve.append([zacetek_tock, len(v), zacetek_trik, len(t)] + [round(c, 3) for c in barva[:7]])
 
     rob_tocke, robovi, rob_info = [], [], []
     for rob in oblika.Edges:
@@ -408,8 +741,7 @@ def _geometrija_kljuc(obj):
         globalna = obj.getGlobalPlacement()
     except Exception:  # noqa: BLE001
         globalna = oblika.Placement
-    osnovna, po_ploskvah = _barve(obj, len(oblika.Faces))
-    barve = (tuple(osnovna), tuple(tuple(b) for b in po_ploskvah) if po_ploskvah else None)
+    barve = videz.kljuc_videza(obj, _barve)   # videz vseh kosov (pri sestavu tudi kosov v drugih datotekah)
     return (_kljuc_oblike(obj), _lega_kljuc(oblika.Placement), _lega_kljuc(globalna), obj.Label, barve)
 
 
@@ -429,6 +761,86 @@ def _geometrija_predpomnjena(doc, obj):
 def _pozabi_geometrijo(ime_dokumenta, ime_objekta=None):
     for k in [k for k in _PREDPOMNILNIK if k[0] == ime_dokumenta and (ime_objekta is None or k[1] == ime_objekta)]:
         del _PREDPOMNILNIK[k]
+
+
+# Reference spojev (mate): (dokument, objekt, podpot) -> (ključ oblike, {elementi, tocke}). Iskanje ploskve v
+# obliki povezave na podsestav (več tisoč ploskev) traja do 0,3 s, izbira pa se javi večkrat zapored.
+_REFERENCE_SPOJEV = {}
+
+
+def _element_v_obliki(oblika, el):
+    """Ime elementa (FaceN, EdgeN) v `oblika`, ki je isti kot `el` iz podpoti spoja (oba v istem koordinatnem
+    sistemu: `obj.getSubObject(pot)` in `obj.Shape`). Isti TShape (isPartner) ima lahko več primerkov istega kosa
+    v podsestavu; med njimi odloči lega."""
+    vrsta = el.ShapeType
+    if vrsta not in ("Face", "Edge"):
+        return None
+    seznam = oblika.Faces if vrsta == "Face" else oblika.Edges
+    kandidati = [i for i, x in enumerate(seznam) if x.isPartner(el)]
+    if not kandidati:   # rezerva: geometrijsko (težišče in velikost)
+        try:
+            mera = el.Area if vrsta == "Face" else el.Length
+            kandidati = [i for i, x in enumerate(seznam)
+                         if abs((x.Area if vrsta == "Face" else x.Length) - mera) <= 1e-6 * max(mera, 1.0)]
+        except Exception:  # noqa: BLE001
+            return None
+    if not kandidati:
+        return None
+    if len(kandidati) > 1:
+        tezisce = el.CenterOfMass
+        kandidati.sort(key=lambda i: (seznam[i].CenterOfMass - tezisce).Length)
+    return vrsta + str(kandidati[0] + 1)
+
+
+def _reference_spoja(spoj):
+    """Elementi na kosih, ki jih povezuje spoj sestava (Assembly Joint): za vsako referenco
+    {objekt, elementi, tocke}. Objekt je objekt dokumenta, ki je v posnetku (povezava na kos ali podsestav),
+    element je indeks ploskve ali roba v njegovem posnetku; točke (oglišča) so v svetovnih koordinatah.
+    Togi spoj s tlemi (GroundedJoint) označi cel kos."""
+    doc = spoj.Document
+    if hasattr(spoj, "ObjectToGround"):
+        obj = spoj.ObjectToGround
+        return [{"objekt": obj.Name, "elementi": [], "tocke": []}] if obj is not None else []
+    if not (hasattr(spoj, "Reference1") and hasattr(spoj, "JointType")):
+        return None
+    izid = []
+    for lastnost in ("Reference1", "Reference2"):
+        try:
+            obj, poti = getattr(spoj, lastnost) or (None, [])
+        except Exception:  # noqa: BLE001
+            obj, poti = None, []
+        if obj is None or not poti:
+            continue
+        kljuc = (doc.Name, obj.Name, tuple(poti))
+        try:
+            kljuc_oblike = _kljuc_oblike(obj)
+        except Exception:  # noqa: BLE001
+            kljuc_oblike = None
+        vnos = _REFERENCE_SPOJEV.get(kljuc)
+        if vnos is not None and vnos[0] == kljuc_oblike:
+            izid.append(dict(vnos[1], objekt=obj.Name))
+            continue
+        elementi, tocke = [], []
+        try:
+            oblika = obj.Shape
+            globalna = obj.getGlobalPlacement() if hasattr(obj, "getGlobalPlacement") else oblika.Placement
+            premik = globalna.multiply(oblika.Placement.inverse())
+            for pot in dict.fromkeys(poti):   # element in oglišče sta lahko isti podpoti
+                el = obj.getSubObject(pot)
+                if el is None or el.isNull():
+                    continue
+                if el.ShapeType == "Vertex":
+                    tocke.append(list(_z3(premik.multVec(el.Point))))
+                    continue
+                ime = _element_v_obliki(oblika, el)
+                if ime and ime not in elementi:
+                    elementi.append(ime)
+        except Exception as e:  # noqa: BLE001
+            App.Console.PrintWarning(f"splet: reference spoja {spoj.Name}: {e}\n")
+        podatki = {"elementi": elementi, "tocke": tocke}
+        _REFERENCE_SPOJEV[kljuc] = (kljuc_oblike, podatki)
+        izid.append(dict(podatki, objekt=obj.Name))
+    return izid
 
 
 def _rob_info(rob, pretvori=None):
@@ -560,14 +972,115 @@ def _naslov_okolja(ime, privzeto):
     return privzeto
 
 
+def _vsa_okolja():
+    """Nameščena delovna okolja (ime, privzeti naslov): najprej po DELOVNA_OKOLJA, nato ostala (dodatki)."""
+    namescena = Gui.listWorkbenches()
+    znana = {ime for ime, _ in DELOVNA_OKOLJA}
+    okolja = [(ime, naslov) for ime, naslov in DELOVNA_OKOLJA if ime in namescena]
+    for ime, wb in sorted(namescena.items()):
+        if ime not in znana and ime not in IZPUSCENA_OKOLJA:
+            okolja.append((ime, str(getattr(wb, "MenuText", "") or ime)))
+    return okolja
+
+
+def _okolje_nalozeno(ime):
+    """Okolje je naloženo, ko je bilo vsaj enkrat dejavno: šele takrat nastane C++ okolje (__Workbench__)
+    z orodnimi vrsticami; prej getToolbarItems ne vrne ničesar."""
+    try:
+        return hasattr(Gui.getWorkbench(ime), "__Workbench__")
+    except Exception:  # noqa: BLE001
+        return False
+
+
+def nalozena_okolja():
+    return frozenset(ime for ime, _ in _vsa_okolja() if _okolje_nalozeno(ime))
+
+
+# Ukazi iz menijev okolja (ime okolja -> [(naslov menija, [[ime ukaza, ...], ...])]). Nekateri ukazi so samo v meniju
+# (Inspection nima orodne vrstice), zato dobijo v traku svojo skupino. Menijska vrstica se zgradi ob preklopu okolja,
+# zato se zajame takrat, ko je okolje dejavno (ob zagonu in v preveri_okolje).
+MENIJI_OKOLIJ = {}
+
+
+def _zajemi_menije(ime_okolja):
+    """Zapomni si ukaze iz menijev dejavnega okolja; splošni meniji (Datoteka, Uredi ...) imajo le ukaze Std_."""
+    mw = Gui.getMainWindow()
+    meniji = []
+
+    def zberi(meni, skupine, globina=0):
+        for a in meni.actions():
+            if a.isSeparator() or (a.menu() is not None and globina < 3):
+                if skupine[-1]:
+                    skupine.append([])
+                if a.menu() is not None:
+                    zberi(a.menu(), skupine, globina + 1)
+                    if skupine[-1]:
+                        skupine.append([])
+                continue
+            d = a.data()
+            if isinstance(d, str) and d and not d.startswith("Std_") and Gui.Command.get(d) is not None:
+                if all(d not in s for s in skupine):
+                    skupine[-1].append(d)
+
+    try:
+        for a in mw.menuBar().actions():
+            # Meni Pomoč (Start_Start ...) ni orodje; njegov objectName je »&Help« ne glede na jezik.
+            if a.menu() is None or a.menu().objectName().replace("&", "") == "Help":
+                continue
+            skupine = [[]]
+            zberi(a.menu(), skupine)
+            skupine = [s for s in skupine if s]
+            if skupine:
+                meniji.append((_besedilo(a.text()), skupine))
+    except Exception:  # noqa: BLE001
+        _log("menijev okolja %s ni bilo mogoče prebrati: %s" % (ime_okolja, traceback.format_exc()))
+    MENIJI_OKOLIJ[ime_okolja] = meniji
+
+
+def _orodne_iz_menijev(ime_okolja, orodne, imena_ukazov):
+    """Ukazi iz menijev okolja, ki jih ni na njegovih orodnih vrsticah (tudi ne kot del skupine), kot dodatne
+    orodne vrstice »<meni> (meni)« na koncu traku."""
+    na_orodnih = set()
+    napisi = set()   # podukazi Python skupin (Part_CompJoinFeatures ...) imena ukaza ne nosijo, le napis
+    for o in orodne:
+        for s in o["skupine"]:
+            for u in s:
+                na_orodnih.add(u["ime"])
+                napisi.add(u["naslov"])
+                for p in u["podukazi"]:
+                    napisi.add(p["naslov"])
+    dodatne = []
+    for naslov, skupine_imen in MENIJI_OKOLIJ.get(ime_okolja, []):
+        skupine = []
+        for s in skupine_imen:
+            ukazi = []
+            for ime_ukaza in s:
+                if ime_ukaza in na_orodnih:
+                    continue
+                u = _ukaz(ime_ukaza, None)
+                if u and u["naslov"] not in napisi:
+                    ukazi.append(u)
+                    na_orodnih.add(ime_ukaza)
+                    napisi.add(u["naslov"])
+                    imena_ukazov.append(ime_ukaza)
+            if ukazi:
+                skupine.append(ukazi)
+        if skupine:
+            dodatne.append({"ime": "meni:" + naslov, "naslov": naslov + " (meni)", "skupine": skupine, "meni": True})
+    return dodatne
+
+
 def zgradi_ukaze():
-    """Seznam ukazov po delovnih okoljih in orodnih vrsticah (skupine ločene z ločili)."""
+    """Seznam ukazov po delovnih okoljih in orodnih vrsticah (skupine ločene z ločili).
+    Nenaložena okolja so v seznamu brez orodnih vrstic (nalozeno: false); naloži jih klik na zavihek."""
     from PySide6 import QtWidgets
     mw = Gui.getMainWindow()
     okolja = []
     imena_ukazov = []
-    for ime, privzeti_naslov in DELOVNA_OKOLJA:
-        if ime not in Gui.listWorkbenches():
+    for ime, privzeti_naslov in _vsa_okolja():
+        if not _okolje_nalozeno(ime):
+            okolja.append({"ime": ime, "naslov": _naslov_okolja(ime, privzeti_naslov), "orodneVrstice": [],
+                           "nalozeno": False, "glavno": ime in GLAVNI_ZAVIHKI})
             continue
         wb = Gui.getWorkbench(ime)
         try:
@@ -603,7 +1116,9 @@ def zgradi_ukaze():
             skupine = [s for s in skupine if s]
             if skupine:
                 orodne.append({"ime": ime_orodne, "naslov": naslov, "skupine": skupine})
-        okolja.append({"ime": ime, "naslov": _naslov_okolja(ime, privzeti_naslov), "orodneVrstice": orodne})
+        orodne += _orodne_iz_menijev(ime, orodne, imena_ukazov)
+        okolja.append({"ime": ime, "naslov": _naslov_okolja(ime, privzeti_naslov), "orodneVrstice": orodne,
+                       "nalozeno": True, "glavno": ime in GLAVNI_ZAVIHKI})
     hitri = []
     for ime_ukaza in HITRI_DOSTOP:
         u = _ukaz(ime_ukaza, None)
@@ -665,12 +1180,13 @@ def _skrij_okno():
 
 
 def _nalozi_okolja():
-    """Aktivira vsa potrebna delovna okolja, da nastanejo njihovi ukazi in orodne vrstice."""
+    """Aktivira začetna delovna okolja, da nastanejo njihovi ukazi in orodne vrstice (ostala ob prvem kliku)."""
     aktivno = Gui.activeWorkbench().name()
     for ime, _ in DELOVNA_OKOLJA:
-        if ime in Gui.listWorkbenches():
+        if ime in ZACETNA_OKOLJA and ime in Gui.listWorkbenches():
             try:
                 Gui.activateWorkbench(ime)
+                _zajemi_menije(ime)
             except Exception:  # noqa: BLE001
                 _log("okolja %s ni bilo mogoče naložiti: %s" % (ime, traceback.format_exc()))
     cilj = "PartDesignWorkbench" if "PartDesignWorkbench" in Gui.listWorkbenches() else aktivno
@@ -1039,6 +1555,21 @@ def _datotecni_obrazec(w):
     }
 
 
+_STEVEC_OKEN = [0]
+
+
+def _kljuc_okna(koren):
+    """Enolična oznaka okna za brskalnik. Naslov Python ovoja (id) se pri naslednjem oknu iste vrste lahko ponovi
+    (npr. dve vprašanji QMessageBox drugo za drugim), zato bi klik, namenjen prvemu, zadel drugega: okno dobi svojo
+    številko kot dinamično lastnost Qt, ki živi s C++ objektom."""
+    n = koren.property("_spletOkno")
+    if not n:
+        _STEVEC_OKEN[0] += 1
+        n = _STEVEC_OKEN[0]
+        koren.setProperty("_spletOkno", n)
+    return "%s:%d" % (_razred(koren), int(n))
+
+
 def _zajemi_obrazec(stanje):
     """Poišče okno, ki čaka na uporabnika, in vrne (json, mapa id -> gradnik) ali (None, {})."""
     from PySide6 import QtWidgets
@@ -1059,7 +1590,7 @@ def _zajemi_obrazec(stanje):
             vrsta = "opravilo"
     if koren is None:
         return None, {}
-    kljuc = "%s:%x" % (_razred(koren), id(koren))
+    kljuc = _kljuc_okna(koren)
     if isinstance(koren, QtWidgets.QFileDialog):
         obr = _datotecni_obrazec(koren)
         obr["kljuc"] = kljuc
@@ -1082,6 +1613,15 @@ def _v_vrsto(w, metoda):
     ne sme teči s Pythonom na skladu: drugače strežniške niti obstanejo)."""
     from PySide6 import QtCore
     QtCore.QMetaObject.invokeMethod(w, metoda, QtCore.Qt.ConnectionType.QueuedConnection)
+
+
+def _obrazec_se_caka(stanje, kljuc):
+    """Okno z oznako `kljuc` je še vedno tisto, ki čaka na uporabnika (zajem obrazca je lahko star do 250 ms)."""
+    from PySide6 import QtWidgets
+    modal = QtWidgets.QApplication.activeModalWidget()
+    if modal is None:
+        return True   # nemodalno okno ali podokno Opravila: zajem ga je našel, modalnega nad njim ni
+    return _veljaven(modal) and _kljuc_okna(modal) == kljuc
 
 
 def _obrazec_dejanje(mapa, podatki):
@@ -1611,7 +2151,11 @@ def _uporabna_slicica(png):
 
     Ozadje je navpični preliv med barvo zgornjih in spodnjih vogalov (FreeCAD-ovo ozadje je preliv); vsebina so
     piksli, ki od njega očitno odstopajo. Prazna slika ima vsebine skoraj nič, odrezana pa jo ima po robu
-    (ali vogali sami niso ozadje, kar prav tako napolni rob). Brez Pillow velja za uporabno."""
+    (ali vogali sami niso ozadje, kar prav tako napolni rob). Brez Pillow velja za uporabno, razen prazne.
+    Prazna ali neberljiva datoteka ni uporabna: FreeCAD iz skritega okna zapiše Thumbnail.png z 0 bajti, ki je
+    prej veljala za sličico, zato stran za take dokumente ni izrisala svoje."""
+    if not png or not png.startswith(b"\x89PNG"):
+        return False
     try:
         from PIL import Image
     except ImportError:
@@ -1635,7 +2179,7 @@ def _uporabna_slicica(png):
         skupaj = sum(1 for x in range(w) for y in range(h) if vsebina(x, y)) / (w * h)
         return 0.005 < skupaj < 0.85 and na_robu < 0.03
     except Exception:  # noqa: BLE001
-        return True
+        return False
 
 
 def _pot_slicice(pot):
@@ -1758,6 +2302,206 @@ def zgradi_projekte():
     return {"odprti": odprti, "skupine": _projekti_v_mapah()}
 
 
+# ---------------------------------------------------------------- knjižnica standardnih delov (gumb Knjižnica)
+# GET /knjiznica: kosi iz baze po kategorijah (samo datotečni dostop, nit strežnika); POST /knjiznica {dejanje: vstavi,
+# pot}: glavna nit kos odpre in ga kot povezavo (App::Link / Assembly::AssemblyLink) doda v sestav aktivnega dokumenta.
+MAPE_BAZE_IZPUSCENE = ("DXF",)
+
+
+def zgradi_knjiznico():
+    kategorije = []
+    if not os.path.isdir(MAPA_BAZE):
+        return {"baza": _pot(MAPA_BAZE), "kategorije": [], "napaka": "Mape baze ni: %s" % MAPA_BAZE}
+    for koren, podmape, imena in os.walk(MAPA_BAZE):
+        podmape[:] = sorted((d for d in podmape if not d.startswith((".", "_")) and d not in MAPE_BAZE_IZPUSCENE), key=str.lower)
+        kosi = []
+        for ime in sorted(imena, key=str.lower):
+            if ime.lower().endswith(".fcstd"):
+                d = _datoteka_projekta(os.path.join(koren, ime))
+                if d is not None:
+                    kosi.append(d)
+        if kosi:
+            rel = os.path.relpath(koren, MAPA_BAZE).replace("\\", "/")
+            kategorije.append({"ime": "" if rel == "." else rel, "kosi": kosi})
+    return {"baza": _pot(MAPA_BAZE), "kategorije": kategorije}
+
+
+def _knjiznica_dejanje(stanje, podatki):
+    dejanje = podatki.get("dejanje", "")
+    pot = podatki.get("pot", "")
+    if not _v_bazi(pot) or not os.path.isfile(pot):
+        return {"ok": False, "sporocilo": "Kosa ni v bazi: %s" % pot}
+    if dejanje == "odpri":
+        _projekt_dejanje(stanje, {"dejanje": "odpri", "pot": pot})
+        return {"ok": True, "sporocilo": "Odprt: %s" % os.path.splitext(os.path.basename(pot))[0]}
+    if dejanje != "vstavi":
+        return {"ok": False, "sporocilo": "Neznano dejanje: %s" % dejanje}
+    # Ciljni dokument je tisti, ki ga brskalnik kaže kot aktivnega (ime v zahtevi), ne App.ActiveDocument: drugo sejo
+    # ali skripto, ki medtem preklopi dokument, kos ne sme zadeti.
+    ime_doc = podatki.get("dokument", "")   # ime ali oznaka (posnetek /model nosi oznako)
+    cilj_doc = App.getDocument(ime_doc) if ime_doc in App.listDocuments() else next(
+        (d for d in App.listDocuments().values() if d.Label == ime_doc), None)
+    if cilj_doc is None:
+        return {"ok": False, "sporocilo": "Dokument »%s« ni odprt: odpri sestav, v katerega naj gre kos." % (ime_doc or "?")}
+    if not cilj_doc.FileName:
+        return {"ok": False, "sporocilo": "Aktivni dokument »%s« še ni shranjen; povezava na kos iz baze zahteva shranjen sestav." % cilj_doc.Label}
+    if _ista_pot(cilj_doc.FileName, pot):
+        return {"ok": False, "sporocilo": "Kos ne more vsebovati samega sebe."}
+    asm = next((o for o in cilj_doc.Objects if o.TypeId == "Assembly::AssemblyObject"), None)
+    doc = next((d for d in App.listDocuments().values() if _ista_pot(d.FileName, pot)), None)
+    if doc is None:
+        _log("knjižnica: odpiram %s" % pot)
+        doc = App.openDocument(pot, True)
+    if getattr(doc, "Partial", False):
+        doc.restore()
+    kos = _tarca_baze(doc)
+    if kos is None:
+        return {"ok": False, "sporocilo": "»%s« nima glavnega objekta (dela ali sestava)." % doc.Label}
+    tip = "Assembly::AssemblyLink" if (asm is not None and kos.TypeId == "Assembly::AssemblyObject") else "App::Link"
+    ime = "".join(c if c.isalnum() else "_" for c in kos.Label)[:48] or "Kos"   # newObject z ne-ASCII imenom pade (#12164)
+    povezava = asm.newObject(tip, ime) if asm is not None else cilj_doc.addObject(tip, ime)
+    povezava.LinkedObject = kos
+    povezava.Label = kos.Label
+    cilj_doc.recompute()
+    App.setActiveDocument(cilj_doc.Name)
+    if IMA_OKNO:
+        try:
+            Gui.Selection.clearSelection()
+            Gui.Selection.addSelection(cilj_doc.Name, povezava.Name)
+        except Exception as e:  # noqa: BLE001
+            _log("knjižnica: izbira: %r" % e)
+    kam = ("v sestav »%s«" % asm.Label) if asm is not None else ("v dokument »%s«" % cilj_doc.Label)
+    _log("knjižnica: vstavljen %s %s" % (kos.Label, kam))
+    return {"ok": True, "sporocilo": "»%s« vstavljen %s." % (kos.Label, kam), "ime": povezava.Name}
+
+
+def _kosi_za_tisk(doc, imena, napake):
+    """Kosi za tisk iz objektov `imena`: (objekt, oznaka, oblika, premik). Objekt z več telesi da več kosov (_1, _2 ...).
+    Oblika je v koordinatah, kot gre v STEP (Part.getShape); `premik` jo prestavi v globalno lego posnetka (kot _geometrija),
+    da se smer iz analize lege ujema s 3D pogledom v brskalniku."""
+    import Part
+    for ime in imena:
+        obj = doc.getObject(ime)
+        if obj is None:
+            napake.append("%s: ni v dokumentu" % ime)
+            continue
+        try:
+            oblika = Part.getShape(obj)
+        except Exception as e:  # noqa: BLE001
+            napake.append("%s: %s" % (obj.Label, e))
+            continue
+        if oblika is None or oblika.isNull():
+            napake.append("%s: brez oblike" % obj.Label)
+            continue
+        try:
+            premik = obj.getGlobalPlacement().multiply(oblika.Placement.inverse())
+        except Exception:  # noqa: BLE001
+            premik = App.Placement()
+        telesa = oblika.Solids
+        if len(telesa) <= 1:
+            yield obj, obj.Label, oblika, premik
+        else:
+            for i, t in enumerate(telesa):
+                yield obj, "%s_%d" % (obj.Label, i + 1), t, premik
+
+
+def _tisk_mreze(podatki):
+    """Glavna nit: trikotniške mreže kosov za analizo lege (tisk_lega.py računa na niti strežnika). Mreža je v
+    koordinatah STEP-a za tisk; `v_pogled` (3x3 po vrsticah) prestavi smer v globalne koordinate pogleda."""
+    ime_doc = podatki.get("dokument", "")
+    doc = App.getDocument(ime_doc) if ime_doc in App.listDocuments() else next(
+        (d for d in App.listDocuments().values() if d.Label == ime_doc), None)
+    if doc is None:
+        return {"ok": False, "sporocilo": "Dokument »%s« ni odprt." % (ime_doc or "?")}
+    imena = [i for i in (podatki.get("imena") or []) if isinstance(i, str)]
+    napake, kosi = [], []
+    for obj, oznaka, kos, premik in _kosi_za_tisk(doc, imena, napake):
+        bb = kos.BoundBox
+        toleranca = max(0.05, bb.DiagonalLength * 0.0015)
+        try:
+            v, t = kos.tessellate(toleranca)
+            while len(t) > 400_000 and toleranca < bb.DiagonalLength * 0.05:
+                toleranca *= 2
+                v, t = kos.tessellate(toleranca, True)
+        except Exception as e:  # noqa: BLE001
+            napake.append("%s: mreža: %s" % (oznaka, e))
+            continue
+        if not t:
+            napake.append("%s: brez ploskev" % oznaka)
+            continue
+        m = premik.Rotation.toMatrix()
+        kosi.append({"ime": obj.Name, "oznaka": oznaka, "datoteka": _ime_datoteke_tiska(oznaka) + ".step",
+                     "tocke": [c for p in v for c in (p.x, p.y, p.z)], "trikotniki": [i for tr in t for i in tr],
+                     "v_pogled": [m.A11, m.A12, m.A13, m.A21, m.A22, m.A23, m.A31, m.A32, m.A33]})
+    return {"ok": bool(kosi), "kosi": kosi, "napake": napake,
+            "sporocilo": "" if kosi else "Ni kosov z geometrijo" + (": " + "; ".join(napake) if napake else ".")}
+
+
+def tisk_lega_kosov(mreze, kot_previsa):
+    """Nit strežnika: analiza lege vsakega kosa (tisk_lega.analiziraj); smer gor doda še v koordinatah pogleda."""
+    import tisk_lega
+    kosi = []
+    for k in mreze["kosi"]:
+        t0 = time.time()
+        r = tisk_lega.analiziraj(k["tocke"], k["trikotniki"], kot_previsa)
+        M = k["v_pogled"]
+        for kand in r.get("kandidati", []) + ([r["kot_je"]] if r.get("kot_je") else []):
+            g = kand["gor"]
+            kand["gor_pogled"] = [round(M[3 * i] * g[0] + M[3 * i + 1] * g[1] + M[3 * i + 2] * g[2], 6) for i in range(3)]
+        _log("lega za tisk: %s, %d trikotnikov, %d smeri, %.1f s" % (k["oznaka"], r.get("trikotnikov", 0), r.get("smeri", 0),
+                                                                    time.time() - t0))
+        kosi.append({"ime": k["ime"], "oznaka": k["oznaka"], "datoteka": k["datoteka"], **r})
+    return {"ok": bool(kosi), "kosi": kosi, "napake": mreze.get("napake", []), "kot_previsa": kot_previsa}
+
+
+def _tiskaj_natisni(stanje, podatki):
+    """»Natisni« iz drevesa (glavna nit): objekte (`imena` = kosi z geometrijo pod vozlom, kot jih riše stran) izvozi kot
+    STEP v vhodno mapo plošče Tiskaj (`mapa` določi nit strežnika); objekt z več telesi gre v več datotek (_1, _2 ...),
+    ime datoteke je oznaka kosa, obstoječa datoteka z istim imenom je nova različica. Orientacijo, polnilo in tiskalnik
+    uporabnik potrdi v oknu Pripravi plošče (zavihek Tiskanje); lego iz analize (tisk_lega.py) stran pošlje plošči
+    kot začetni zasuk."""
+    ime_doc = podatki.get("dokument", "")
+    doc = App.getDocument(ime_doc) if ime_doc in App.listDocuments() else next(
+        (d for d in App.listDocuments().values() if d.Label == ime_doc), None)
+    if doc is None:
+        return {"ok": False, "sporocilo": "Dokument »%s« ni odprt." % (ime_doc or "?")}
+    imena = [i for i in (podatki.get("imena") or []) if isinstance(i, str)]
+    if not imena and podatki.get("ime"):
+        imena = [str(podatki["ime"])]
+    mapa = str(podatki.get("mapa") or "")
+    if not mapa:
+        return {"ok": False, "sporocilo": "Vhodna mapa plošče Tiskaj ni znana (3D print/tiskaj/config.json, vhod_mapa)."}
+    try:
+        os.makedirs(mapa, exist_ok=True)
+    except OSError as e:
+        return {"ok": False, "sporocilo": "Vhodne mape %s ni mogoče ustvariti: %s" % (mapa, e)}
+    datoteke, napake = [], []
+    for _obj, oznaka, kos, _ in _kosi_za_tisk(doc, imena, napake):
+        ime_dat = _ime_datoteke_tiska(oznaka) + ".step"
+        pot = os.path.join(mapa, ime_dat)
+        zacasna = pot + ".delno"      # plošča bere le .step/.stp/.stl: pol zapisane datoteke ne vidi
+        try:
+            kos.exportStep(zacasna)
+            os.replace(zacasna, pot)
+        except Exception as e:  # noqa: BLE001
+            napake.append("%s: izvoz ni uspel: %s" % (oznaka, e))
+            try:
+                os.remove(zacasna)
+            except OSError:
+                pass
+            continue
+        datoteke.append(ime_dat)
+    _log("tiskaj: izvoz za tisk iz »%s«: %s%s" % (doc.Label, ", ".join(datoteke) or "nič",
+                                                    ("; napake: " + "; ".join(napake)) if napake else ""))
+    if not datoteke:
+        return {"ok": False, "sporocilo": "Za tisk ni bilo kaj izvoziti" + (": " + "; ".join(napake) if napake else "."),
+                "napake": napake}
+    sporocilo = ("Za tisk izvožen »%s«" % datoteke[0][:-5]) if len(datoteke) == 1 else ("Za tisk izvoženih %d kosov" % len(datoteke))
+    if napake:
+        sporocilo += " (brez: " + "; ".join(napake) + ")"
+    return {"ok": True, "datoteke": datoteke, "mapa": mapa, "napake": napake, "sporocilo": sporocilo + "."}
+
+
 def _projekt_dejanje(stanje, podatki):
     dejanje = podatki.get("dejanje", "")
     if dejanje == "odpri":
@@ -1866,10 +2610,14 @@ class Stanje:
         self.obrazec = None                # JSON obrazca, ki je trenutno v brskalniku (ali None)
         self.obrazec_mapa = {}             # id -> (gradnik, dodatno) zadnjega zajema
         self.zadnji_obrazec = 0.0
+        self.zadnji_klik_obrazca = (None, 0.0)   # (kljuc, id, dejanje), čas: ponovljen klik se zavrne
         self._projekti = b'{"odprti":[],"skupine":[]}'
         self.zadnji_projekti = 0.0
         self.za_vidnost = set()      # imena novo odprtih dokumentov, ki jim je treba po obnovi preveriti vidnost
         self.za_dvojnike = 0.0       # čas zadnjega novega dokumenta; ko se odpiranje umiri, se zaprejo dvojniki
+        self.zadnja_zahteva = time.time()   # zadnja zahteva iz brskalnika (ogrevanje teče le v mirovanju)
+        self.ogrevanje = None        # naloge ogrevanja predpomnilnika (generator) ali None, ko je vse pripravljeno
+        self.ogrevanje_odtis = None  # imena odprtih dokumentov, za katera je bilo ogrevanje zastavljeno
 
     def skrivaj_okna(self):
         """Ali naj nova okna FreeCAD-a ostanejo nevidna (vse se dela v brskalniku)."""
@@ -1929,6 +2677,8 @@ class Stanje:
                     ukaz, podatki, odgovor = self.vrsta_ozadje.get_nowait()
                 except queue.Empty:
                     break
+            else:
+                self.zadnja_zahteva = time.time()
             try:
                 self._izvedi(ukaz, podatki, odgovor)
             except Exception:  # noqa: BLE001
@@ -1975,6 +2725,70 @@ class Stanje:
                 self.preveri_okolje()
             except Exception:  # noqa: BLE001
                 self.napaka = traceback.format_exc()
+        if not self.umazano and time.time() - self.zadnja_zahteva > MIROVANJE_OGREVANJA:
+            try:
+                self.ogrej()
+            except Exception:  # noqa: BLE001
+                self.ogrevanje = None
+                _log("ogrevanje: %s" % traceback.format_exc())
+
+    def ogrej(self):
+        """Posnetke objektov odprtih dokumentov zgradi vnaprej, ko brskalnik miruje. Prvi preklop na še ne pregledan
+        sestav je sicer čakal na mreženje (Slim A ~1 min, Slim spredaj A 12 s), ponovni traja le še sekundo. Na obhod
+        največ en objekt, ki ga je treba mrežiti (do nekaj sekund): klik v brskalniku počaka le nanj."""
+        if self.skica or self.obrazec is not None or not self.odjemalci:
+            return
+        dokumenti = App.listDocuments()
+        odtis = tuple(sorted(dokumenti))
+        if odtis != self.ogrevanje_odtis:
+            self.ogrevanje_odtis = odtis
+            self.ogrevanje = self._naloge_ogrevanja()
+        if self.ogrevanje is None:
+            return
+        if any(getattr(d, "Restoring", False) for d in dokumenti.values()):
+            return
+        if IMA_OKNO:
+            from PySide6 import QtWidgets
+            if QtWidgets.QApplication.activeModalWidget() is not None:
+                return
+        konec = time.time() + 0.05
+        while time.time() < konec:
+            try:
+                naloga = next(self.ogrevanje)
+            except StopIteration:
+                self.ogrevanje = None
+                _log("ogrevanje: posnetki vseh odprtih dokumentov so pripravljeni")
+                return
+            if naloga():   # zahtevno delo (mreženje, prostornina): naslednje šele v naslednjem obhodu
+                return
+
+    def _naloge_ogrevanja(self):
+        """Naloge ogrevanja po dokumentih: sestavi pred deli (te uporabnik odpira največ), za objekti dokumenta še
+        drevo (prostornine teles). Vsaka naloga dokument in objekt poišče znova, ker se je vmes lahko zaprl."""
+        def je_sestav(d):
+            return any(o.TypeId.startswith("Assembly::") for o in d.Objects)
+
+        def objekt(ime_dok, ime_obj):
+            doc = App.listDocuments().get(ime_dok)
+            obj = doc.getObject(ime_obj) if doc is not None else None
+            if obj is None:
+                return False
+            return not _geometrija_predpomnjena(doc, obj)[1]
+
+        def drevo(ime_dok):
+            doc = App.listDocuments().get(ime_dok)
+            if doc is not None:
+                drevo_dokumenta(doc, None, _kljuc_oblike)
+            return True
+
+        for doc in sorted(App.listDocuments().values(), key=lambda d: not je_sestav(d)):
+            ime_dok = doc.Name
+            doc = App.listDocuments().get(ime_dok)
+            if doc is None or getattr(doc, "Partial", False):
+                continue
+            for obj in list(_vidni_objekti(doc)):
+                yield lambda d=ime_dok, o=obj.Name: objekt(d, o)
+            yield lambda d=ime_dok: drevo(d)
 
     def zgradi(self):
         zacetek = time.time()
@@ -1990,7 +2804,7 @@ class Stanje:
                 except Exception:  # noqa: BLE001
                     _log("objekt %s preskočen: %s" % (obj.Name, traceback.format_exc()))
         try:
-            drevo = drevo_dokumenta(doc, _ikona_uri)
+            drevo = drevo_dokumenta(doc, _ikona_uri, _kljuc_oblike)
         except Exception:  # noqa: BLE001
             drevo = {"koreni": [], "vozli": {}}
             _log("drevo dokumenta: %s" % traceback.format_exc())
@@ -2005,6 +2819,7 @@ class Stanje:
              % (self.verzija, len(objekti), zadetki, len(self._posnetek) / 1024.0, time.time() - zacetek))
 
     def zgradi_ukaze(self):
+        self.nalozena = nalozena_okolja()
         podatki, self.imena_ukazov = zgradi_ukaze()
         self._ukazi = json.dumps(podatki, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
         self.aktivni = {}
@@ -2076,6 +2891,16 @@ class Stanje:
         if okolje != self.okolje:
             self.okolje = okolje
             self.oddaj("okolje", okolje)
+        # Novo naloženo okolje (klik na zavihek ali preklop v FreeCAD-u) ali okolje, katerega menijev še nismo
+        # prebrali: ukazi znova, brskalnik jih prebere ob dogodku.
+        prej = getattr(self, "nalozena", None)   # None: ukazi še niso zgrajeni (zagon)
+        dejavno = okolje["delovnaMiza"]
+        novi_meniji = dejavno not in MENIJI_OKOLIJ and dejavno not in IZPUSCENA_OKOLJA
+        if prej is not None and (nalozena_okolja() != prej or novi_meniji):
+            if novi_meniji:
+                _zajemi_menije(dejavno)
+            self.zgradi_ukaze()
+            self.oddaj("ukazi", {})
 
     def preveri_vidnost(self):
         """Novo odprtim dokumentom (ko obnova konča) vrne vidnost iz datoteke, če ta nima GuiDocument.xml."""
@@ -2144,11 +2969,23 @@ class Stanje:
             return
         izbira = []
         for s in Gui.Selection.getSelectionEx():
-            izbira.append({"objekt": s.ObjectName, "elementi": list(s.SubElementNames)})
+            vnos = {"objekt": s.ObjectName, "elementi": list(s.SubElementNames)}
+            # izbran spoj (mate): brskalnik obarva ploskve, ki jih povezuje, na obeh kosih (kot SolidWorks)
+            try:
+                reference = _reference_spoja(s.Object) if not s.SubElementNames else None
+            except Exception:  # noqa: BLE001
+                reference = None
+            if reference:
+                vnos["spoj"] = reference
+            izbira.append(vnos)
         self.izbira = izbira
         self.oddaj("izbira", izbira)
 
     def _izvedi(self, ukaz, podatki, odgovor=None):
+        if ukaz == "mcp":
+            # orodje MCP (mcp_orodja.py), ki potrebuje FreeCAD API: funkcija iz niti strežnika teče tukaj
+            mcp_orodja.glavna(self, podatki, odgovor)
+            return
         if ukaz == "izbira":
             if not IMA_OKNO:
                 return
@@ -2277,6 +3114,18 @@ class Stanje:
             _projekt_dejanje(self, podatki)
         elif ukaz == "drevo":
             drevo_dejanje(self, podatki)
+        elif ukaz == "knjiznica":
+            rezultat = _knjiznica_dejanje(self, podatki)
+            if odgovor is not None:
+                odgovor["rezultat"] = rezultat
+        elif ukaz == "tiskaj":
+            rezultat = _tiskaj_natisni(self, podatki)
+            if odgovor is not None:
+                odgovor["rezultat"] = rezultat
+        elif ukaz == "tisk_mreze":
+            rezultat = _tisk_mreze(podatki)
+            if odgovor is not None:
+                odgovor["rezultat"] = rezultat
         elif ukaz == "standardni":
             # Baza standardnih delov (baza.py): označi kos kot standardni -> premik v bazo, preusmeritev sestavov.
             rezultat = baza_dejanje(self, podatki)
@@ -2289,9 +3138,26 @@ class Stanje:
             _log("standardni: %s" % rezultat.get("sporocilo", ""))
             if odgovor is not None:
                 odgovor["rezultat"] = rezultat
+        elif ukaz == "videz":
+            rezultat = _videz_dejanje(podatki)
+            self.umazano = True
+            if odgovor is not None:
+                odgovor["rezultat"] = rezultat
         elif ukaz == "obrazec":
             if IMA_OKNO and self.obrazec is not None and podatki.get("kljuc") == self.obrazec.get("kljuc"):
-                _obrazec_dejanje(self.obrazec_mapa, podatki)
+                # Ponovljen klik na isti gumb istega okna (dvojni klik, dva zavihka) se ne izvede: klik gre v Qt-jevo
+                # vrsto mimo modalnosti, zato bi drugi zadel okno, ki ga je prvi že blokiral z novim vprašanjem
+                # (9. 10. 2026: »Počisti« v Obnovitvi dokumentov je odprl obnovo). Okno mora biti še tisto, ki čaka.
+                zdaj = time.monotonic()
+                odtis = (podatki.get("kljuc"), podatki.get("id"), podatki.get("dejanje"))
+                if podatki.get("dejanje") == "klik" and odtis == self.zadnji_klik_obrazca[0]                         and zdaj - self.zadnji_klik_obrazca[1] < 1.5:
+                    _log("obrazec: ponovljen klik %s zavrnjen" % (odtis,))
+                elif _obrazec_se_caka(self, podatki.get("kljuc")):
+                    if podatki.get("dejanje") == "klik":
+                        self.zadnji_klik_obrazca = (odtis, zdaj)
+                    _obrazec_dejanje(self.obrazec_mapa, podatki)
+                else:
+                    _log("obrazec: okno %s ne čaka več, dejanje zavrnjeno" % podatki.get("kljuc"))
                 self.zadnji_obrazec = 0.0  # novo stanje obrazca takoj nazaj v brskalnik
         elif ukaz == "zgradba":
             doc = App.listDocuments().get(podatki.get("ime", "")) or App.ActiveDocument
@@ -2326,6 +3192,7 @@ class Stanje:
 
 STANJE = Stanje()
 OBLAK = Oblak(_log, STANJE.vrsta, STANJE.oddaj)   # različice datotek iz lastnega oblaka (PDM)
+mcp_orodja.povezi(sys.modules[__name__])          # orodja MCP: modul strežnika, dnevnik, zapis kataloga za most
 
 
 # ---------------------------------------------------------------------------
@@ -2441,6 +3308,8 @@ class Zahteva(http.server.BaseHTTPRequestHandler):
         p = json.loads(STANJE.projekti())
         znane = [d["pot"] for d in p.get("odprti", [])] + [d["pot"] for d in p.get("nedavne", [])]
         znane += [d["pot"] for sk in p.get("skupine", []) for d in sk["datoteke"]]
+        if _v_bazi(pot) and os.path.isfile(pot):   # kosi iz knjižnice standardnih delov
+            return True
         return any(_ista_pot(pot, z) for z in znane)
 
     def _odgovor(self, telo, vrsta="application/json; charset=utf-8", koda=200, predpomni=False):
@@ -2507,6 +3376,8 @@ class Zahteva(http.server.BaseHTTPRequestHandler):
             self._odgovor(STANJE.ukazi())
         elif pot == "/projekti":
             self._odgovor(STANJE.projekti())
+        elif pot == "/knjiznica":
+            self._odgovor(json.dumps(zgradi_knjiznico(), ensure_ascii=False).encode("utf-8"))
         elif pot.startswith("/oblak/"):
             # Različice iz oblaka (oblak.py): klici v oblak tečejo tu, na niti strežnika.
             import urllib.parse
@@ -2515,6 +3386,47 @@ class Zahteva(http.server.BaseHTTPRequestHandler):
             self._odgovor(json.dumps(telo, ensure_ascii=False).encode("utf-8"), koda=koda)
         elif pot == "/stanje":
             self._odgovor(json.dumps(STANJE.stanje(), ensure_ascii=False).encode("utf-8"))
+        elif pot == "/mcp/orodja":
+            # katalog orodij za AI (most lastno/mcp/freecad_mcp.py): orodja, viri, predloge, navodila
+            self._odgovor(json.dumps(mcp_orodja.katalog(), ensure_ascii=False).encode("utf-8"))
+        elif pot in ("/pomocnik", "/pomocnik/slika"):
+            # pomočnik AI (pomocnik.py): stanje in koraki pogovora od N, slike orodij
+            import urllib.parse
+            q = {k: v[0] for k, v in urllib.parse.parse_qs(self.path.partition("?")[2]).items()}
+            koda, vrsta, telo = pomocnik.zahteva_get(sys.modules[__name__], pot, q)
+            self._odgovor(telo, vrsta, koda)
+        elif pot == "/mcp/vir":
+            import urllib.parse
+            uri = (urllib.parse.parse_qs(self.path.partition("?")[2]).get("uri") or [""])[0]
+            try:
+                vir = mcp_orodja.vir(uri)
+            except Exception as e:  # noqa: BLE001
+                vir = {"uri": uri, "mimeType": "text/plain", "text": "Vir ni na voljo: %s" % e}
+            self._odgovor(json.dumps(vir, ensure_ascii=False).encode("utf-8"), koda=200 if vir else 404)
+        elif pot == "/tiskaj/stanje":
+            # Plošča Tiskaj (nit strežnika, pomnjeno 2 s): za čipe tiskalnikov v vrstici stanja in zavihek Tiskanje.
+            self._odgovor(json.dumps(tiskaj_stanje(), ensure_ascii=False).encode("utf-8"))
+        elif pot == "/oblikovanje/stanje":
+            self._odgovor(json.dumps(oblikovanje_stanje(), ensure_ascii=False).encode("utf-8"))
+        elif pot == "/oblikovanje/render-plosca.js":
+            with open(os.path.join(MAPA_OBLIKOVANJA, "render-plosca.js"), "rb") as f:
+                self._odgovor(f.read(), "text/javascript; charset=utf-8")
+        elif pot in ("/render/stanje", "/render/slika", "/render/seznam"):
+            # Render (upodabljanje.py): stanje naloge, končna slika ali video, seznam renderjev te seje.
+            import urllib.parse
+            nid = (urllib.parse.parse_qs(self.path.partition("?")[2]).get("id") or [""])[0]
+            if pot == "/render/seznam":
+                self._odgovor(json.dumps(UPODABLJANJE.seznam(), ensure_ascii=False).encode("utf-8"))
+            elif pot == "/render/stanje":
+                s = UPODABLJANJE.stanje(nid)
+                self._odgovor(json.dumps(s or {"napaka": "ni naloge"}, ensure_ascii=False).encode("utf-8"), koda=200 if s else 404)
+            else:
+                datoteka = UPODABLJANJE.datoteka(nid)
+                if not datoteka or not os.path.isfile(datoteka):
+                    self._odgovor(b"", "text/plain", 404)
+                else:
+                    with open(datoteka, "rb") as f:
+                        self._odgovor(f.read(), "video/mp4" if datoteka.endswith(".mp4") else "image/png")
         elif pot == "/events":
             self._sse()
         else:
@@ -2535,6 +3447,84 @@ class Zahteva(http.server.BaseHTTPRequestHandler):
         poti = {"/select": "izbira", "/ukaz": "ukaz", "/okolje": "okolje", "/okno": "okno",
                 "/izhod": "izhod", "/skica": "skica", "/znacilnost": "znacilnost", "/obrazec": "obrazec",
                 "/projekt": "projekt", "/drevo": "drevo"}
+        if pot == "/mcp/orodje":
+            # orodje za AI: teče na tej niti ali (FreeCAD API) prek vrste na glavni niti; odgovor {ok, vsebina, katalog}
+            self._odgovor(mcp_orodja.izvedi(podatki.get("ime", ""), podatki.get("argumenti") or {},
+                                            self.headers.get("X-Seja") or ""))
+            return
+        if pot == "/pomocnik":
+            # pomočnik AI: poslji (besedilo, nastavitve) | potrdi (id, odobri) | ustavi | nov; zanka teče v svoji niti
+            telo = pomocnik.zahteva_post(sys.modules[__name__], podatki)
+            self._odgovor(json.dumps(telo, ensure_ascii=False).encode("utf-8"))
+            return
+        if pot == "/mcp/odgovor":
+            # stran v brskalniku odgovarja na zahtevo orodja (slika pogleda, kamera, okno Pripravi)
+            self._odgovor(json.dumps({"ok": mcp_orodja.brskalnik_odgovor(podatki)}).encode("utf-8"))
+            return
+        if pot == "/tiskaj/natisni":
+            # Natisni iz drevesa: glavna nit izvozi STEP v vhodno mapo plošče (mapo določi tukaj nit strežnika, da glavna
+            # nit ne čaka na omrežje), nato plošča dobi oznako, da pripravo vodi uporabnik (sicer bi datoteko narezala sama).
+            podatki["mapa"] = _tiskaj_vhod_mapa()
+            odgovor = {"konec": threading.Event(), "izpis": "", "napaka": "", "rezultat": None}
+            STANJE.vrsta.put(("tiskaj", podatki, odgovor))
+            if not odgovor["konec"].wait(120):
+                telo = {"ok": False, "sporocilo": "FreeCAD še dela; poglej čez nekaj časa."}
+            elif odgovor["napaka"]:
+                telo = {"ok": False, "sporocilo": "Napaka v FreeCAD-u: " + odgovor["napaka"].strip().splitlines()[-1]}
+            else:
+                telo = odgovor["rezultat"] or {"ok": False, "sporocilo": "Brez odgovora."}
+            if telo.get("ok") and telo.get("datoteke"):
+                telo["plosca"] = _tiskaj_oznaci_rocno(list(telo["datoteke"]))
+            self._odgovor(json.dumps(telo, ensure_ascii=False).encode("utf-8"))
+            return
+        if pot == "/tisk/lega":
+            # Lega za tisk (tisk_lega.py): glavna nit le zmreži kose, iskanje orientacije (numpy) teče tu, na niti strežnika.
+            odgovor = {"konec": threading.Event(), "izpis": "", "napaka": "", "rezultat": None}
+            STANJE.vrsta.put(("tisk_mreze", podatki, odgovor))
+            if not odgovor["konec"].wait(120):
+                telo = {"ok": False, "sporocilo": "FreeCAD še dela; poglej čez nekaj časa."}
+            elif odgovor["napaka"]:
+                telo = {"ok": False, "sporocilo": "Napaka v FreeCAD-u: " + odgovor["napaka"].strip().splitlines()[-1]}
+            elif not (odgovor["rezultat"] or {}).get("ok"):
+                telo = odgovor["rezultat"] or {"ok": False, "sporocilo": "Brez odgovora."}
+            else:
+                try:
+                    kot = min(max(float(podatki.get("kot_previsa") or 45), 20.0), 70.0)
+                    telo = tisk_lega_kosov(odgovor["rezultat"], kot)
+                except Exception:  # noqa: BLE001
+                    _log("lega za tisk: %s" % traceback.format_exc())
+                    telo = {"ok": False, "sporocilo": "Analiza lege ni uspela: " + traceback.format_exc().strip().splitlines()[-1]}
+            self._odgovor(json.dumps(telo, ensure_ascii=False).encode("utf-8"))
+            return
+        if pot == "/render":
+            self._odgovor(json.dumps(render_modela(podatki), ensure_ascii=False).encode("utf-8"))
+            return
+        if pot == "/render/ustavi":
+            self._odgovor(json.dumps({"ok": UPODABLJANJE.ustavi(podatki.get("id", ""))}).encode("utf-8"))
+            return
+        if pot == "/oblikovanje/zazeni":
+            ok, sporocilo = oblikovanje_zazeni()
+            self._odgovor(json.dumps({"ok": ok, "sporocilo": sporocilo}, ensure_ascii=False).encode("utf-8"))
+            return
+        if pot == "/tiskaj/datoteka":
+            self._odgovor(json.dumps(tiskaj_datoteka(podatki.get("pot", "")), ensure_ascii=False).encode("utf-8"))
+            return
+        if pot == "/tiskaj/zazeni":
+            ok, sporocilo = tiskaj_zazeni()
+            self._odgovor(json.dumps({"ok": ok, "sporocilo": sporocilo}, ensure_ascii=False).encode("utf-8"))
+            return
+        if pot == "/videz":
+            # Videz kosov (videz.py): seznam prednastavitev, nastavitev kosu, pločevina vsem kosom iz pločevine.
+            odgovor = {"konec": threading.Event(), "izpis": "", "napaka": "", "rezultat": None}
+            STANJE.vrsta.put(("videz", podatki, odgovor))
+            if not odgovor["konec"].wait(120):
+                telo = {"ok": False, "sporocilo": "FreeCAD še dela; poglej čez nekaj časa."}
+            elif odgovor["napaka"]:
+                telo = {"ok": False, "sporocilo": "Napaka v FreeCAD-u: " + odgovor["napaka"].strip().splitlines()[-1]}
+            else:
+                telo = odgovor["rezultat"]
+            self._odgovor(json.dumps(telo, ensure_ascii=False).encode("utf-8"))
+            return
         if pot == "/slicica":
             # Render modela iz strani (PNG kot data URL) za datoteko dokumenta; shrani se v niti strežnika (samo datoteke).
             import base64
@@ -2568,6 +3558,17 @@ class Zahteva(http.server.BaseHTTPRequestHandler):
         elif pot.startswith("/oblak/"):
             koda, telo = oblak_zahteva(OBLAK, "POST", pot, podatki)
             self._odgovor(json.dumps(telo, ensure_ascii=False).encode("utf-8"), koda=koda)
+        elif pot == "/knjiznica":
+            # Knjižnica standardnih delov: glavna nit odpre kos in ga vstavi v aktivni sestav; brskalnik počaka.
+            odgovor = {"konec": threading.Event(), "izpis": "", "napaka": "", "rezultat": None}
+            STANJE.vrsta.put(("knjiznica", podatki, odgovor))
+            if not odgovor["konec"].wait(120):
+                telo = {"ok": False, "sporocilo": "FreeCAD še dela; poglej čez nekaj časa."}
+            elif odgovor["napaka"]:
+                telo = {"ok": False, "sporocilo": "Napaka v FreeCAD-u: " + odgovor["napaka"].strip().splitlines()[-1]}
+            else:
+                telo = odgovor["rezultat"]
+            self._odgovor(json.dumps(telo, ensure_ascii=False).encode("utf-8"))
         elif pot == "/standardni":
             # Baza standardnih delov: glavna nit premakne kos in shrani sestave; brskalnik počaka na sporočilo.
             odgovor = {"konec": threading.Event(), "izpis": "", "napaka": "", "rezultat": None}
