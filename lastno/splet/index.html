@@ -145,6 +145,12 @@
   #stranski .naslovProjekta { display: flex; align-items: center; gap: 5px; padding: 5px 10px 2px; font-weight: 600; color: #0d47a1; }
   #stranski .naslovProjekta img { width: 14px; height: 14px; }
   /* Datoteke v Oblaku: projekti (podmape) kot zložljive skupine */
+  #stranski .vnos.odpiram { background: #eef4fb; cursor: progress; }
+  #stranski .vnos .cip.odpiram { color: #0d47a1; background: #dcebfc; }
+  #stranski .vnos .cip.odprt { color: #1b5e20; background: #e6f4ea; }
+  #stranski .vnos .cip.odpiram::before { content: ''; width: 9px; height: 9px; margin-right: 4px; border-radius: 50%; border: 1.5px solid #90b4e0;
+    border-top-color: #0d47a1; animation: odpiramVrti .8s linear infinite; }
+  @keyframes odpiramVrti { to { transform: rotate(360deg); } }
   #stranski .naslovProjekta.zlozljiv { cursor: pointer; margin: 0 6px; padding: 5px 8px; border-radius: 8px; color: #33404f; font-weight: 500; }
   #stranski .naslovProjekta.zlozljiv:hover { background: #e9edf2; }
   #stranski .naslovProjekta .puscica { flex: none; width: 12px; color: #8a94a3; transition: transform .1s; }
@@ -1930,14 +1936,25 @@ function vnosDatoteke(d, odprti, vProjektu) {
   const b = el('div', 'besedilo');
   b.append(imeVnosa(d.ime, ''));
   const pod = el('div', 'podnapis'); pod.append(oznakaVrste(d), el('span', 'podatek', datumProjekta(d.spremenjeno)));
-  if (odprt && odprt.spremenjen) pod.append(cipVnosa('neshranjeno', 'Neshranjeno'));
+  if (odprt) pod.append(cipVnosa('odprt', odprt.spremenjen ? 'Odprt, neshranjeno' : 'Odprt'));
+  else if (odpiram && odpiram.pot === d.pot) { v.classList.add('odpiram'); pod.append(cipVnosa('odpiram', 'Odpiram …')); }
   b.append(pod); v.append(b);
-  v.addEventListener('click', () => odprt ? projektDejanje({ dejanje: 'aktiviraj', ime: odprt.ime, pot: d.pot }) : projektDejanje({ dejanje: 'odpri', pot: d.pot }));
+  v.addEventListener('click', () => {
+    if (odprt) { projektDejanje({ dejanje: 'aktiviraj', ime: odprt.ime, pot: d.pot }); return; }
+    // Strežnik odpre datoteko na glavni niti in takoj odgovori; velik sestav s povezanimi deli se nalaga desetine
+    // sekund. Do novega seznama odprtih (ali največ 3 min) vrstica kaže »Odpiram …«.
+    if (odpiram) clearTimeout(odpiram.casovnik);
+    odpiram = { pot: d.pot, casovnik: setTimeout(() => { odpiram = null; narisiOdprteDokumente(); }, 180000) };
+    narisiOdprteDokumente();
+    projektDejanje({ dejanje: 'odpri', pot: d.pot });
+  });
   if (vOblaku(d.pot)) { const dej = el('div', 'dejanja'); dej.append(gumbRazlicic(d.pot, d.ime)); v.append(dej); }
   return v;
 }
+let odpiram = null;   // {pot, casovnik}: datoteka, ki jo strežnik ravno odpira
 function narisiProjekte(p) {
   stanje.projekti = p;
+  if (odpiram && (p.odprti || []).some(o => o.pot && o.pot.toLowerCase() === odpiram.pot.toLowerCase())) { clearTimeout(odpiram.casovnik); odpiram = null; }
   setTimeout(() => izrisiSliciceDokumentov().catch(e => console.warn(e)), 2000);
   nacrtujSlicico();   // pot aktivnega dokumenta je zdaj znana (ob prvem nalaganju še ni bila)
   narisiOdprteDokumente();
@@ -1965,12 +1982,12 @@ function narisiOdprteDokumente() {
     for (const o of seznam) r1.append(vnosOdprtega(o, q));
   }
   vsebina.append(r1);
-  // Pod odprtimi vse datoteke FCStd iz Oblaka (3D modeliranje) kot drevo map; odprte so zgoraj, tu jih ni.
+  // Pod odprtimi vse datoteke FCStd iz Oblaka (3D modeliranje) kot drevo map; odprte ostanejo na svojem mestu s čipom Odprt.
   // Od 2026-10-11 (od 2026-10-07 do tedaj je stolpec kazal samo odprte dokumente).
   let vseDatotek = 0, najdenih = 0;
   prvaNajdenaDatoteka = null;
   for (const sk of p.skupine || []) {
-    const zaprte = (sk.datoteke || []).filter(d => !odprti.some(o => o.pot && o.pot.toLowerCase() === d.pot.toLowerCase()));
+    const zaprte = sk.datoteke || [];
     vseDatotek += zaprte.length;
     const vidne = q ? zaprte.filter(d => (d.ime + ' ' + (d.projekt || '')).toLowerCase().includes(q)) : zaprte;
     najdenih += vidne.length;
