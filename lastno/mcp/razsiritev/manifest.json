@@ -1,0 +1,28 @@
+{
+  "manifest_version": "0.3",
+  "name": "freecad",
+  "display_name": "Spletni FreeCAD",
+  "version": "1.0.0",
+  "description": "Orodja za lastno gradnjo FreeCAD 1.1 s spletnim vmesnikom (http://127.0.0.1:3020/): stanje, drevo, slika modela, meritve, Python, ukazi okolij in njihova okna, iskanje funkcij, shranjevanje, tisk, render in Oblikovanje (Blender).",
+  "long_description": "Most MCP do spletnega FreeCAD-a na tem računalniku. Katalog orodij, pravila in predloge pridejo s tekočega strežnika FreeCAD, zato so vedno enaki kot v Claude Code. Ko FreeCAD ne teče, ga zažene orodje zazeni. Na disk piše samo orodje shrani; koda v FreeCAD-u je ena transakcija, ki jo vrne razveljavi.",
+  "author": {
+    "name": "juskolaric"
+  },
+  "server": {
+    "type": "python",
+    "entry_point": "server/main.py",
+    "mcp_config": {
+      "command": "C:/Users/Uporabnik/AppData/Local/Programs/Python/Python311/python.exe",
+      "args": ["${__dirname}/server/main.py"],
+      "env": {}
+    }
+  },
+  "tools_generated": true,
+  "keywords": ["freecad", "cad", "3d", "mcp"],
+  "compatibility": {
+    "platforms": ["win32"],
+    "runtimes": {
+      "python": ">=3.10"
+    }
+  }
+}

@@ -51,7 +51,10 @@ def tarca(doc):
     for o in doc.Objects:
         if "Izvor" in o.PropertiesList and not o.Name.startswith(("Razgrnitev", "DXF_rez")):
             return o
-    koreni = [o for o in doc.RootObjects if not o.TypeId.startswith(("App::Origin", "Sketcher::"))
+    # Koreni po tem dokumentu: RootObjects izpusti kos, na katerega kaže povezava iz drugega odprtega dokumenta
+    # (sestav, ki ga uporablja), zato je za kose v bazi pogosto prazen.
+    koreni = [o for o in doc.Objects if not any(p.Document is doc for p in o.InList)
+              and not o.TypeId.startswith(("App::Origin", "Sketcher::"))
               and not o.Name.startswith(("Razgrnitev", "DXF_rez"))]
     for tip in ("App::Part", "PartDesign::Body"):
         kandidati = [o for o in koreni if o.TypeId == tip]
@@ -408,7 +411,11 @@ def _oznaci(stanje, podatki):
             _nastavi_vrsto(doc, t, True)
             _shrani(doc)
         return {"ok": True, "sporocilo": "»%s« je že v bazi standardnih delov." % doc.Label}
-    nova = os.path.join(BAZA, _cisto_ime_mape(podatki.get("kategorija")), os.path.basename(doc.FileName))
+    novo_ime = re.sub(r'[<>:"/\\|?*]', "_", podatki.get("novo_ime") or "").strip(" .")   # preimenovanje ob premiku
+    datoteka = (novo_ime + ".FCStd") if novo_ime else os.path.basename(doc.FileName)
+    nova = os.path.join(BAZA, _cisto_ime_mape(podatki.get("kategorija")), datoteka)
+    if novo_ime:
+        doc.Label = novo_ime
     if os.path.exists(nova):
         obstojeci = _odpri(nova)
         if tarca(obstojeci) is None or not _enaka_geometrija(t, tarca(obstojeci)):
@@ -461,7 +468,7 @@ def _odznaci(stanje, podatki):
 
 def baza_dejanje(stanje, podatki):
     """POST /standardni: {dejanje: podatki|oznaci|odznaci, ime (vozel drevesa aktivnega dokumenta) ali dokument,
-    kategorija}. Vrne {ok, sporocilo} ali za »podatki« {ime, kategorije, predlog, standardni, vBazi}."""
+    kategorija, pri »oznaci« neobvezno novo_ime = ime datoteke in dokumenta v bazi}. Vrne {ok, sporocilo} ali za »podatki« {ime, kategorije, predlog, standardni, vBazi}."""
     dejanje = podatki.get("dejanje", "")
     try:
         if dejanje == "podatki":

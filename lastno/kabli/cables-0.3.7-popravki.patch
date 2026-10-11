@@ -1,0 +1,69 @@
+diff --git a/freecad/cables/archCable.py b/freecad/cables/archCable.py
+index daa9ce1..378fe22 100644
+--- a/freecad/cables/archCable.py
++++ b/freecad/cables/archCable.py
+@@ -300,9 +300,20 @@ class ArchCable(ArchPipe._ArchPipe):
+ 
+         if not obj.SubProfiles:
+             self.updateStartEndOffsets(obj)
++            old_shape = obj.Shape
+             ArchPipe._ArchPipe.execute(self, obj)
+             main_shape = obj.Shape
+-            if not obj.Shape.Wires:
++            # lastni popravek: ce ArchPipe cevi ne izdela, pusti obj.Shape
++            # nespremenjen (stari kabel z ze dodanimi izoliranimi konci);
++            # brez tega se vsakic dodajo novi konci in teles je vedno vec
++            failed = not obj.Shape.Wires or (
++                not old_shape.isNull() and obj.Shape.isSame(old_shape))
++            if failed:
++                obj.Placement = pl
++                if additions:
++                    obj.Additions = additions
++                if subtractions:
++                    obj.Subtractions = subtractions
+                 return
+             shapes = []
+             shapes.append(main_shape)
+diff --git a/freecad/cables/wireFlex.py b/freecad/cables/wireFlex.py
+index 4c72b4c..4547611 100644
+--- a/freecad/cables/wireFlex.py
++++ b/freecad/cables/wireFlex.py
+@@ -301,6 +301,12 @@ class WireFlex(Draft.Wire):
+         if bstype == 'P':
+             # spline = wireutils.getBSpline_P(points[idxs:idxe], interpolate=True)
+             spline = wireutils.getBSpline_P(points[idxs:idxe])
++        if self.points_collinear(points):
++            # lastni popravek: ravna pot kot BSpline (npr. samo dve tocki)
++            # ima skoraj nicelne tangente in OCC cez njo ne zna povleci cevi
++            # (BRepFill_Sweep::BuildEdge), zato jo zgradimo kot daljico
++            inner = points[idxs:idxe]
++            spline = Part.LineSegment(inner[0], inner[-1])
+         edges.insert(idxs or 0, spline.toShape())
+         try:
+             shape = Part.Wire(edges)
+@@ -311,6 +317,25 @@ class WireFlex(Draft.Wire):
+         if shape:
+             obj.Shape = shape
+ 
++    @staticmethod
++    def points_collinear(points):
++        """True, if all points lie on one straight line (lastni popravek)"""
++        if len(points) < 2:
++            return False
++        eps = 1e-4  # mm; koordinate v sestavih so reda 1000 mm
++        start, end = points[0], points[-1]
++        axis = end - start
++        if axis.Length < eps:
++            return False
++        axis.normalize()
++        for p in points[1:-1]:
++            d = p - start
++            if (d - axis * d.dot(axis)).Length > eps:
++                return False
++            if d.dot(axis) < -eps or d.dot(axis) > (end - start).Length + eps:
++                return False
++        return True
++
+     def appendStartEndSegment(self, obj, points):
+         rs = obj.BoundarySegmentStart.Value
+         re = obj.BoundarySegmentEnd.Value

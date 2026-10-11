@@ -4,6 +4,8 @@ Stanje 2026-09-29. Odločitve: osnova je veja `releases/FreeCAD-1-1` (nameščen
 mapa `Desktop/Apps/FreeCAD`, javen fork `juskolaric/FreeCAD`.
 **Smer od 2026-09-29 (pot 1): FreeCAD je motor, uporabniški vmesnik in grafika nastajata v brskalniku.**
 Različice modelov (PDM nad lastnim oblakom): ločen plan `PDM-PLAN.md` (7. 10. 2026).
+Prosto oblikovanje (Blender) in render: ločen plan `OBLIKOVANJE-PLAN.md` (10. 10. 2026, predlog).
+Program kot MCP strežnik (AI z dostopom do vseh funkcij): ločen plan `MCP-PLAN.md` (10. 10. 2026, koraki 1–5 narejeni).
 
 ## Kaj je nastalo
 

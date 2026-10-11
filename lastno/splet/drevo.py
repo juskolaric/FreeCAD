@@ -85,8 +85,9 @@ def _lastnosti(obj):
     return sez
 
 
-def drevo_dokumenta(doc, ikona_uri=None):
-    """Posnetek drevesa aktivnega dokumenta: {"koreni": [imena], "vozli": {ime: vozel}}."""
+def drevo_dokumenta(doc, ikona_uri=None, kljuc_oblike=None):
+    """Posnetek drevesa aktivnega dokumenta: {"koreni": [imena], "vozli": {ime: vozel}}.
+    `kljuc_oblike(obj)` (stabilen ključ oblike iz strežnika) omogoči predpomnjenje prostornin teles."""
     if doc is None:
         return {"koreni": [], "vozli": {}}
     vozli = {}
@@ -109,19 +110,76 @@ def drevo_dokumenta(doc, ikona_uri=None):
             viden = True
         vozli[obj.Name] = {"ime": obj.Name, "oznaka": obj.Label, "tip": obj.TypeId, "viden": viden,
                            "ikona": ikona, "otroci": otroci, "lastnosti": _lastnosti(obj)}
+        deli = _deli_spoja(obj)
+        if deli:   # spoj sestava: kosa (otroka sestava), ki ju povezuje; brskalnik ga pokaže tudi pod njima
+            vozli[obj.Name]["deli"] = deli
         cilj = _cilj_povezave(obj)
         if cilj is not None:   # povezava na podsestav ali del v drugi datoteki: Uredi ga odpre
             vozli[obj.Name]["povezava"] = {"dokument": cilj.Document.Label,
                                            "sestav": cilj.TypeId in ("Assembly::AssemblyObject", "App::Part")}
+            if cilj.TypeId != "Assembly::AssemblyObject":   # del: sestav ga lahko vstavi kot vrsto več kosov
+                vozli[obj.Name]["kosov"] = max(1, int(getattr(obj, "ElementCount", 0) or 0))
         if cilj is not None or obj in koreni_kosa:
             std = oznaka_vozla(obj)   # kos v svoji datoteki: standardni / v bazi (meni Standardni del)
             if std is not None:
                 vozli[obj.Name]["standardni"] = std
     koreni = [o.Name for o in doc.Objects if o.Name not in zahtevani]
-    return {"koreni": koreni, "vozli": vozli, "telesa": _telesa(doc, koreni)}
+    return {"koreni": koreni, "vozli": vozli, "telesa": _telesa(doc, koreni, kljuc_oblike)}
 
 
-def _telesa(doc, koreni):
+def _deli_spoja(obj):
+    """Imena kosov sestava, ki jih povezuje spoj (Reference1/2) ali pritrdi (GroundedJoint: ObjectToGround), sicer [].
+    Referenca kaže na kos sam ali na sestav s podpotjo »Kos.Podkos.Face9«; tedaj je kos prvi del podpoti."""
+    if hasattr(obj, "ObjectToGround"):
+        kos = obj.ObjectToGround
+        return [kos.Name] if kos is not None else []
+    if not (hasattr(obj, "JointType") and hasattr(obj, "Reference1")):
+        return []
+    deli = []
+    for lastnost in ("Reference1", "Reference2"):
+        try:
+            ref, poti = getattr(obj, lastnost) or (None, [])
+        except Exception:  # noqa: BLE001
+            continue
+        if ref is None:
+            continue
+        kos = ref
+        if ref.TypeId in ("Assembly::AssemblyObject", "Assembly::AssemblyLink") and poti and "." in poti[0]:
+            kos = ref.Document.getObject(poti[0].split(".", 1)[0]) or ref
+        if kos.Name not in deli:
+            deli.append(kos.Name)
+    return deli
+
+
+# (dokument, objekt) -> (ključ oblike, število teles, prostornina v cm³). Prostornina sestava (Slim zadaj A: 70 teles)
+# traja 1,5 s, drevo pa se gradi ob vsakem posnetku (tudi ob preklopu na že pregledan dokument).
+_PROSTORNINE = {}
+
+
+def _telo(doc, obj, kljuc_oblike):
+    kljuc = None
+    if kljuc_oblike is not None:
+        try:
+            kljuc = kljuc_oblike(obj)
+        except Exception:  # noqa: BLE001
+            kljuc = None
+        vnos = _PROSTORNINE.get((doc.Name, obj.Name))
+        if kljuc is not None and vnos is not None and vnos[0] == kljuc:
+            return vnos[1], vnos[2]
+    oblika = obj.Shape
+    stevilo = len(oblika.Solids)
+    prostornina = None
+    if stevilo:
+        try:
+            prostornina = round(oblika.Volume / 1000.0, 1)
+        except Exception:  # noqa: BLE001
+            prostornina = None
+    if kljuc is not None:
+        _PROSTORNINE[(doc.Name, obj.Name)] = (kljuc, stevilo, prostornina)
+    return stevilo, prostornina
+
+
+def _telesa(doc, koreni, kljuc_oblike=None):
     """Končna telesa dokumenta (kot mapa »Solid Bodies« v SolidWorksu): koreni drevesa, ki imajo trdno obliko
     (skice, ravnine, skupine in objekti brez oblike ne štejejo). Objekt z več ločenimi telesi (npr. rez, ki je kos
     razdelil) nosi njihovo število. Vidnost se ne upošteva: tudi skrito telo je del dokumenta."""
@@ -131,16 +189,11 @@ def _telesa(doc, koreni):
         if obj is None or obj.TypeId.startswith(("Sketcher::", "App::Origin", "App::DocumentObjectGroup")):
             continue
         try:
-            oblika = obj.Shape
-            stevilo = len(oblika.Solids)
+            stevilo, prostornina = _telo(doc, obj, kljuc_oblike)
         except Exception:  # noqa: BLE001
             continue
         if stevilo == 0:
             continue
-        try:
-            prostornina = round(oblika.Volume / 1000.0, 1)
-        except Exception:  # noqa: BLE001
-            prostornina = None
         telesa.append({"ime": obj.Name, "oznaka": obj.Label, "solidov": stevilo, "prostornina": prostornina,
                        "viden": bool(getattr(obj, "Visibility", True))})
     return telesa
@@ -252,8 +305,68 @@ def _uredi(stanje, obj):
                                    % obj.Label})
 
 
+def _spoji_na(obj):
+    """Spoji sestava (razen pritrditve), ki se sklicujejo na povezavo obj (podpot »<ime>.« v Reference1/2)."""
+    spoji = []
+    for x in obj.Document.Objects:
+        for ref in ("Reference1", "Reference2"):
+            vrednost = getattr(x, ref, None) if ref in x.PropertiesList else None
+            if isinstance(vrednost, tuple) and len(vrednost) > 1 and any(
+                    s == obj.Name or s.startswith(obj.Name + ".") for s in vrednost[1]):
+                spoji.append(x)
+                break
+    return spoji
+
+
+def _nastavi_kosov(stanje, obj, n):
+    """Konfiguracija »število kosov« (kot konfiguracije v SolidWorksu, npr. spone na DIN letvi): povezava na en kos
+    postane vrsta n kosov vzdolž osi X kosa, razmik je lastnost Korak na kosu (sicer širina kosa).
+    Vrsta je FreeCAD-ova povezava z elementi (ElementCount, ShowElement): sestav zahteva, da ima taka povezava ničelno
+    lego, lego nosi vsak element (AssemblyObject::ensureIdentityPlacements, sicer kose ob preračunu vrže v izhodišče)."""
+    cilj = _cilj_povezave(obj)
+    if cilj is None:
+        return
+    n = max(1, min(200, int(n)))
+    prej = max(1, int(obj.ElementCount or 0))
+    if n == prej:
+        return
+    spoji = _spoji_na(obj)
+    if spoji:
+        stanje.oddaj("obvestilo", {"sporocilo": "»%s« je vezan s spoji (%s); število kosov spremeni, ko jih odstraniš."
+                                   % (obj.Label, ", ".join(s.Label for s in spoji)), "slabo": True})
+        return
+    try:
+        korak = float(cilj.Korak) if "Korak" in cilj.PropertiesList else cilj.Shape.BoundBox.XLength
+    except Exception:  # noqa: BLE001
+        korak = 0.0
+    if korak <= 0:
+        stanje.oddaj("obvestilo", {"sporocilo": "»%s« nima širine za razmik med kosi." % cilj.Label, "slabo": True})
+        return
+    prvi = obj.Placement
+    if prej > 1 and obj.ElementList:
+        prvi = obj.Placement.multiply(obj.ElementList[0].Placement)
+    doc = obj.Document
+    doc.openTransaction("Število kosov")
+    try:
+        if n == 1:
+            obj.ElementCount = 0
+            obj.Placement = prvi
+        else:
+            obj.Placement = App.Placement()
+            obj.ShowElement = True
+            obj.ElementCount = n
+            for i, e in enumerate(obj.ElementList):
+                e.Placement = prvi.multiply(App.Placement(App.Vector(i * korak, 0, 0), App.Rotation()))
+        doc.recompute()
+    finally:
+        doc.commitTransaction()
+    stanje.oddaj("obvestilo", {"sporocilo": "»%s«: %d %s v vrsti (razmik %g mm)." % (
+        obj.Label, n, "kos" if n == 1 else ("kosa" if n == 2 else ("kosi" if n < 5 else "kosov")), korak)})
+
+
 def drevo_dejanje(stanje, podatki):
-    """POST /drevo: {dejanje: vidnost, ime, vidno} | {dejanje: lastnost, ime, lastnost, vrednost} | {dejanje: uredi, ime}."""
+    """POST /drevo: {dejanje: vidnost, ime, vidno} | {dejanje: lastnost, ime, lastnost, vrednost} | {dejanje: uredi, ime}
+    | {dejanje: kosov, ime, stevilo}."""
     doc = App.ActiveDocument
     if doc is None:
         return
@@ -276,4 +389,6 @@ def drevo_dejanje(stanje, podatki):
         doc.recompute()
     elif dejanje == "uredi":
         _uredi(stanje, obj)
+    elif dejanje == "kosov":
+        _nastavi_kosov(stanje, obj, podatki.get("stevilo", 1))
     stanje.umazano = True

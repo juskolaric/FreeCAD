@@ -438,3 +438,13 @@ SolidWorksovim COM ne dela), mere se odčitajo iz STEP v FreeCADCmd. Kar se je p
 - **DXF za laser** iz zgornje ploskve razgrnitve (zanke, poravnane na XY), brez upogibnih črt.
 - **Preverjanje**: prostornina in prekrivanje z izvirnikom (`common`), raztegovanje na kopiji (več naborov mer in
   vrnitev na izvirne), slike iz STL z lastnim izrisovalnikom.
+
+## Zlivanje dveh uvoženih kosov v en kos (2026-10-09, ohišje klime Slim A)
+
+- Stena in letev, ki se stikata v skupni ravnini, se zlijeta v eno telo (`fuse`), a `getUnfold` (SheetMetalNewUnfolder) iz
+  zlitega telesa vrne neveljavno razgrnitev: reži v spodnji prirobnici stene se zlijeta z zunanjim robom (ne glede na izbrano
+  izhodiščno ploskev). Kosa posamič se razgrneta brezhibno.
+- Rešitev: vsak del razgrni posebej z izhodiščem v **isti ravnini** (ploskev z normalo +Z na skupni ravnini); `getUnfold` pusti
+  izhodiščno ploskev na mestu, zato je unija ploskih razgrnitev pravilna razgrnitev celega kosa (preverjeno: ploščina = prostornina / T).
+- Kjer upogib ene prirobnice konča ob drugi prirobnici, se konca dotikata in razgrnitev se tam raztrga: izreži sprostitev (2 mm reža
+  čez upogib in prirobnico).
