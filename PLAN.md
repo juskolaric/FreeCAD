@@ -14,7 +14,7 @@ Program kot MCP strežnik (AI z dostopom do vseh funkcij): ločen plan `MCP-PLAN
   Veja `ukazna-vrstica`: ustavljeno delo na ukazni vrstici v slogu SolidWorksa (C++), glej korak 7.
 - Orodja: VS Build Tools 2022 s C++ (MSVC 14.44, Windows SDK 10.0.26100), pixi 0.81, git z vklopljenimi dolgimi potmi.
 - Vpis v koren `Apps` (`.gitignore`, `CLAUDE.md`, `README.md`, pravilo za Cursor), odprte naloge v `Apps/TODO.md`,
-  vrata 3020 v `Photolandia-Apps/ports.json`.
+  vrata 3020 v `Orodja/ports.json`.
 - `lastno/splet`: dokaz koncepta spletnega pogleda (strežnik v FreeCAD-u in stran s three.js/WebGPU).
 
 ## Koraki

@@ -44,7 +44,7 @@ FreeCAD je motor, vmesnik in grafika nastajata v brskalniku (plan, korak 8 napre
   Skripta od 2026-10-07 pixi zažene **brez vidne konzole** (PowerShell `Start-Process -WindowStyle Hidden`, `pixi run -q --no-progress`);
   izpis FreeCAD-a gre v `build/splet-zagon.log` in `build/splet-zagon-napake.log`. Program se konča z gumbom Izhod v brskalniku;
   `SPLET_KONZOLA=vidna` vrne pomanjšano konzolo. Okoljski `PIXI_NO_PROGRESS` ne nastavljaj na `1` (pixi sprejme le `true`/`false`).
-  Naslov `http://127.0.0.1:3020/` (vrata po `Photolandia-Apps/ports.json`). Okolje: `SPLET_VRATA`, `SPLET_BRSKALNIK=0` ne odpre brskalnika,
+  Naslov `http://127.0.0.1:3020/` (vrata po `Orodja/ports.json`). Okolje: `SPLET_VRATA`, `SPLET_BRSKALNIK=0` ne odpre brskalnika,
   `SPLET_OKNO=vidno` pusti okno FreeCAD-a vidno (privzeto je **skrito** in se samo od sebe nikoli ne pokaže; gumba v
   brskalniku: Pokaži/Skrij FreeCAD in Izhod). Možnost `--hidden` FreeCAD-a ni uporabna: po skripti se program konča.
   Zaprtje okna z X konča program, ko ni več odprtih vprašanj (`setQuitOnLastWindowClosed(False)` + filter dogodkov).

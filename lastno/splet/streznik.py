@@ -97,7 +97,7 @@ MAPE_PROJEKTOV += [os.path.normpath(m.strip()) for m in os.environ.get("SPLET_PR
 GLOBINA_PROJEKTOV = 4        # podmape pod mapo projektov, ki se še pregledajo
 
 # ---------------------------------------------------------------------------
-# Tiskanje: nadzorna plošča Tiskaj (3D print/tiskaj, lasten proces na vratih 3021 po Photolandia-Apps/ports.json).
+# Tiskanje: nadzorna plošča Tiskaj (3D print/tiskaj, lasten proces na vratih 3021 po Orodja/ports.json).
 # V brskalniku je zavihek »Tiskanje« (okvir na ploščo), »Natisni« iz drevesa izvozi STEP v njeno vhodno mapo, vrstica
 # stanja kaže tiskalnike. Ta strežnik je le posrednik (GET /tiskaj/stanje, nit strežnika) in zaganjalnik (POST
 # /tiskaj/zazeni); plošča teče naprej tudi brez FreeCAD-a (MQTT, kamere, vrsta). Prepis: SPLET_TISKAJ_VRATA, SPLET_TISKAJ_MAPA.
@@ -279,7 +279,7 @@ def _ime_datoteke_tiska(oznaka):
 
 # ---------------------------------------------------------------------------
 # Oblikovanje in render (od 2026-10-10, plan OBLIKOVANJE-PLAN.md, mapa lastno/oblikovanje).
-# Oblikovanje je Blender v ozadju (streznik_blender.py, vrata 3030 po Photolandia-Apps/ports.json), v brskalniku zavihek
+# Oblikovanje je Blender v ozadju (streznik_blender.py, vrata 3030 po Orodja/ports.json), v brskalniku zavihek
 # »Oblikovanje« kot okvir. Ta strežnik ga le zažene (POST /oblikovanje/zazeni) in vpraša, ali teče (GET /oblikovanje/stanje).
 # Render tehničnega modela: posnetek aktivnega dokumenta (isti JSON, ki ga riše brskalnik) gre v ločen proces Blenderja
 # (upodabljanje.py, render.py); vse na niti strežnika, brez FreeCAD API-ja. Prepis vrat: SPLET_OBLIKOVANJE_VRATA.

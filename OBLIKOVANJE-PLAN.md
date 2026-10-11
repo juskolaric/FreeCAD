@@ -53,7 +53,7 @@ stene, pritrdila, STEP, tisk). Isti vmesnik v brskalniku, dva motorja v ozadju.
 ## Tehnično (na kratko)
 
 - Blender: `blender.exe -b --factory-startup --python strežnik.py`, skripta drži zanko na glavni niti (bpy ni nitno varen),
-  HTTP v drugi niti, enako pravilo kot `lastno/splet/streznik.py`. Vrata iz `Photolandia-Apps/ports.json` (`vrata.mjs prosto`).
+  HTTP v drugi niti, enako pravilo kot `lastno/splet/streznik.py`. Vrata iz `Orodja/ports.json` (`vrata.mjs prosto`).
 - Mapa `lastno/oblikovanje/`; projekti v `Oblak/3D modeliranje/<Projekt>/Oblikovanje/` (`.blend`, različice, renderji).
 - Mreža v brskalnik: isti format posnetka kot iz FreeCAD-a (točke, trikotniki, normale), kasneje binarno.
 - Render: Cycles, OptiX, razšumljanje OptiX/OIDN; hiter predogled EEVEE. HDRI okolja (Poly Haven) lokalno.

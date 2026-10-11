@@ -108,4 +108,4 @@ upravljanju skill `freecad` (Claude Code: `~/.claude/skills/freecad`, preverjeno
   zavihki počakajo 1,5 s. Stran ob vsaki povezavi SSE pošlje `zdravo`; brez njega strežnik ne čaka in riše rezervno
   (numpy + Pillow, slikarjev algoritem z delitvijo velikih trikotnikov). Privzeto 800 px JPEG.
 - Preizkus iz ukazne vrstice kot pri simplyprint: `python freecad_mcp.py test | tools | call <orodje> [json]`.
-- Vrata ostanejo 3020 (`Photolandia-Apps/ports.json` nespremenjen); most nima vrat.
+- Vrata ostanejo 3020 (`Orodja/ports.json` nespremenjen); most nima vrat.

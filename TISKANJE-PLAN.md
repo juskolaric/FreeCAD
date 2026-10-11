@@ -60,4 +60,4 @@ Stanje za čipe in Natisni gre prek strežnika FreeCAD (`GET /tiskaj/stanje`, `P
 žetonom; posrednik teče na niti strežnika z `http.client`, brez FreeCAD API-ja), da plošča ne potrebuje
 CORS in tuja stran v brskalniku ne more klicati njenih ukazov. Izvoz STEP na glavni niti
 (`Part.export` / `ImportGui.export` izbranih objektov, vsako telo posebej) v `vhod_mapa` iz
-`config.json` plošče (privzeto `~/Desktop/STEPI`); vrata plošče iz `Photolandia-Apps/ports.json`.
+`config.json` plošče (privzeto `~/Desktop/STEPI`); vrata plošče iz `Orodja/ports.json`.
