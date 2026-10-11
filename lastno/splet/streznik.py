@@ -87,6 +87,7 @@ if MAPA not in sys.path:
 from drevo import drevo_dejanje, drevo_dokumenta  # noqa: E402
 from baza import baza_dejanje, v_bazi as _v_bazi, tarca as _tarca_baze, BAZA as MAPA_BAZE  # noqa: E402
 import videz  # noqa: E402
+import samodejno  # noqa: E402  (tiha obnova dokumentov, samodejno shranjevanje)
 from oblak import Oblak, obdelaj_zahtevo as oblak_zahteva  # noqa: E402
 import mcp_orodja  # noqa: E402  (orodja za AI prek MCP: GET /mcp/orodja, POST /mcp/orodje; most lastno/mcp)
 import pomocnik  # noqa: E402  (pomočnik AI v stranski plošči strani: GET/POST /pomocnik, isti katalog orodij)
@@ -2689,6 +2690,11 @@ class Stanje:
             if odgovor is not None:
                 odgovor["konec"].set()
         zdaj = time.time()
+        if IMA_OKNO:
+            try:
+                samodejno.korak(self, OBLAK)   # tiha obnova dokumentov in samodejno shranjevanje
+            except Exception:  # noqa: BLE001
+                _log("samodejno: %s" % traceback.format_exc())
         if IMA_OKNO and zdaj - self.zadnji_obrazec > 0.25:
             self.zadnji_obrazec = zdaj
             try:
