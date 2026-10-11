@@ -144,6 +144,13 @@
     padding: 0 7px; line-height: 18px; font-variant-numeric: tabular-nums; }
   #stranski .naslovProjekta { display: flex; align-items: center; gap: 5px; padding: 5px 10px 2px; font-weight: 600; color: #0d47a1; }
   #stranski .naslovProjekta img { width: 14px; height: 14px; }
+  /* Datoteke v Oblaku: projekti (podmape) kot zložljive skupine */
+  #stranski .naslovProjekta.zlozljiv { cursor: pointer; margin: 0 6px; padding: 5px 8px; border-radius: 8px; color: #33404f; font-weight: 500; }
+  #stranski .naslovProjekta.zlozljiv:hover { background: #e9edf2; }
+  #stranski .naslovProjekta .puscica { flex: none; width: 12px; color: #8a94a3; transition: transform .1s; }
+  #stranski .naslovProjekta.odprt .puscica { transform: rotate(90deg); }
+  #stranski .naslovProjekta .imeProjekta { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  #stranski .naslovProjekta .stevilo { font-size: 11px; color: #7a8594; font-variant-numeric: tabular-nums; }
   #stranski .vnos { position: relative; display: flex; align-items: center; gap: 10px; margin: 2px 6px; padding: 6px 4px 6px 6px; min-height: 44px;
     cursor: pointer; border-radius: 10px; transition: background-color .08s; }
   #stranski .vnos.vProjektu { padding-left: 18px; }
@@ -732,13 +739,13 @@
   <aside id="stranski">
     <div class="glavaStranski"><span>Dokumenti in drevo</span>
       <button type="button" id="gumbKnjiznica" title="Knjižnica standardnih delov: kos iz baze vstavi v aktivni sestav">&#9638; Knjižnica</button>
-      <button type="button" id="gumbZgradba" title="Drevesna shema aktivnega sestava: podsestavi in deli">&#9776; Zgradba</button>      <button type="button" id="stranskiOsvezi" title="Znova prebere seznam odprtih dokumentov">&#8635;</button>
+      <button type="button" id="gumbZgradba" title="Drevesna shema aktivnega sestava: podsestavi in deli">&#9776; Zgradba</button>      <button type="button" id="stranskiOsvezi" title="Znova prebere seznam odprtih dokumentov in datotek v Oblaku">&#8635;</button>
       <button type="button" id="stranskiSkrij" title="Skrije stranski meni">&#9664;</button>
     </div>
     <div id="stranskiStolpca">
       <div id="dokumentiStolpec">
         <div id="dokumentiGlava">
-          <div class="naslov"><span class="napis">Odprti dokumenti</span><span class="stevilo" id="dokumentiStevilo"></span></div>
+          <div class="naslov"><span class="napis">Dokumenti</span><span class="stevilo" id="dokumentiStevilo"></span></div>
           <label class="iskanje"><span id="dokumentiLupa"></span><input id="dokumentiIskanje" type="search" placeholder="Išči med dokumenti …" autocomplete="off" spellcheck="false"><span class="stevec" id="dokumentiStevec"></span></label>
         </div>
         <div id="stranskiVsebina"><div class="prazno">Nalagam …</div></div>
@@ -1861,7 +1868,7 @@ const IKONA_KOCKE = crtkano => 'data:image/svg+xml;utf8,' + encodeURIComponent(
   + (crtkano ? " stroke-dasharray='3 2.2'" : '') + "><path d='M24 5 41 14.5v19L24 43 7 33.5v-19z' fill='#e9edf1'/>"
   + "<path d='M24 24 41 14.5M24 24 7 14.5M24 24v19' stroke='#b4bbc3'/></g></svg>");
 function slikaVnosa(d, ikona) {
-  const i = el('img', 'slicica');
+  const i = el('img', 'slicica'); i.loading = 'lazy';   // datotek v Oblaku je več sto
   const nadomestna = () => { i.classList.add('ikonaNamesto'); i.src = IKONA_KOCKE(ikona === 'Std_New'); i.alt = ''; };
   // sličica, ki je strežnik ne more postreči (prazna, pokvarjena), se izriše v ozadju kot da je ni
   const neNalozi = () => { nadomestna(); if (!slicicaNeNalozi.has(d.pot)) { slicicaNeNalozi.add(d.pot); setTimeout(() => izrisiSliciceDokumentov().catch(e => console.warn(e)), 1000); } };
@@ -1958,9 +1965,57 @@ function narisiOdprteDokumente() {
     for (const o of seznam) r1.append(vnosOdprtega(o, q));
   }
   vsebina.append(r1);
-  // Od 2026-10-07 levi stolpec kaže samo odprte dokumente: seznam datotek FCStd iz map (p.skupine, vnosDatoteke)
-  // in razdelek Oblak · različice (razdelekOblaka) sta odstranjena iz prikaza; strežnik ju še pošilja.
+  // Pod odprtimi vse datoteke FCStd iz Oblaka (3D modeliranje) kot drevo map; odprte so zgoraj, tu jih ni.
+  // Od 2026-10-11 (od 2026-10-07 do tedaj je stolpec kazal samo odprte dokumente).
+  let vseDatotek = 0, najdenih = 0;
+  prvaNajdenaDatoteka = null;
+  for (const sk of p.skupine || []) {
+    const zaprte = (sk.datoteke || []).filter(d => !odprti.some(o => o.pot && o.pot.toLowerCase() === d.pot.toLowerCase()));
+    vseDatotek += zaprte.length;
+    const vidne = q ? zaprte.filter(d => (d.ime + ' ' + (d.projekt || '')).toLowerCase().includes(q)) : zaprte;
+    najdenih += vidne.length;
+    if (!vidne.length) continue;
+    const r = el('div', 'razdelek');
+    const n = el('div', 'naslovRazdelka', sk.naslov || 'Datoteke'); n.title = sk.mapa; n.append(el('span', 'stevilo', String(vidne.length))); r.append(n);
+    // drevo map: vsaka podmapa je zložljiva vrstica, datoteke mape so pod njenimi podmapami
+    const koren = { mape: new Map(), datoteke: [] };
+    for (const d of vidne) {
+      let m = koren;
+      for (const del of (d.projekt || '').split('/').filter(Boolean)) {
+        if (!m.mape.has(del)) m.mape.set(del, { mape: new Map(), datoteke: [] });
+        m = m.mape.get(del);
+      }
+      m.datoteke.push(d);
+    }
+    const prestej = m => m.datoteke.length + [...m.mape.values()].reduce((v, x) => v + prestej(x), 0);
+    const narisiMapo = (m, pot, globina) => {
+      for (const [ime, pod] of [...m.mape].sort((x, y) => x[0].localeCompare(y[0], 'sl'))) {
+        const kljuc = sk.mapa + '/' + pot + ime, odprt = !!q || odprtiProjekti.has(kljuc);
+        const g = el('div', 'naslovProjekta zlozljiv' + (odprt ? ' odprt' : '')); g.title = pot + ime;
+        g.style.paddingLeft = (8 + 14 * globina) + 'px';
+        const ii = imeVnosa(ime, q); ii.className = 'imeProjekta';
+        g.append(el('span', 'puscica', '▸'), ii, el('span', 'stevilo', String(prestej(pod))));
+        g.addEventListener('click', () => {
+          if (q) return;   // med iskanjem so vsi zadetki razprti
+          if (odprtiProjekti.has(kljuc)) odprtiProjekti.delete(kljuc); else odprtiProjekti.add(kljuc);
+          try { localStorage.setItem('odprtiProjekti', JSON.stringify([...odprtiProjekti])); } catch (e) { /* zasebno okno */ }
+          narisiOdprteDokumente();
+        });
+        r.append(g);
+        if (odprt) narisiMapo(pod, pot + ime + '/', globina + 1);
+      }
+      for (const d of m.datoteke) {
+        if (!prvaNajdenaDatoteka) prvaNajdenaDatoteka = d;
+        const v = vnosDatoteke(d, odprti, globina > 0); if (globina > 0) v.style.paddingLeft = (6 + 14 * globina) + 'px'; r.append(v);
+      }
+    };
+    narisiMapo(koren, '', 0);
+    vsebina.append(r);
+  }
+  $('dokumentiStevec').textContent = q ? (vidni.length + najdenih) + ' / ' + (odprti.length + vseDatotek) : '';
 }
+let prvaNajdenaDatoteka = null;
+const odprtiProjekti = new Set((() => { try { return JSON.parse(localStorage.getItem('odprtiProjekti') || '[]'); } catch (e) { return []; } })());
 function vnosOdprtega(o, q) {
   const v = el('div', 'vnos' + (o.aktiven ? ' aktiven' : ''));
   v.title = o.oznaka + '\n' + (o.pot || 'še ni shranjen') + (o.spremenjen ? '\nNeshranjene spremembe' : '') + '\nKlik: preklopi na dokument';
@@ -1994,6 +2049,7 @@ $('dokumentiIskanje').addEventListener('keydown', e => {
   e.stopPropagation();   // tipke iskanja niso bližnjice pogleda
   if (e.key === 'Escape') { e.target.value = ''; dokumentiIskanje = ''; narisiOdprteDokumente(); e.target.blur(); }
   if (e.key === 'Enter' && prviNajdeniDokument) projektDejanje({ dejanje: 'aktiviraj', ime: prviNajdeniDokument.ime });
+  else if (e.key === 'Enter' && prvaNajdenaDatoteka) projektDejanje({ dejanje: 'odpri', pot: prvaNajdenaDatoteka.pot });
 });
 
 // --- oblak: različice datotek (PDM) --------------------------------------------
