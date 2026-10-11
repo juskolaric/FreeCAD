@@ -13,6 +13,8 @@ KANDIDATI = [
     os.environ.get("FREECAD_MCP_REPO", ""),
     r"C:\Users\Uporabnik\Desktop\Apps\FreeCAD",
     r"C:\Users\Uporabnik\Desktop\Apps\3D tisk\FreeCAD",
+    r"C:\Users\Uporabnik\Desktop\GitHub\CAD in 3D\FreeCAD",
+    r"C:\Users\Uporabnik\Desktop\Apps\CAD in 3D\FreeCAD",
 ]
 
 for repo in KANDIDATI:
