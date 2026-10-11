@@ -105,6 +105,9 @@ FreeCAD je motor, vmesnik in grafika nastajata v brskalniku (plan, korak 8 napre
   Shift 90°, Alt sukanje, Ctrl premik, Ctrl+1..7 ali 1..7 standardni pogledi (Ctrl+številke brskalnik pogosto vzame
   sam), 8 pravokotno na izbrano ploskev, F, Z, Shift+Z, preslednica meni pogledov. Isti pogledi so tudi gumbi v zgornjem desnem kotu
   pogleda (`#pogledi`, trenutni pogled je poudarjen; v skici je vrstica skrita). Skica ostaja na `ortoControls`.
+  **Enako vodenje povsod** (od 2026-10-11): Oblikovanje (`oblikovanje.html`, kopija funkcij `nadzor` brez OrbitControls) in oba 3D pogleda
+  plošče Tiskaj (predogled rezanja, okno Pripravi; `tiskaj/web/nadzor-pogleda.js`, čisti WebGL, kvaternion) se vodita kot Strojno risanje.
+  Ob spremembi vodenja v `index.html` uskladi še ti dve mesti.
 - **Videz modela kot v Fusionu** (od 2026-10-09, `index.html`, razdelek »3D pogled«): okolje `RoomEnvironment` prek `PMREMGenerator`
   (`scene.environment`, zavrteno za 90° okoli X, ker je svet Z-gor; jakost 0,35), `NeutralToneMapping`, ozadje navpični preliv
   (`scene.backgroundNode`, TSL `screenUV`; sličice ga za čas izrisa izklopijo), glavna luč 2,2 + šibka od zadaj, material satenast
