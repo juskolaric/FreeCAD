@@ -294,6 +294,24 @@ FreeCAD je motor, vmesnik in grafika nastajata v brskalniku (plan, korak 8 napre
   z `materialPrevisov` (TSL, uniforme `legaU`; modro miza, rdeče previs, rumeno do 10° pod pragom) in nariše prosojno mizo; »Natisni v
   tej legi« pošlje plošči `rotacije {datoteka: zasuk}` v sporočilu `pripravi` (tiskaj `modalPripravi(pot, null, lega)`). Samostojni
   `.pixi/.../python.exe` brez `Library/bin` v PATH obvisi pri množenju matrik numpy (BLAS DLL); v strežniku in s PATH dela.
+- **Risbe (TechDraw) v brskalniku** (od 2026-10-12, `streznik.py` `_risba_dejanje`, `index.html` razdelek »Risbe«): klik na stran
+  risbe v drevesu (ikona lista, čip Risba) ali gumb z listom v vrstici pogledov odpre list čez 3D pogled (`#risba`: zavihki strani,
+  kolešček povečava, vlek premik, F prilagodi, Esc zapri). `GET /risba?dokument=&stran=` = SVG lista (glavna nit:
+  `TechDrawGui.exportPageAsSvg`), `POST /risba {dejanje: izvozi, format: pdf|dxf|svg}` zapiše v `Risbe/` ob dokumentu
+  (`<dokument> - <stran>.<ext>`; neshranjen: `%LOCALAPPDATA%/FreeCAD-splet/risbe`), `GET /risba/prenos?pot=` streže le izvožene
+  datoteke (`IZVOZI_RISB`). DXF = `TechDraw.writeDXFPage` v merilu pogleda (list z merilom 1:1 je razrez za laser). **Pasti**:
+  (1) izvoz PDF/SVG potrebuje (skrito) okno strani, sicer je brez predloge — strežnik ga odpre z `ViewObject.doubleClicked()`
+  (`_RISBE_ODPRTE` po imenu in ID strani); (2) barvi lista in ploskev sta nastavitvi TechDraw `Colors/PageColor`, `FaceColor`
+  (pri nas svetlo sivi): izvoz začasno nastavi bel list (`_risba_na_belem`: predloga se izriše znova ob prireditvi
+  `EditableTexts`, nato se nastavitev in oznaka »spremenjeno« vrneta), ploskve pogledov naj ima skripta bele (`ViewObject.FaceColor`);
+  (3) `App::Link` kot vir pogleda: TechDraw vzame lego povezave **namesto** lege cilja (`LinkTransform` ne upošteva) — kvader brez
+  vgrajene lege pristane v izhodišču; za razstavljen pogled raje kopija (Part::Box z izrazi na original);
+  (4) kote iz skripte: geometrija pogledov nastane v ozadju (HLR), zato kote in balone dodaj v ločenem klicu; oglišča iščeš po
+  `projectPoint(točka - getGeometricCenter(), True) * Scale` med `getVisibleVertexes()` (Y navzdol, v merilu), balon pa ima
+  `OriginX/Y` in `X/Y` v koordinatah pogleda **brez merila** (Y navzgor); kota do središča luknje gre do kozmetičnega oglišča
+  (`makeCosmeticVertex3d`), ker kota do krožnice meri do roba; (5) `DrawPage.addView` nov pogled postavi na sredino lista — lego
+  nastavi šele po njem. Zgled celotnega postopka: `Oblak/3D modeliranje/Pleksi vitrina/Skripte/vitrina.py` (3 faze).
+  Vroča zamenjava kode strežnika brez ponovnega zagona: `lastno/splet/vroca_zamenjava.py` (`IMENA` funkcij, `METODE` razredov).
 - **Knjižnica standardnih delov** (od 2026-10-09, gumb ▦ Knjižnica v glavi stranskega stolpca): okno `#knjiznica` z mrežo
   kartic po kategorijah (mape baze, sličice prek `/slicica`, iskanje). `GET /knjiznica` (`zgradi_knjiznico`, nit strežnika,
   brez FreeCAD API-ja; izpušča mape `_*`, `.*`, `DXF`), `POST /knjiznica {dejanje: vstavi | odpri, pot, dokument}`

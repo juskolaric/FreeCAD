@@ -411,6 +411,23 @@
   body.stopnjaZunaj #stranski, body.stopnjaZunaj #stranskiPokazi { display: none !important; }
   /* Zavihek Tiskanje: nadzorna plošča Tiskaj (lasten program na vratih 3021) kot okvir čez 3D pogled */
   #tiskanje { position: absolute; inset: 0; z-index: 8; background: #f3f5f8; display: flex; }
+  /* Risbe (TechDraw strani): list kot SVG čez 3D pogled (GET /risba), zavihki strani, izvoz PDF/DXF/SVG (POST /risba) */
+  #risba { position: absolute; inset: 0; z-index: 8; background: #e4e8ee; display: flex; flex-direction: column; }
+  #risba.skrit { display: none; }
+  #risbaVrstica { display: flex; align-items: center; gap: 6px; padding: 6px 10px; background: var(--plosca); border-bottom: 1px solid var(--crta); flex-wrap: wrap; }
+  #risbaVrstica .naslov { font-weight: 600; }
+  #risbaVrstica .dokument { color: var(--besedilo2); margin-right: 8px; }
+  #risbaVrstica .strani { display: flex; gap: 4px; }
+  #risbaVrstica .gumb { height: 28px; padding: 0 10px; border-radius: 8px; border: 1px solid var(--crta); background: #fff; font-size: 12px; cursor: pointer; }
+  #risbaVrstica .gumb:hover:not([disabled]) { background: var(--lebdenje); }
+  #risbaVrstica .gumb.aktiven { background: var(--poudarek); color: #fff; border-color: var(--poudarek); }
+  #risbaVrstica .gumb.izvoz { font-weight: 600; }
+  #risbaVrstica .gumb[disabled] { opacity: .5; cursor: default; }
+  #risbaVrstica .razmik { flex: 1; }
+  #risbaPlatno { flex: 1; min-height: 0; overflow: hidden; position: relative; cursor: grab; }
+  #risbaPlatno.vlecem { cursor: grabbing; }
+  #risbaPlatno svg { position: absolute; left: 0; top: 0; transform-origin: 0 0; background: #fff; box-shadow: var(--senca2); }
+  #risbaSporocilo { position: absolute; left: 50%; top: 40%; transform: translate(-50%, -50%); color: var(--besedilo2); font-size: 14px; }
   /* Pomočnik AI (pomocnik.py): stranska plošča desno od 3D pogleda; pogled se zoži, obrazec se umakne levo od nje */
   #pomocnik { flex: none; width: 380px; display: flex; flex-direction: column; min-height: 0; background: var(--plosca);
               border-left: 1px solid var(--crta); }
@@ -817,6 +834,19 @@
       <p id="tiskanjeOpis"></p>
       <button type="button" id="tiskanjeZazeni">Zaženi ploščo</button>
     </div></div>
+  </div>
+  <div id="risba" class="skrit">
+    <div id="risbaVrstica">
+      <span class="naslov">Risba</span><span class="dokument" id="risbaDokument"></span>
+      <span class="strani" id="risbaStrani"></span>
+      <span class="razmik"></span>
+      <button type="button" class="gumb izvoz" id="risbaPdf" title="Izvozi ta list kot PDF v mapo Risbe ob dokumentu in ga prenesi">Izvozi PDF</button>
+      <button type="button" class="gumb izvoz" id="risbaDxf" title="Izvozi ta list kot DXF (v merilu lista; list 1:1 = razrez) in ga prenesi">Izvozi DXF</button>
+      <button type="button" class="gumb izvoz" id="risbaSvg" title="Izvozi ta list kot SVG in ga prenesi">Izvozi SVG</button>
+      <button type="button" class="gumb" id="risbaPrilagodi" title="Prilagodi list oknu (F)">Prilagodi</button>
+      <button type="button" class="gumb" id="risbaZapri" title="Nazaj na 3D pogled (Esc)">✕ Zapri</button>
+    </div>
+    <div id="risbaPlatno"><div id="risbaSporocilo" class="skrit"></div></div>
   </div>
   <div id="oblikovanje" class="skrit">
     <iframe id="oblikovanjeOkvir" title="Oblikovanje (Blender)"></iframe>
@@ -1420,6 +1450,7 @@ const POTI_IKON = {
   shema: '<rect x="3" y="9" width="6" height="6" rx="1.5"/><rect x="15" y="3" width="6" height="6" rx="1.5"/><rect x="15" y="15" width="6" height="6" rx="1.5"/><path d="M9 12h3M12 6v12M12 6h3M12 18h3"/>',
   zapri: '<path d="M6 6l12 12M18 6L6 18"/>',
   mapa: '<path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>',
+  risba: '<path d="M6 3h9l4 4v14H6z"/><path d="M15 3v4h4"/><path d="M9 12h7M9 16h7"/>',
 };
 function svgIkona(ime, velikost = 16) {
   const s = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
@@ -1471,6 +1502,8 @@ function opisVozla(v) {
   if (t === 'App::Part') return { ikona: 'del', barva: '#4b5563', ozadje: '#eceff3', ime: v.oznaka, cip: 'Del' };
   if (t === 'App::DocumentObjectGroup') return { ikona: 'mapa', barva: '#a16207', ozadje: '#fbf1d9', ime: v.oznaka, skupina: true, brezUrejanja: true };
   if (t === 'App::Link') return { ikona: 'del', barva: '#4b5563', ozadje: '#eceff3', ime: v.oznaka };
+  if (t === 'TechDraw::DrawPage') return { ikona: 'risba', barva: '#0e7490', ozadje: '#dcf1f6', ime: v.oznaka, cip: 'Risba', brezUrejanja: true };
+  if (t.startsWith('TechDraw::')) return { ikona: 'risba', barva: SIVA[0], ozadje: SIVA[1], ime: v.oznaka, brezUrejanja: true };
   return { ikona: '', barva: SIVA[0], ozadje: '#f1f3f6', ime: v.oznaka };
 }
 function ploscicaVrste(v, o) {
@@ -1616,8 +1649,9 @@ function vozelDrevesa(d, ime, globina, pot, filter, q) {
   vrstica.addEventListener('click', e => {
     drevoKazalec = kljuc;
     if (e.detail < 2) objavi('/select', { objekt: ime, element: '', dodaj: e.ctrlKey }).catch(pokaziNapako);
+    if (v.tip === 'TechDraw::DrawPage') odpriRisbo(ime);   // stran risbe: prikaz lista čez 3D pogled
   });
-  vrstica.addEventListener('dblclick', e => { e.preventDefault(); urediObjekt(ime); });
+  vrstica.addEventListener('dblclick', e => { e.preventDefault(); if (v.tip === 'TechDraw::DrawPage') odpriRisbo(ime); else urediObjekt(ime); });
   vrstica.addEventListener('contextmenu', e => {
     e.preventDefault(); e.stopPropagation(); drevoKazalec = kljuc;
     if (!stanje.izbira.some(s => s.objekt === ime)) objavi('/select', { objekt: ime, element: '', dodaj: false }).catch(pokaziNapako);
@@ -2733,6 +2767,7 @@ async function naloziModel() {
   if (model.dokument !== stanje.dokument) { prviNalozen = false; nastaviRazstavitev(0, false); }
   stanje.dokument = model.dokument; stanje.verzija = model.verzija;
   narisiDrevo(model.drevo);
+  posodobiRisbe(model.drevo);   // strani TechDraw: gumb Risbe, odprt list se naloži znova
   uporabiRazstavitev();   // nove skupine objektov dobijo odmik trenutne razstavitve; nastavi tudi sferaModela
   if (legaTiska.odprta) { if (stanje.dokument !== legaTiska.dokument) zapriLegoTiska(); else uporabiPrikazLege(); }   // nove mreže kosov
   if (skica.posnetek) zgradiPripenjanjeModela();
@@ -2966,8 +3001,103 @@ function osveziStopnjo() {
   const zunaj = tiskanje.odprto || oblikovanje.odprto;
   $('gumbStrojno').classList.toggle('aktiven', !zunaj);
   document.body.classList.toggle('stopnjaZunaj', zunaj);
+  try { localStorage.setItem('stopnja', tiskanje.odprto ? 'tiskanje' : oblikovanje.odprto ? 'oblikovanje' : 'strojno'); } catch (e) { /* zasebno okno */ }
 }
 $('gumbStrojno').addEventListener('click', () => { zapriTiskanje(); zapriOblikovanje(); });
+// --- Risbe (strani TechDraw) --------------------------------------------------------------------------------
+// Stran risbe (TechDraw::DrawPage) se odpre čez 3D pogled kot SVG, ki ga izriše strežnik (GET /risba; glavna nit
+// odpre skrito okno strani in izvozi SVG). Zavihki preklapljajo med stranmi dokumenta, gumbi izvozijo list (POST /risba
+// {dejanje: 'izvozi', format}) v mapo Risbe ob dokumentu in ga ponudijo za prenos (/risba/prenos). Ob novem posnetku
+// (dogodek model) se odprt list naloži znova, ker TechDraw geometrijo pogledov računa v ozadju.
+const risba = { odprta: false, dokument: '', stran: '', strani: [], merilo: 1, dx: 0, dy: 0, sirina: 0, visina: 0, vlek: null };
+const risbaEl = $('risba'), risbaPlatno = $('risbaPlatno');
+function straniRisb(drevo) {
+  return Object.values((drevo && drevo.vozli) || {}).filter(v => v.tip === 'TechDraw::DrawPage').map(v => ({ ime: v.ime, oznaka: v.oznaka }));
+}
+function posodobiRisbe(drevo) {
+  risba.strani = straniRisb(drevo);
+  const g = vrsticaPogledov.querySelector('[data-risbe]'); if (g) g.classList.toggle('skrit', !risba.strani.length);
+  if (!risba.odprta) return;
+  if (stanje.dokument !== risba.dokument || !risba.strani.length) { zapriRisbo(); return; }
+  if (!risba.strani.some(s => s.ime === risba.stran)) risba.stran = risba.strani[0].ime;
+  narisiStraniRisb(); naloziRisbo(false);
+}
+function odpriRisbo(ime) {
+  if (!risba.strani.length) { obvesti('Dokument nima risbe (strani TechDraw).', true); return; }
+  risba.dokument = stanje.dokument;
+  risba.stran = ime && risba.strani.some(s => s.ime === ime) ? ime : (risba.strani.some(s => s.ime === risba.stran) ? risba.stran : risba.strani[0].ime);
+  const nova = !risba.odprta; risba.odprta = true;
+  risbaEl.classList.remove('skrit');
+  narisiStraniRisb(); naloziRisbo(nova);
+}
+function zapriRisbo() { if (!risba.odprta) return; risba.odprta = false; risbaEl.classList.add('skrit'); }
+function narisiStraniRisb() {
+  const vsebnik = $('risbaStrani'); vsebnik.innerHTML = '';
+  for (const s of risba.strani) {
+    const b = document.createElement('button'); b.type = 'button'; b.className = 'gumb' + (s.ime === risba.stran ? ' aktiven' : ''); b.textContent = s.oznaka;
+    b.addEventListener('click', () => { if (risba.stran === s.ime) return; risba.stran = s.ime; narisiStraniRisb(); naloziRisbo(true); });
+    vsebnik.append(b);
+  }
+  $('risbaDokument').textContent = risba.dokument;
+}
+async function naloziRisbo(prilagodi) {
+  if (!risba.odprta) return;
+  const spor = $('risbaSporocilo');
+  try {
+    const r = await fetch('/risba?dokument=' + encodeURIComponent(risba.dokument) + '&stran=' + encodeURIComponent(risba.stran) + '&v=' + Date.now(), { cache: 'no-store' });
+    if (!r.ok) { let m = 'Risba ni na voljo.'; try { m = (await r.json()).sporocilo || m; } catch (e) { /* ni JSON */ } throw new Error(m); }
+    const dom = new DOMParser().parseFromString(await r.text(), 'image/svg+xml');
+    const svg = document.importNode(dom.documentElement, true);
+    const stari = risbaPlatno.querySelector('svg'); if (stari) stari.remove();
+    // velikost lista: TechDraw zapiše width="297mm"; prikaz v px pri 96 dpi, povečava in premik s transformacijo
+    const mm = a => parseFloat(String(a || '0')) || 0;
+    risba.sirina = mm(svg.getAttribute('width')) * 96 / 25.4; risba.visina = mm(svg.getAttribute('height')) * 96 / 25.4;
+    svg.setAttribute('width', String(risba.sirina)); svg.setAttribute('height', String(risba.visina));
+    risbaPlatno.append(svg); spor.classList.add('skrit');
+    if (prilagodi) prilagodiRisbo(); else postaviRisbo();
+  } catch (e) { spor.textContent = String(e.message || e); spor.classList.remove('skrit'); }
+}
+function postaviRisbo() { const svg = risbaPlatno.querySelector('svg'); if (svg) svg.style.transform = `translate(${risba.dx}px, ${risba.dy}px) scale(${risba.merilo})`; }
+function prilagodiRisbo() {
+  const w = risbaPlatno.clientWidth, h = risbaPlatno.clientHeight; if (!risba.sirina || !w) return;
+  risba.merilo = Math.min((w - 40) / risba.sirina, (h - 40) / risba.visina);
+  risba.dx = (w - risba.sirina * risba.merilo) / 2; risba.dy = (h - risba.visina * risba.merilo) / 2; postaviRisbo();
+}
+risbaPlatno.addEventListener('wheel', e => {
+  e.preventDefault();
+  const f = e.deltaY < 0 ? 1.15 : 1 / 1.15, r = risbaPlatno.getBoundingClientRect(), x = e.clientX - r.left, y = e.clientY - r.top;
+  risba.dx = x - (x - risba.dx) * f; risba.dy = y - (y - risba.dy) * f; risba.merilo *= f; postaviRisbo();
+}, { passive: false });
+risbaPlatno.addEventListener('mousedown', e => {
+  if (e.button !== 0 && e.button !== 1) return;
+  risba.vlek = { x: e.clientX, y: e.clientY, dx: risba.dx, dy: risba.dy }; risbaPlatno.classList.add('vlecem'); e.preventDefault();
+});
+window.addEventListener('mousemove', e => { if (!risba.vlek) return; risba.dx = risba.vlek.dx + e.clientX - risba.vlek.x; risba.dy = risba.vlek.dy + e.clientY - risba.vlek.y; postaviRisbo(); });
+window.addEventListener('mouseup', () => { if (risba.vlek) { risba.vlek = null; risbaPlatno.classList.remove('vlecem'); } });
+window.addEventListener('resize', () => { if (risba.odprta) prilagodiRisbo(); });
+async function izvoziRisbo(format) {
+  const gumbi = risbaEl.querySelectorAll('.gumb.izvoz'); gumbi.forEach(g => { g.disabled = true; });
+  try {
+    const r = await fetch('/risba', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Zeton': ZETON },
+      body: JSON.stringify({ dejanje: 'izvozi', dokument: risba.dokument, stran: risba.stran, format }) });
+    const d = await r.json();
+    if (!d.ok) { obvesti(d.sporocilo || 'Izvoz ni uspel.', true); return; }
+    obvesti('Shranjeno: ' + d.pot + ' (' + velikostB(d.velikost) + ')');
+    const a = document.createElement('a'); a.href = '/risba/prenos?pot=' + encodeURIComponent(d.pot); a.download = d.ime;
+    document.body.append(a); a.click(); a.remove();
+  } catch (e) { pokaziNapako(e); } finally { gumbi.forEach(g => { g.disabled = false; }); }
+}
+$('risbaPdf').addEventListener('click', () => izvoziRisbo('pdf'));
+$('risbaDxf').addEventListener('click', () => izvoziRisbo('dxf'));
+$('risbaSvg').addEventListener('click', () => izvoziRisbo('svg'));
+$('risbaPrilagodi').addEventListener('click', prilagodiRisbo);
+$('risbaZapri').addEventListener('click', zapriRisbo);
+document.addEventListener('keydown', e => {
+  if (!risba.odprta || e.target.closest('input, textarea, [contenteditable]')) return;
+  if (e.key === 'Escape') { zapriRisbo(); e.stopPropagation(); }
+  else if (e.key === 'f' || e.key === 'F') { prilagodiRisbo(); e.stopPropagation(); }
+}, true);
+
 function odpriTiskanje() {
   if (tiskanje.odprto) return;
   tiskanje.odprto = true;
@@ -3796,6 +3926,8 @@ const IKONE_POGLEDOV = {
   razstavi: svgIkone('<polygon class="poudarjeno" points="4,5 12,1.5 20,5 12,8.5" fill-opacity=".85"/>'
     + '<path d="M4 5L12 1.5L20 5L12 8.5ZM4 5V7L12 10.5L20 7V5M12 8.5V10.5"/>'
     + '<path d="M4 15.5L12 12.5L20 15.5L12 19ZM4 15.5V18L12 21.5L20 18V15.5M12 19V21.5"/>'),
+  risba: svgIkone('<path d="M5 3h10l4 4v14H5z"/><path d="M15 3v4h4"/>'
+    + '<rect class="poudarjeno" x="8" y="11" width="8" height="6" fill-opacity=".55"/><path d="M8 11h8v6H8zM10 9v2M14 9v2"/>'),
 };
 function zgradiVrsticoPogledov() {
   vrsticaPogledov.innerHTML = '';
@@ -3827,6 +3959,8 @@ function zgradiVrsticoPogledov() {
   vrsticaPogledov.appendChild(d);
   locilo();
   dodaj(IKONE_POGLEDOV.render, 'Render: fotorealistična slika trenutnega pogleda v Blenderju (Cycles; osvetlitev, ozadje, video 360°)', odpriRenderModela);
+  const gRis = dodaj(IKONE_POGLEDOV.risba, 'Risbe (strani TechDraw) tega dokumenta: prikaz lista in izvoz PDF / DXF / SVG', () => odpriRisbo());
+  gRis.dataset.risbe = '1'; gRis.classList.toggle('skrit', !risba.strani.length);
 }
 function osveziVrsticoPogledov() {
   const nazaj = osKamere(0, 0, 1);

@@ -2455,6 +2455,93 @@ def tisk_lega_kosov(mreze, kot_previsa):
     return {"ok": bool(kosi), "kosi": kosi, "napake": mreze.get("napake", []), "kot_previsa": kot_previsa}
 
 
+# ---- Risbe (TechDraw strani) v brskalniku (od 2026-10-12) -------------------------------------------------------------
+IZVOZI_RISB = set()      # poti izvoženih risb, ki jih sme brskalnik prenesti (GET /risba/prenos)
+_RISBE_ODPRTE = set()    # (dokument, stran, ID): strani, ki že imajo (skrito) okno strani; brez njega izvoz nima predloge
+
+
+def _risba_dejanje(stanje, podatki):
+    """Risbe (TechDraw) za brskalnik, glavna nit: `seznam` strani dokumenta, `svg` = stran kot SVG za prikaz, `izvozi`
+    (format pdf | dxf | svg) v mapo Risbe ob dokumentu (neshranjen dokument: %LOCALAPPDATA%/FreeCAD-splet/risbe).
+    Stran mora imeti (skrito) okno strani (ViewObject.doubleClicked), sicer izvoz nima predloge. Geometrijo pogledov
+    TechDraw računa v ozadju: tik po spremembi je lahko izvoz še star, stran se po dogodku `model` naloži znova."""
+    ime_doc = podatki.get("dokument", "")
+    doc = App.listDocuments().get(ime_doc) or next((d for d in App.listDocuments().values() if d.Label == ime_doc), None)
+    if doc is None:
+        return {"ok": False, "sporocilo": "Dokument »%s« ni odprt." % (ime_doc or "?")}
+    strani = [o for o in doc.Objects if o.TypeId == "TechDraw::DrawPage"]
+    dejanje = podatki.get("dejanje") or "svg"
+    if dejanje == "seznam":
+        return {"ok": True, "dokument": doc.Label, "strani": [{"ime": o.Name, "oznaka": o.Label} for o in strani]}
+    stran = next((o for o in strani if o.Name == podatki.get("stran")), None) or (strani[0] if strani else None)
+    if stran is None:
+        return {"ok": False, "sporocilo": "Dokument »%s« nima risbe (strani TechDraw)." % doc.Label}
+    kljuc = (doc.Name, stran.Name, stran.ID)   # ID: na novo zgrajena stran z istim imenom še nima okna
+    if kljuc not in _RISBE_ODPRTE:
+        try:
+            stran.ViewObject.doubleClicked()
+        except Exception:  # noqa: BLE001
+            _log("risba: okna strani %s ni bilo mogoče odpreti: %s" % (stran.Label, traceback.format_exc().strip().splitlines()[-1]))
+        _RISBE_ODPRTE.add(kljuc)
+    if "Touched" in stran.State or any("Touched" in v.State for v in stran.Views):
+        doc.recompute()
+    zacasna = os.path.join(os.environ.get("LOCALAPPDATA") or MAPA, "FreeCAD-splet", "risbe")
+    os.makedirs(zacasna, exist_ok=True)
+    if dejanje in ("svg", "izvozi"):
+        return _risba_na_belem(doc, stran, lambda: _risba_izvoz(doc, stran, dejanje, podatki, zacasna))
+    return {"ok": False, "sporocilo": "Neznano dejanje »%s«." % dejanje}
+
+
+def _risba_na_belem(doc, stran, delo):
+    """Izvoz na belem listu: barva lista je nastavitev TechDraw (Colors/PageColor, pri nas svetlo siva za videz v
+    programu), v PDF pa gre kot ozadje. Med izvozom je bela; predloga se izriše znova ob spremembi EditableTexts
+    (ista vrednost), na koncu se nastavitev in oznaka »spremenjeno« dokumenta vrneta."""
+    grp = App.ParamGet("User parameter:BaseApp/Preferences/Mod/TechDraw/Colors")
+    staro = grp.GetUnsigned("PageColor", 0xFFFFFFFF)
+    gdoc = Gui.getDocument(doc.Name) if IMA_OKNO else None
+    spremenjen = gdoc.Modified if gdoc is not None else None
+    predloga = stran.Template
+    try:
+        if staro != 0xFFFFFFFF and predloga is not None:
+            grp.SetUnsigned("PageColor", 0xFFFFFFFF)
+            predloga.EditableTexts = dict(predloga.EditableTexts)
+        return delo()
+    finally:
+        if staro != 0xFFFFFFFF and predloga is not None:
+            grp.SetUnsigned("PageColor", staro)
+            predloga.EditableTexts = dict(predloga.EditableTexts)
+        if gdoc is not None and spremenjen is not None:
+            gdoc.Modified = spremenjen
+
+
+def _risba_izvoz(doc, stran, dejanje, podatki, zacasna):
+    """SVG za prikaz (dejanje svg) ali izvoz PDF/DXF/SVG v mapo Risbe ob dokumentu (dejanje izvozi)."""
+    import TechDraw
+    import TechDrawGui
+    if dejanje == "svg":
+        pot = os.path.join(zacasna, "%s_%s.svg" % (doc.Name, stran.Name))
+        TechDrawGui.exportPageAsSvg(stran, pot)
+        with open(pot, encoding="utf-8") as f:
+            return {"ok": True, "oznaka": stran.Label, "svg": f.read()}
+    if dejanje == "izvozi":
+        oblika = str(podatki.get("format") or "pdf").lower()
+        if oblika not in ("pdf", "dxf", "svg"):
+            return {"ok": False, "sporocilo": "Neznana oblika »%s« (pdf, dxf ali svg)." % oblika}
+        mapa = os.path.join(os.path.dirname(doc.FileName), "Risbe") if doc.FileName else zacasna
+        os.makedirs(mapa, exist_ok=True)
+        ime = "".join("_" if c in '<>:"/\|?*' or ord(c) < 32 else c for c in "%s - %s" % (doc.Label, stran.Label)).strip(" .")
+        pot = os.path.join(mapa, "%s.%s" % (ime, oblika))
+        if oblika == "pdf":
+            TechDrawGui.exportPageAsPdf(stran, pot)
+        elif oblika == "svg":
+            TechDrawGui.exportPageAsSvg(stran, pot)
+        else:
+            TechDraw.writeDXFPage(stran, pot)
+        IZVOZI_RISB.add(pot)
+        _log("risba: %s / %s -> %s (%d B)" % (doc.Label, stran.Label, pot, os.path.getsize(pot)))
+        return {"ok": True, "pot": pot, "ime": os.path.basename(pot), "velikost": os.path.getsize(pot)}
+
+
 def _tiskaj_natisni(stanje, podatki):
     """»Natisni« iz drevesa (glavna nit): objekte (`imena` = kosi z geometrijo pod vozlom, kot jih riše stran) izvozi kot
     STEP v vhodno mapo plošče Tiskaj (`mapa` določi nit strežnika); objekt z več telesi gre v več datotek (_1, _2 ...),
@@ -3128,6 +3215,10 @@ class Stanje:
             rezultat = _tiskaj_natisni(self, podatki)
             if odgovor is not None:
                 odgovor["rezultat"] = rezultat
+        elif ukaz == "risba":
+            rezultat = _risba_dejanje(self, podatki)
+            if odgovor is not None:
+                odgovor["rezultat"] = rezultat
         elif ukaz == "tisk_mreze":
             rezultat = _tisk_mreze(podatki)
             if odgovor is not None:
@@ -3409,6 +3500,39 @@ class Zahteva(http.server.BaseHTTPRequestHandler):
             except Exception as e:  # noqa: BLE001
                 vir = {"uri": uri, "mimeType": "text/plain", "text": "Vir ni na voljo: %s" % e}
             self._odgovor(json.dumps(vir, ensure_ascii=False).encode("utf-8"), koda=200 if vir else 404)
+        elif pot == "/risba":
+            # Risba (stran TechDraw) kot SVG za prikaz v brskalniku; izriše jo glavna nit (potrebuje GUI strani).
+            import urllib.parse
+            q = urllib.parse.parse_qs(self.path.partition("?")[2])
+            odgovor = {"konec": threading.Event(), "izpis": "", "napaka": "", "rezultat": None}
+            STANJE.vrsta.put(("risba", {"dejanje": "svg", "dokument": (q.get("dokument") or [""])[0],
+                                        "stran": (q.get("stran") or [""])[0]}, odgovor))
+            r = odgovor["rezultat"] if odgovor["konec"].wait(60) else None
+            if not r or not r.get("ok"):
+                sporocilo = (r or {}).get("sporocilo") or (odgovor["napaka"].strip().splitlines()[-1] if odgovor["napaka"]
+                                                           else "Risba ni na voljo (FreeCAD še dela).")
+                self._odgovor(json.dumps({"ok": False, "sporocilo": sporocilo}, ensure_ascii=False).encode("utf-8"), koda=404)
+            else:
+                self._odgovor(r["svg"].encode("utf-8"), "image/svg+xml; charset=utf-8")
+        elif pot == "/risba/prenos":
+            # Prenos izvožene risbe: samo datoteke, ki jih je izvozil POST /risba (IZVOZI_RISB), ne poljubne poti.
+            import urllib.parse
+            q = urllib.parse.parse_qs(self.path.partition("?")[2])
+            iskana = (q.get("pot") or [""])[0]
+            if iskana not in IZVOZI_RISB or not os.path.isfile(iskana):
+                self._odgovor(b"ni", "text/plain", 404)
+                return
+            with open(iskana, "rb") as f:
+                telo = f.read()
+            vrsta = {"pdf": "application/pdf", "svg": "image/svg+xml", "dxf": "application/dxf"}.get(
+                iskana.rsplit(".", 1)[-1].lower(), "application/octet-stream")
+            self.send_response(200)
+            self.send_header("Content-Type", vrsta)
+            self.send_header("Content-Length", str(len(telo)))
+            self.send_header("Content-Disposition", "attachment; filename*=UTF-8''" + urllib.parse.quote(os.path.basename(iskana)))
+            self.send_header("Cache-Control", "no-store")
+            self.end_headers()
+            self.wfile.write(telo)
         elif pot == "/tiskaj/stanje":
             # Plošča Tiskaj (nit strežnika, pomnjeno 2 s): za čipe tiskalnikov v vrstici stanja in zavihek Tiskanje.
             self._odgovor(json.dumps(tiskaj_stanje(), ensure_ascii=False).encode("utf-8"))
@@ -3466,6 +3590,18 @@ class Zahteva(http.server.BaseHTTPRequestHandler):
         if pot == "/mcp/odgovor":
             # stran v brskalniku odgovarja na zahtevo orodja (slika pogleda, kamera, okno Pripravi)
             self._odgovor(json.dumps({"ok": mcp_orodja.brskalnik_odgovor(podatki)}).encode("utf-8"))
+            return
+        if pot == "/risba":
+            # Risbe (TechDraw): izvoz PDF/DXF/SVG ali seznam strani; dela glavna nit, brskalnik počaka na pot datoteke.
+            odgovor = {"konec": threading.Event(), "izpis": "", "napaka": "", "rezultat": None}
+            STANJE.vrsta.put(("risba", podatki, odgovor))
+            if not odgovor["konec"].wait(120):
+                telo = {"ok": False, "sporocilo": "FreeCAD še dela; poglej čez nekaj časa."}
+            elif odgovor["napaka"]:
+                telo = {"ok": False, "sporocilo": "Napaka v FreeCAD-u: " + odgovor["napaka"].strip().splitlines()[-1]}
+            else:
+                telo = odgovor["rezultat"] or {"ok": False, "sporocilo": "Brez odgovora."}
+            self._odgovor(json.dumps(telo, ensure_ascii=False).encode("utf-8"))
             return
         if pot == "/tiskaj/natisni":
             # Natisni iz drevesa: glavna nit izvozi STEP v vhodno mapo plošče (mapo določi tukaj nit strežnika, da glavna
