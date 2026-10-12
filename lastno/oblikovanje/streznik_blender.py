@@ -465,7 +465,8 @@ class Stanje:
                 "spremenjeno": self.spremenjeno, "mapa": MAPA_DATOTEK, "blender": bpy.app.version_string,
                 "napaka": self.napaka, "verzijaIdeje": self.verzija_ideje,
                 "ideja": os.path.basename(IDEJE.mapa) if IDEJE.mapa else "", "razlicica": IDEJE.razlicica,
-                "projekt": PROJEKTI.ime, "vBlenderju": bool(self.zunanje), "ai": AI.stanje}
+                "projekt": PROJEKTI.ime, "vBlenderju": bool(self.zunanje), "ai": AI.stanje,
+                "pid": os.getpid()}   # stran ob drugem pid-u (nov zagon, nov žeton) sama osveži
 
 
 STANJE = Stanje()

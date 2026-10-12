@@ -481,10 +481,13 @@ async function ukaz(telo, tiho) {
     return d;
   } catch (e) { obvesti('Blender ne odgovarja: ' + e.message, true); return {}; }
 }
-let stanje = {}, verzijaIdeje = -1, ideja = null;
+let stanje = {}, verzijaIdeje = -1, ideja = null, pidStreznika = 0;
 async function osvezi(takoj) {
   try {
     stanje = await (await fetch('/stanje', { cache: 'no-store' })).json();
+    // Nov zagon strežnika (drug pid): stran ima star žeton in staro kodo, zato se naloži znova (iz ozadja čez nekaj sekund).
+    if (stanje.pid && pidStreznika && stanje.pid !== pidStreznika) { $('hud').textContent = 'Oblikovanje se je znova zagnalo, osvežujem …'; location.reload(); return; }
+    if (stanje.pid) pidStreznika = stanje.pid;
     if (stanje.verzija !== verzija) { verzija = stanje.verzija; await naloziModel(); }
     if (stanje.verzijaIdeje !== verzijaIdeje) { verzijaIdeje = stanje.verzijaIdeje; await naloziIdeje(); }
     if (stanje.ai === 'dela' || ai.dela) await osveziAI();

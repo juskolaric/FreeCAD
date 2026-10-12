@@ -766,7 +766,7 @@
       <button type="button" id="gumbGrafika" class="stopnja grafika" title="4. stopnja: grafika (Grafika Studio): nalepke, folije in tiskovine kot SVG, Inkscape v ozadju; AI jih ureja prek MCP, ti gledaš v živo"><span class="st">4</span>Grafika</button>
     </div>
     <div id="orodja">
-      <button id="gumbNatisni" type="button" title="Natisni izbrane kose (če ni izbire, cel aktivni dokument): STEP v vhod plošče Tiskaj in okno Pripravi; v Oblikovanju vidne objekte Blenderja (STL)">&#128424; 3D natisni</button>
+      <button id="gumbNatisni" type="button" title="Natisni izbrane kose (če ni izbire, cel aktivni dokument): STEP v vhod plošče Tiskaj in okno Pripravi">&#128424; Natisni</button>
       <button id="gumbPomocnik" type="button" title="Pomočnik AI: povej, kaj naj naredi v modelu (Claude z orodji FreeCAD-a); spremembe potrdiš v plošči">&#10022; Pomočnik</button>
       <button id="gumbOkno" type="button" title="Pokaže ali skrije okno namiznega FreeCAD-a">Pokaži FreeCAD</button>
       <button id="gumbIzhod" type="button" title="Zapre FreeCAD in spletni strežnik">Izhod</button>
@@ -3583,13 +3583,8 @@ $('gumbZgradba').addEventListener('click', () => {
   const o = ((stanje.projekti && stanje.projekti.odprti) || []).find(o => o.aktiven);
   odpriZgradbo(o ? o.ime : '', o ? o.oznaka : '');
 });
-// Gumb 3D natisni (od 2026-10-10): izbrani kosi, sicer vsi koreni aktivnega dokumenta; isto kot Natisni iz drevesa.
-// Na 1. stopnji (Oblikovanje) natisne vidne objekte Blenderja: okvir izvozi STL in ga sporoči nazaj (poslušalec spodaj).
+// Gumb Natisni (od 2026-10-10): izbrani kosi, sicer vsi koreni aktivnega dokumenta; isto kot Natisni iz drevesa.
 $('gumbNatisni').addEventListener('click', () => {
-  if (oblikovanje.odprto) {
-    if (oblikovanje.nalozen) oblikovanjeSporoci({ dejanje: 'natisni' }); else obvesti('Oblikovanje še ni naloženo.', true);
-    return;
-  }
   const d = stanje.drevo, izbrani = [...new Set(stanje.izbira.map(s => s.objekt))];
   const viri = izbrani.length ? izbrani : (d && d.koreni) || [];
   const imena = [...new Set(viri.flatMap(i => imenaZaIzris(i)))];
