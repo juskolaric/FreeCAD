@@ -242,7 +242,19 @@ FreeCAD je motor, vmesnik in grafika nastajata v brskalniku (plan, korak 8 napre
   seznamu idej in v naslovu. Ukazi `vstavi-kos {ideja, razlicica?, lega?, ime?}`, `posodobi-kos {ime, razlicica?}`, `odstrani-kos`;
   `vidnost`/`odstrani` na kosu veljata za cel kos. Pomočniki za AI in skripte: `vstavi_kos`, `posodobi_kos`, `odstrani_kos`, `kosi`.
   Obliko kosa se spreminja v njegovi ideji (nova različica), sestav nato pokaže ↻ — kot risba sestava, ki navaja kos z revizijo.
-  Prvi sestav: »Maketa v pleksi vitrini« R04 vsebuje »Photobox Slim za tisk« R10 (prej kopija z barvami Opatije; barve naj dobi kos).
+  **Seznam idej je drevo sestava**: koren je glavni sestav, pod njim (▾/▸) podsestavi in kosi z revizijo, ki jo sestav uporablja
+  (oranžno `R10 → R11`, če je kos naprej); ideja, ki je kos v kakšnem sestavu, je v drevesu samo pod sestavom (`/ideje` nosi `razlicice`
+  s `deli` po vseh različicah, da drevo kaže kose točno te revizije). Zgradba (2026-10-12): »Maketa v pleksi vitrini« R05 (glavni sestav,
+  brez lastnih teles) → »Maketa boxa« R01 (kos »Photobox Slim za tisk« R10 v izhodišču + napisi, nalepke, okvirji) na (0; 0,16; 26) in
+  »Pleksi vitrina« R01 (podstavek, pleksi, vložek z napisom); R04 je bila vmesna oblika (vitrina lokalno, box kot kos).
+  **Pasti**: (1) `matrix_world` vezanega objekta, ki ni v nobenem pogledu, je enotska — lego telesa iz datoteke kosa izračuna
+  `lega_v_datoteki` po verigi staršev iz `matrix_basis`; (2) scena iz nič (`nova` + kosi) nima `bpy.data.filepath`, zato
+  `shrani_razlicico` najprej shrani brez kopije, nato `make_paths_relative` in kopijo (z `save_version = 0`, da ni `.blend1`);
+  (3) **sličica**: ob preklopu ideje `/stanje` pokaže novo različico, preden je posnetek zgrajen — stran je zato staro sceno poslala kot
+  sličico nove različice (R10 kosa je kazala vitrino). Stran slika le, če `model.datoteka === stanje.datoteka`, strežnik `/slicica` sprejme
+  le `razlicica == IDEJE.razlicica` in `verzija == STANJE.verzija` (stran ob zavrnitvi poskusi znova z novim modelom);
+  (4) nove ideje iz obstoječe gradi aditivno (prazna scena + `libraries.load(link=False)` izbranih objektov iz datoteke različice),
+  ne z brisanjem objektov iz žive scene.
 - **Lega za tisk** (od 2026-10-10, `lastno/splet/tisk_lega.py`, samo numpy): desni klik v drevesu -> ⊥ Lega za tisk. `POST /tisk/lega
   {dokument, imena, kot_previsa}`: glavna nit le zmreži kose (`_tisk_mreze`; kosi kot pri Natisni, `_kosi_za_tisk`: objekt z več telesi =
   več kosov, mreža v koordinatah STEP-a), iskanje teče na niti strežnika (`tisk_lega_kosov`, ~1,5 s za 50k trikotnikov). Preizkusi ~450

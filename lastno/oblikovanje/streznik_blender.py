@@ -925,6 +925,11 @@ class Zahteva(http.server.BaseHTTPRequestHandler):
             if not bajti.startswith(b"\x89PNG") or len(bajti) > 3_000_000:
                 self._odgovor({"ok": False}, koda=400)
                 return
+            # sličica velja le, če je stran slikala trenutni posnetek trenutne različice (ob preklopu ideje se stanje
+            # posodobi prej kot posnetek, zato bi sicer stara scena postala sličica nove različice)
+            if podatki.get("razlicica", "") != IDEJE.razlicica or podatki.get("verzija") != STANJE.verzija:
+                self._odgovor({"ok": False})
+                return
             IDEJE.shrani_slicico(podatki.get("razlicica", ""), bajti)
             STANJE.verzija_ideje += 1
             self._odgovor({"ok": True})

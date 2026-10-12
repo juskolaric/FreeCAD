@@ -160,12 +160,21 @@ class Ideje:
         p = self.podatki()
         stevilke = [int(m.group(1)) for r in p.get("razlicice", []) for m in [re.match(r"R(\d+)$", r["id"])] if m]
         rid = "R%02d" % ((max(stevilke) if stevilke else 0) + 1)
-        if bpy.data.libraries and bpy.data.filepath:     # vezave na kose relativno (Ideje se selijo kot celota)
-            try:
-                bpy.ops.file.make_paths_relative()
-            except RuntimeError:
-                pass
-        bpy.ops.wm.save_as_mainfile(filepath=self._pot(rid + ".blend"), copy=True, compress=True)
+        pot = self._pot(rid + ".blend")
+        vezave = any(getattr(o.data, "library", None) for o in bpy.context.scene.objects)
+        nastavitve = bpy.context.preferences.filepaths
+        staro_st, nastavitve.save_version = nastavitve.save_version, 0     # brez .blend1 ob dvojnem shranjevanju
+        try:
+            if vezave:     # vezave na kose relativno (Ideje se selijo kot celota)
+                if not bpy.data.filepath:   # scena iz nič: najprej shrani, da imajo relativne poti izhodišče
+                    bpy.ops.wm.save_as_mainfile(filepath=pot, compress=True)
+                try:
+                    bpy.ops.file.make_paths_relative()
+                except RuntimeError:
+                    pass
+            bpy.ops.wm.save_as_mainfile(filepath=pot, copy=True, compress=True)
+        finally:
+            nastavitve.save_version = staro_st
         p.setdefault("razlicice", []).append({"id": rid, "opomba": (opomba or "").strip()[:300], "vir": vir,
                                              "cas": datetime.datetime.now().isoformat(timespec="seconds"),
                                              "zvezdica": False, "izhaja": self.razlicica, "deli": kosi_povzetek()})
@@ -308,6 +317,15 @@ def _matrika_lege(lega):
     return Matrix([list(v) for v in lega])
 
 
+def lega_v_datoteki(obj):
+    """Svetovna lega objekta iz datoteke kosa, izračunana po verigi staršev iz shranjenih lastnosti (lega, zasuk, merilo).
+    matrix_world vezanega objekta, ki ni v nobenem pogledu, ni izračunana (ostane enotska)."""
+    m = obj.matrix_basis.copy()
+    if obj.parent is not None:
+        return lega_v_datoteki(obj.parent) @ obj.matrix_parent_inverse @ m
+    return m
+
+
 def vstavi_kos(koren, ideja, rid=None, lega=None, ime=None, lastna=""):
     """Kos (različica druge ideje) vstavi v sceno kot vezavo: mreže ostanejo v <Ideje>/<ideja>/<rid>.blend, tu nastanejo
     nosilec (Empty z lastnostjo »kos«) in lokalna telesa z vezano mrežo. lega: (x, y, z) ali matrika 4 × 4 nosilca.
@@ -337,7 +355,7 @@ def vstavi_kos(koren, ideja, rid=None, lega=None, ime=None, lastna=""):
         telo.name = izvor.name
         telo.parent = nos
         telo.matrix_parent_inverse = Matrix()
-        telo.matrix_basis = izvor.matrix_world.copy()   # lega telesa znotraj kosa (tudi če je bilo tam v hierarhiji)
+        telo.matrix_basis = lega_v_datoteki(izvor)    # lega telesa znotraj kosa (tudi če je bilo tam v hierarhiji)
         scena.collection.objects.link(telo)
         telesa.append(telo)
     if not telesa:

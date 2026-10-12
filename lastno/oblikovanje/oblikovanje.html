@@ -570,6 +570,7 @@ $('gBlender').addEventListener('click', () => ukaz({ dejanje: 'odpri-v-blenderju
 let slicicaPoslana = '';
 async function preveriSlicico() {
   if (!ideja || !stanje.razlicica || stanje.spremenjeno || !model.objekti.length) return;
+  if (model.datoteka !== stanje.datoteka) return;   // posnetek je še od prejšnje ideje (stanje se posodobi prej kot posnetek)
   const r = ideja.razlicice.find(x => x.id === stanje.razlicica);
   const kljuc = ideja.ime + '/' + stanje.razlicica;
   if (!r || r.slicica || slicicaPoslana === kljuc) return;
@@ -586,7 +587,8 @@ async function preveriSlicico() {
   const ctx = c.getContext('2d'), slika = ctx.createImageData(W, H);
   for (let y = 0; y < H; y++) slika.data.set(px.subarray((H - 1 - y) * W * 4, (H - y) * W * 4), y * W * 4);
   ctx.putImageData(slika, 0, 0);
-  await post('/slicica', { razlicica: stanje.razlicica, png: c.toDataURL('image/png') }).catch(() => {});
+  const d = await post('/slicica', { razlicica: stanje.razlicica, verzija: model.verzija, png: c.toDataURL('image/png') }).catch(() => ({}));
+  if (!d.ok) slicicaPoslana = '';   // strežnik jo zavrne, če posnetek ni več trenuten; poskusi znova z novim modelom
 }
 
 // --- klepet s Claudom --------------------------------------------------------------------------------------------
