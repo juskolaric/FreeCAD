@@ -328,6 +328,78 @@ def oblikovanje_zazeni():
     return True, "Oblikovanje se zaganja."
 
 
+# ---------------------------------------------------------------------------
+# Grafika (od 2026-10-12): Grafika Studio (CAD in 3D/Grafika Studio, lasten Python program: SVG dokumenti, Inkscape v ozadju,
+# spletni pogled + MCP za AI na vratih 3040 po Orodja/ports.json). V brskalniku je 4. stopnja »Grafika« (okvir čez 3D pogled
+# kot Tiskanje in Oblikovanje). Ta strežnik ga le zažene (POST /grafika/zazeni, sistemski pythonw kot pri plošči Tiskaj) in vpraša,
+# ali teče (GET /grafika/stanje). Prepis: SPLET_GRAFIKA_VRATA, SPLET_GRAFIKA_MAPA.
+GRAFIKA_VRATA = int(os.environ.get("SPLET_GRAFIKA_VRATA", "3040"))
+
+
+def _najdi_grafiko():
+    """Mapa Grafika Studia: ob repozitoriju FreeCAD (CAD in 3D/Grafika Studio) ali prepis SPLET_GRAFIKA_MAPA."""
+    prepis = os.environ.get("SPLET_GRAFIKA_MAPA", "").strip()
+    koren = os.path.normpath(os.path.join(MAPA, "..", ".."))        # repozitorij FreeCAD
+    kandidati = [prepis] if prepis else []
+    kandidati += [os.path.join(koren, "..", "Grafika Studio"), os.path.join(koren, "..", "..", "Grafika Studio")]
+    for k in kandidati:
+        if k and os.path.isfile(os.path.join(k, "run_studio.py")):
+            return os.path.normpath(k)
+    return ""
+
+
+GRAFIKA_MAPA = _najdi_grafiko()
+
+
+def grafika_stanje():
+    """Ali Grafika Studio teče (GET /api/status na 3040); nit strežnika."""
+    import http.client
+    stanje = {"tece": False, "vrata": GRAFIKA_VRATA, "mapa": GRAFIKA_MAPA, "inkscape": ""}
+    try:
+        c = http.client.HTTPConnection("127.0.0.1", GRAFIKA_VRATA, timeout=1.0)
+        c.request("GET", "/api/status")
+        r = c.getresponse()
+        if r.status == 200:
+            d = json.loads(r.read().decode("utf-8") or "{}")
+            stanje.update(tece=True, inkscape=d.get("inkscape") or "", dokumenti=d.get("documents_dir", ""), mcp=d.get("mcp_url", ""))
+        c.close()
+    except (OSError, ValueError):
+        pass
+    return stanje
+
+
+def grafika_zazeni():
+    """Zažene Grafika Studio kot samostojen proces brez okna (preživi Izhod FreeCAD-a). Vrne (ok, sporočilo)."""
+    import subprocess
+    if grafika_stanje()["tece"]:
+        return True, "Grafika Studio že teče."
+    if not GRAFIKA_MAPA:
+        return False, "Mape Grafika Studia ni (CAD in 3D/Grafika Studio); nastavi SPLET_GRAFIKA_MAPA."
+    py = _tiskaj_python()
+    if not py:
+        return False, "Python za Grafika Studio ni najden (pythonw.exe)."
+    okolje = {k: v for k, v in os.environ.items() if k not in ("PYTHONHOME", "PYTHONPATH", "PYTHONNOUSERSITE")}
+    okolje["GRAFIKA_VRATA"] = str(GRAFIKA_VRATA)
+    zastavice = (getattr(subprocess, "DETACHED_PROCESS", 0) | getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
+                 | getattr(subprocess, "CREATE_NO_WINDOW", 0))
+    dnevnik = os.path.join(os.environ.get("LOCALAPPDATA", MAPA), "FreeCAD-splet", "grafika.log")
+    try:
+        os.makedirs(os.path.dirname(dnevnik), exist_ok=True)
+        izhod = open(dnevnik, "ab")
+    except OSError:
+        izhod = subprocess.DEVNULL
+    try:
+        subprocess.Popen([py, "run_studio.py"], cwd=GRAFIKA_MAPA, env=okolje, stdin=subprocess.DEVNULL, stdout=izhod,
+                         stderr=subprocess.STDOUT, close_fds=True, creationflags=zastavice)
+    except OSError as e:
+        return False, "Zagon Grafika Studia ni uspel: %s" % e
+    finally:
+        if izhod is not subprocess.DEVNULL:
+            izhod.close()
+    _log("grafika: zaganjam Grafika Studio (%s, %s)" % (py, GRAFIKA_MAPA))
+    return True, "Grafika Studio se zaganja."
+
+
 def render_modela(podatki):
     """Render aktivnega dokumenta: posnetek (bajti) + kamera iz brskalnika -> naloga upodabljanja. Slika gre tudi v
     mapo Renderji ob datoteki dokumenta. Nit strežnika."""
@@ -3538,6 +3610,8 @@ class Zahteva(http.server.BaseHTTPRequestHandler):
             self._odgovor(json.dumps(tiskaj_stanje(), ensure_ascii=False).encode("utf-8"))
         elif pot == "/oblikovanje/stanje":
             self._odgovor(json.dumps(oblikovanje_stanje(), ensure_ascii=False).encode("utf-8"))
+        elif pot == "/grafika/stanje":
+            self._odgovor(json.dumps(grafika_stanje(), ensure_ascii=False).encode("utf-8"))
         elif pot == "/oblikovanje/render-plosca.js":
             with open(os.path.join(MAPA_OBLIKOVANJA, "render-plosca.js"), "rb") as f:
                 self._odgovor(f.read(), "text/javascript; charset=utf-8")
@@ -3646,6 +3720,10 @@ class Zahteva(http.server.BaseHTTPRequestHandler):
             return
         if pot == "/oblikovanje/zazeni":
             ok, sporocilo = oblikovanje_zazeni()
+            self._odgovor(json.dumps({"ok": ok, "sporocilo": sporocilo}, ensure_ascii=False).encode("utf-8"))
+            return
+        if pot == "/grafika/zazeni":
+            ok, sporocilo = grafika_zazeni()
             self._odgovor(json.dumps({"ok": ok, "sporocilo": sporocilo}, ensure_ascii=False).encode("utf-8"))
             return
         if pot == "/tiskaj/datoteka":

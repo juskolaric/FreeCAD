@@ -393,7 +393,7 @@
   #pogled { flex: 1 1 auto; position: relative; min-height: 120px; min-width: 120px; }
   #pogled canvas { display: block; }
   /* Zavihek Tiskanje: nadzorna plošča Tiskaj (lasten program na vratih 3021) kot okvir čez 3D pogled */
-  /* Stopnje risanja (1 Oblikovanje, 2 Strojno risanje, 3 Tiskanje): segmentirana skupina levo v glavi */
+  /* Stopnje risanja (1 Oblikovanje, 2 Strojno risanje, 3 Tiskanje, 4 Grafika): segmentirana skupina levo v glavi */
   #stopnje { display: flex; align-items: center; gap: 0; flex: none; padding: 2px; background: var(--plosca2); border: 1px solid var(--crta);
              border-radius: 9px; }
   .stopnja { display: flex; align-items: center; gap: 6px; height: 28px; border: none; border-radius: 7px; padding: 0 10px 0 6px; background: transparent;
@@ -402,12 +402,12 @@
   .stopnja .st { display: inline-flex; align-items: center; justify-content: center; width: 18px; height: 18px; border-radius: 50%; font-size: 11px;
                  font-weight: 700; background: var(--crta); color: var(--besedilo2); }
   .stopnja.aktiven { background: var(--plosca); box-shadow: var(--senca1); font-weight: 600; }
-  /* Vse tri stopnje so ena stran: isti poudarek (modra) v vseh, ne svoja barva vsaka */
+  /* Vse štiri stopnje so ena stran: isti poudarek (modra) v vseh, ne svoja barva vsaka */
   .stopnja.aktiven { color: var(--poudarek); } .stopnja.aktiven .st { background: var(--poudarek); color: #fff; }
   .puscicaStopnje { color: var(--besedilo3); font-size: 15px; padding: 0 1px; }
-  /* V 1. in 3. stopnji okolja FreeCAD-a, hitri dostop in trak niso v rabi (okvir pokrije pogled) */
+  /* V 1., 3. in 4. stopnji okolja FreeCAD-a, hitri dostop in trak niso v rabi (okvir pokrije pogled) */
   body.stopnjaZunaj #vrstica1, body.stopnjaZunaj #hitri, body.stopnjaZunaj #zavihki, body.stopnjaZunaj #trak, body.stopnjaZunaj #skicaTrak { display: none !important; }
-  /* Dokumenti in drevo so del strojnega risanja: v 1. in 3. stopnji jih ni (okvir dobi vso širino) */
+  /* Dokumenti in drevo so del strojnega risanja: v 1., 3. in 4. stopnji jih ni (okvir dobi vso širino) */
   body.stopnjaZunaj #stranski, body.stopnjaZunaj #stranskiPokazi { display: none !important; }
   /* Zavihek Tiskanje: nadzorna plošča Tiskaj (lasten program na vratih 3021) kot okvir čez 3D pogled */
   #tiskanje { position: absolute; inset: 0; z-index: 8; background: #f3f5f8; display: flex; }
@@ -494,6 +494,18 @@
                            font-weight: 600; cursor: pointer; }
   #oblikovanjeStanje button:hover { background: var(--poudarekTemen); }
   #oblikovanjeStanje button:disabled { opacity: .55; cursor: default; }
+  /* Zavihek Grafika: Grafika Studio (CAD in 3D/Grafika Studio, vrata 3040) kot okvir čez 3D pogled, enako kot Oblikovanje */
+  #grafika { position: absolute; inset: 0; z-index: 8; background: #1b1d22; display: flex; }
+  #grafikaOkvir { flex: 1 1 auto; width: 100%; height: 100%; border: 0; background: #1b1d22; }
+  #grafikaStanje { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; background: var(--plosca); }
+  #grafikaStanje .okno { width: min(92%, 460px); background: #fff; border: 1px solid var(--crta); border-radius: 14px; box-shadow: var(--senca2);
+                          padding: 22px 26px; text-align: center; }
+  #grafikaStanje h3 { margin: 0 0 8px; font-size: 16px; }
+  #grafikaStanje p { margin: 0 0 16px; font-size: 13px; color: var(--besedilo2); line-height: 1.5; }
+  #grafikaStanje button { height: 34px; padding: 0 18px; border: 1px solid var(--poudarek); background: var(--poudarek); color: #fff; border-radius: 9px;
+                           font-weight: 600; cursor: pointer; }
+  #grafikaStanje button:hover { background: var(--poudarekTemen); }
+  #grafikaStanje button:disabled { opacity: .55; cursor: default; }
   #pasica { position: absolute; top: 14px; left: 50%; transform: translateX(-50%); z-index: 5; max-width: 80%;
             background: #fffbeb; border: 1px solid #fcd98a; border-radius: 12px; padding: 8px 8px 8px 14px; font-size: 13px; color: #78350f;
             display: flex; gap: 12px; align-items: center; box-shadow: var(--senca2); }
@@ -743,13 +755,15 @@
 <body>
 <!-- Vrh strani je v vseh treh stopnjah enak (stopnje levo, orodja desno); spodaj se menja le vsebina stopnje -->
 <header id="vrh">
-    <!-- Tri stopnje risanja: 1 Oblikovanje (Blender) -> 2 Strojno risanje (FreeCAD, parametrično, pločevina) -> 3 Tiskanje -->
+    <!-- Štiri stopnje: 1 Oblikovanje (Blender) -> 2 Strojno risanje (FreeCAD, parametrično, pločevina) -> 3 Tiskanje -> 4 Grafika (Grafika Studio) -->
     <div id="stopnje" role="tablist" aria-label="Stopnje risanja">
       <button type="button" id="gumbOblikovanje" class="stopnja oblikovanje" title="1. stopnja: prosto oblikovanje v Blenderju (organske, gladke oblike, render); ko je oblika všeč, gre v strojno risanje"><span class="st">1</span>Oblikovanje</button>
       <span class="puscicaStopnje">&#8250;</span>
       <button type="button" id="gumbStrojno" class="stopnja strojno aktiven" title="2. stopnja: strojno risanje v FreeCAD-u (parametrični kosi, skice, pločevina, sestavi)"><span class="st">2</span>Strojno risanje</button>
       <span class="puscicaStopnje">&#8250;</span>
       <button type="button" id="gumbTiskanje" class="stopnja tiskanje" title="3. stopnja: nadzorna plošča tiskalnikov (Tiskaj): tiskalniki v živo, projekti, vhod STEP, čakalna vrsta"><span class="st">3</span>Tiskanje</button>
+      <span class="puscicaStopnje">&#8250;</span>
+      <button type="button" id="gumbGrafika" class="stopnja grafika" title="4. stopnja: grafika (Grafika Studio): nalepke, folije in tiskovine kot SVG, Inkscape v ozadju; AI jih ureja prek MCP, ti gledaš v živo"><span class="st">4</span>Grafika</button>
     </div>
     <div id="orodja">
       <button id="gumbNatisni" type="button" title="Natisni izbrane kose (če ni izbire, cel aktivni dokument): STEP v vhod plošče Tiskaj in okno Pripravi">&#128424; Natisni</button>
@@ -854,6 +868,14 @@
       <h3>Oblikovanje se zaganja</h3>
       <p id="oblikovanjeOpis"></p>
       <button type="button" id="oblikovanjeZazeni">Zaženi Blender</button>
+    </div></div>
+  </div>
+  <div id="grafika" class="skrit">
+    <iframe id="grafikaOkvir" title="Grafika (Grafika Studio)"></iframe>
+    <div id="grafikaStanje" class="skrit"><div class="okno">
+      <h3>Grafika Studio se zaganja</h3>
+      <p id="grafikaOpis"></p>
+      <button type="button" id="grafikaZazeni">Zaženi Grafika Studio</button>
     </div></div>
   </div>
 </div>
@@ -1072,7 +1094,7 @@ function narisiZavihkeOkolij() {
     z.className = 'zavihek' + (o.ime === stanje.zavihek ? ' aktiven' : '');
     z.dataset.ime = o.ime;
     z.textContent = o.naslov;
-    z.addEventListener('click', () => { zapriTiskanje(); zapriOblikovanje(); izberiZavihek(o.ime, true); });
+    z.addEventListener('click', () => { zapriTiskanje(); zapriOblikovanje(); zapriGrafiko(); izberiZavihek(o.ime, true); });
     zavihki.appendChild(z);
   }
   if (ostala.length) {
@@ -1099,7 +1121,7 @@ function odpriMeniOkolij(gumb, ostala) {
     if (o.ime === stanje.zavihek) s.style.fontWeight = '600';
     g.appendChild(s);
     if (!o.nalozeno) g.title = 'Okolje se naloži ob prvi izbiri';
-    g.addEventListener('click', () => { zapriMeni(); zapriTiskanje(); zapriOblikovanje(); izberiZavihek(o.ime, true); });
+    g.addEventListener('click', () => { zapriMeni(); zapriTiskanje(); zapriOblikovanje(); zapriGrafiko(); izberiZavihek(o.ime, true); });
     meni.appendChild(g);
   }
   const r = gumb.getBoundingClientRect();
@@ -2996,14 +3018,14 @@ function osveziPrikazTiskanja() {
   $('tiskanjeZazeni').disabled = tiskanje.zaganjam || !mapa;
 }
 $('gumbTiskanje').addEventListener('click', () => odpriTiskanje());
-// Stopnje risanja: 2. stopnja (strojno risanje) je dejavna, kadar ni odprt ne okvir Oblikovanja ne Tiskanja
+// Stopnje risanja: 2. stopnja (strojno risanje) je dejavna, kadar ni odprt noben okvir (Oblikovanje, Tiskanje, Grafika)
 function osveziStopnjo() {
-  const zunaj = tiskanje.odprto || oblikovanje.odprto;
+  const zunaj = tiskanje.odprto || oblikovanje.odprto || grafika.odprto;
   $('gumbStrojno').classList.toggle('aktiven', !zunaj);
   document.body.classList.toggle('stopnjaZunaj', zunaj);
-  try { localStorage.setItem('stopnja', tiskanje.odprto ? 'tiskanje' : oblikovanje.odprto ? 'oblikovanje' : 'strojno'); } catch (e) { /* zasebno okno */ }
+  try { localStorage.setItem('stopnja', tiskanje.odprto ? 'tiskanje' : oblikovanje.odprto ? 'oblikovanje' : grafika.odprto ? 'grafika' : 'strojno'); } catch (e) { /* zasebno okno */ }
 }
-$('gumbStrojno').addEventListener('click', () => { zapriTiskanje(); zapriOblikovanje(); });
+$('gumbStrojno').addEventListener('click', () => { zapriTiskanje(); zapriOblikovanje(); zapriGrafiko(); });
 // --- Risbe (strani TechDraw) --------------------------------------------------------------------------------
 // Stran risbe (TechDraw::DrawPage) se odpre čez 3D pogled kot SVG, ki ga izriše strežnik (GET /risba; glavna nit
 // odpre skrito okno strani in izvozi SVG). Zavihki preklapljajo med stranmi dokumenta, gumbi izvozijo list (POST /risba
@@ -3101,7 +3123,7 @@ document.addEventListener('keydown', e => {
 function odpriTiskanje() {
   if (tiskanje.odprto) return;
   tiskanje.odprto = true;
-  zapriOblikovanje();
+  zapriOblikovanje(); zapriGrafiko();
   tiskanjeEl.classList.remove('skrit');
   $('gumbTiskanje').classList.add('aktiven');
   osveziStopnjo();
@@ -3366,7 +3388,7 @@ async function zazeniOblikovanje() {
 }
 async function odpriOblikovanje() {
   if (oblikovanje.odprto) return;
-  zapriTiskanje();
+  zapriTiskanje(); zapriGrafiko();
   oblikovanje.odprto = true;
   oblikovanjeEl.classList.remove('skrit');
   $('gumbOblikovanje').classList.add('aktiven');
@@ -3403,6 +3425,58 @@ window.addEventListener('message', async e => {
   tiskanjeSporoci({ dejanje: 'pripravi', datoteke: d.datoteke });
 });
 $('oblikovanjeZazeni').addEventListener('click', zazeniOblikovanje);
+
+// --- Grafika: Grafika Studio v zavihku (od 2026-10-12) -----------------------------------------------------------------
+// Grafika Studio (CAD in 3D/Grafika Studio, vrata 3040) je lasten program: SVG dokumenti na disku, Inkscape v ozadju, spletni pogled
+// za človeka in MCP (/mcp) za AI modele. Tu je okvir čez 3D pogled kot pri Oblikovanju. Strežnik FreeCAD-a pove, ali teče
+// (/grafika/stanje), in ga zažene (/grafika/zazeni, pythonw brez okna; proces preživi Izhod FreeCAD-a).
+const grafika = { odprto: false, stanje: null, nalozen: false, zaganjam: false };
+const grafikaEl = $('grafika'), grafikaOkvir = $('grafikaOkvir');
+async function osveziGrafiko() {
+  try { grafika.stanje = await (await fetch('/grafika/stanje', { cache: 'no-store' })).json(); } catch (e) { grafika.stanje = null; }
+  const s = grafika.stanje, tece = !!(s && s.tece);
+  if (tece) grafika.zaganjam = false;
+  $('grafikaStanje').classList.toggle('skrit', tece);
+  if (tece && !grafika.nalozen) { grafika.nalozen = true; grafikaOkvir.src = location.protocol + '//' + location.hostname + ':' + s.vrata + '/'; }
+  if (!tece && grafika.nalozen) { grafikaOkvir.src = 'about:blank'; grafika.nalozen = false; }
+  const mapa = !!(s && s.mapa);
+  $('grafikaOpis').textContent = !s ? 'Strežnik FreeCAD-a ne pozna Grafike (starejši strežnik; ponovno zaženi FreeCAD).'
+    : !mapa ? 'Mape Grafika Studia ni (pričakovana je ob repozitoriju FreeCAD: CAD in 3D/Grafika Studio; prepis SPLET_GRAFIKA_MAPA).'
+    : grafika.zaganjam ? 'Zaganjam Grafika Studio v ozadju (brez okna) …'
+    : 'Grafika Studio (SVG, Inkscape v ozadju, MCP za AI) ni zagnan. Zaženi ga tukaj; teče naprej tudi po izhodu iz FreeCAD-a.';
+  $('grafikaZazeni').disabled = grafika.zaganjam || !mapa;
+  return tece;
+}
+async function zazeniGrafiko() {
+  grafika.zaganjam = true; await osveziGrafiko();
+  try {
+    const r = await fetch('/grafika/zazeni', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Zeton': ZETON }, body: '{}' });
+    if (r.status === 404) throw new Error('strežnik ne pozna Grafike (ponovno zaženi FreeCAD)');
+    const d = await r.json();
+    if (!d.ok) throw new Error(d.sporocilo || 'napaka');
+  } catch (e) { grafika.zaganjam = false; obvesti('Zagon Grafika Studia ni uspel: ' + e.message, true); osveziGrafiko(); return; }
+  for (let i = 0; i < 40 && grafika.zaganjam; i++) { await new Promise(r => setTimeout(r, 750)); await osveziGrafiko(); }
+  if (grafika.zaganjam) { grafika.zaganjam = false; obvesti('Grafika Studio se v 30 s ni oglasil (dnevnik: FreeCAD-splet/grafika.log).', true); osveziGrafiko(); }
+}
+async function odpriGrafiko() {
+  if (grafika.odprto) return;
+  zapriTiskanje(); zapriOblikovanje();
+  grafika.odprto = true;
+  grafikaEl.classList.remove('skrit');
+  $('gumbGrafika').classList.add('aktiven');
+  osveziStopnjo();
+  const tece = await osveziGrafiko();
+  if (!tece && grafika.stanje && grafika.stanje.mapa && !grafika.zaganjam) zazeniGrafiko();   // zažene se sam ob prvem odprtju
+}
+function zapriGrafiko() {
+  if (!grafika.odprto) return;
+  grafika.odprto = false;
+  grafikaEl.classList.add('skrit');
+  $('gumbGrafika').classList.remove('aktiven');
+  osveziStopnjo();
+}
+$('gumbGrafika').addEventListener('click', () => odpriGrafiko());
+$('grafikaZazeni').addEventListener('click', zazeniGrafiko);
 
 // --- Render trenutnega pogleda (Blender Cycles; okno iz lastno/oblikovanje/render-plosca.js) --------------------------
 async function odpriRenderModela() {
