@@ -157,6 +157,7 @@
     </div>
     <div class="skupina">
       <button class="g" id="gIzvozi" title="Izvozi vidne objekte kot STL (mm) za tisk">Izvozi STL</button>
+      <button class="g" id="gIzvoziDxf" title="Izvozi obrise vidnih ploskih kosov (nalepka, pločevina) kot DXF v mm: zgornje ploskve v ravnini XY, plast = objekt">Izvozi DXF</button>
       <button class="g" id="gNatisni" title="Pošlji vidne objekte v ploščo Tiskaj: odpre se zavihek Tiskanje z oknom Pripravi (tiskalnik, orientacija, polnilo)">&#128424; 3D natisni</button>
       <button class="g glavni" id="gRender" title="Fotorealističen render trenutnega pogleda (Blender Cycles)">Render</button>
       <button class="g" id="gKlepet" title="Pokaži ali skrij klepet s Claudom">Claude ▸</button>
@@ -759,6 +760,7 @@ $('gNatisni').addEventListener('click', async () => {
   else obvesti('STL za tisk: ' + d.pot + ' — za pošiljanje v ploščo Tiskaj odpri Oblikovanje v zavihku spletnega FreeCAD-a.');
 });
 $('gIzvozi').addEventListener('click', async () => { const d = await ukaz({ dejanje: 'izvozi' }, true); if (d.ok) obvesti('STL: ' + d.pot); });
+$('gIzvoziDxf').addEventListener('click', async () => { const d = await ukaz({ dejanje: 'izvozi-dxf' }, true); if (d.ok) obvesti('DXF (' + d.obrisov + ' obrisov, plasti: ' + d.plasti.join(', ') + '): ' + d.pot); });
 $('gRender').addEventListener('click', () => odpriRender({
   zeton: () => ZETON,
   razmerje: () => camera.aspect,

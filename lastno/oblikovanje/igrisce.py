@@ -430,6 +430,96 @@ def vidnost_kosa(ime, vidno):
 
 
 # ---------------------------------------------------------------------------------------------------------------
+# Izvoz DXF: obrisi ploskih kosov (nalepka, pločevina, rezanje) — zgornje ploskve (normala +Z) vsakega vidnega objekta,
+# njihovi robni robovi zvezani v zaprte poligone, v mm v svetovnih XY; plast = ime objekta. Zapis DXF R12 (POLYLINE),
+# ki ga berejo Illustrator, VersaWorks, FreeCAD, LibreCAD.
+
+def obrisi_xy(obj, dg=None, najmanj_z=0.5):
+    """Zaprti obrisi zgornjih ploskev objekta v svetovnih XY: [[(x, y), ...], ...]."""
+    dg = dg or bpy.context.evaluated_depsgraph_get()
+    ev = obj.evaluated_get(dg)
+    try:
+        me = ev.to_mesh()
+    except RuntimeError:
+        return []
+    try:
+        if me is None or not len(me.polygons):
+            return []
+        mw = ev.matrix_world
+        nm = mw.to_3x3().inverted().transposed()
+        zgornje = [p for p in me.polygons if (nm @ p.normal).normalized().z >= najmanj_z]
+        stevec = {}
+        for p in zgornje:
+            for k in p.edge_keys:
+                stevec[k] = stevec.get(k, 0) + 1
+        robni = [k for k, n in stevec.items() if n == 1]
+        sosedi = {}
+        for a, b in robni:
+            sosedi.setdefault(a, []).append(b)
+            sosedi.setdefault(b, []).append(a)
+        obiskani, obrisi = set(), []
+        for zacetek in sosedi:
+            if zacetek in obiskani:
+                continue
+            veriga, prej, v = [zacetek], None, zacetek
+            obiskani.add(v)
+            while True:
+                naslednji = [s for s in sosedi[v] if s != prej and s not in obiskani]
+                if not naslednji:
+                    break
+                prej, v = v, naslednji[0]
+                obiskani.add(v)
+                veriga.append(v)
+            if len(veriga) >= 3:
+                obrisi.append([tuple((mw @ me.vertices[i].co).xy) for i in veriga])
+        return obrisi
+    finally:
+        ev.to_mesh_clear()
+
+
+def zapisi_dxf(pot, plasti):
+    """plasti: [(ime_plasti, [[(x, y), ...], ...]), ...] -> datoteka DXF R12 v mm."""
+    def v(koda, vrednost):
+        return "%d\n%s\n" % (koda, vrednost)
+    deli = [v(0, "SECTION"), v(2, "HEADER"), v(9, "$INSUNITS"), v(70, 4), v(0, "ENDSEC"),
+            v(0, "SECTION"), v(2, "TABLES"), v(0, "TABLE"), v(2, "LAYER"), v(70, len(plasti))]
+    for i, (ime, _) in enumerate(plasti):
+        deli += [v(0, "LAYER"), v(2, ime), v(70, 0), v(62, (i % 7) + 1), v(6, "CONTINUOUS")]
+    deli += [v(0, "ENDTAB"), v(0, "ENDSEC"), v(0, "SECTION"), v(2, "ENTITIES")]
+    for ime, obrisi in plasti:
+        for obris in obrisi:
+            deli += [v(0, "POLYLINE"), v(8, ime), v(66, 1), v(70, 1)]
+            for x, y in obris:
+                deli += [v(0, "VERTEX"), v(8, ime), v(10, "%.4f" % x), v(20, "%.4f" % y), v(30, "0.0")]
+            deli += [v(0, "SEQEND"), v(8, ime)]
+    deli += [v(0, "ENDSEC"), v(0, "EOF")]
+    os.makedirs(os.path.dirname(pot), exist_ok=True)
+    with open(pot, "w", encoding="ascii", errors="replace", newline="\r\n") as f:
+        f.write("".join(deli))
+    return sum(len(o) for _, o in plasti)
+
+
+def izvozi_dxf(pot, objekti=None):
+    """DXF obrisov vidnih objektov scene (ali naštetih imen): plast = ime objekta (ASCII). Vrne {pot, plasti, obrisov}."""
+    dg = bpy.context.evaluated_depsgraph_get()
+    plasti = []
+    for obj in bpy.context.scene.objects:
+        if obj.type not in VRSTE_GEOMETRIJE or (objekti and obj.name not in objekti):
+            continue
+        try:
+            if obj.hide_get() or obj.hide_viewport:
+                continue
+        except RuntimeError:
+            pass
+        obrisi = obrisi_xy(obj, dg)
+        if obrisi:
+            ime = "".join(c if (c.isascii() and (c.isalnum() or c in "-_ ")) else "_" for c in obj.name).strip() or "Obris"
+            plasti.append((ime, obrisi))
+    st = zapisi_dxf(pot, plasti)
+    return {"pot": pot, "plasti": [ime for ime, _ in plasti], "obrisov": st}
+
+
+# ---------------------------------------------------------------------------------------------------------------
 # Parametrična oblika
 
 def parametri():

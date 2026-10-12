@@ -260,6 +260,15 @@ FreeCAD je motor, vmesnik in grafika nastajata v brskalniku (plan, korak 8 napre
   sestavu na (0; 0,16; 26), napisi, nalepke in okvirji so lastni objekti sestava; ideja »Maketa boxa« je v **arhivu** (`ideja.json`
   `arhiv: true`: drevo jo skrije, povezava »+N v arhivu« jo pokaže, gumb ⌫/↩ na korenski vrstici, ukaz `uredi-idejo {ime, arhiv|opis}`,
   `Ideje.uredi_idejo`). Enaki kosi (ista ideja in revizija, npr. 4 vijaki) so v drevesu ena vrstica s količino ×N (`zdruziDele`).
+  **R10 (nalepka, 2026-10-12)**: v poševnem čelu podstavka (ravnina skozi (0; −50,02; 12,93), normala (0; −0,880; 0,474) = zasuk 61,69°
+  okoli X) je namesto vložka z napisom **žep za nalepko** 60 × 16 mm (r 2), globok 0,4 mm (Pleksi vitrina R05). Ideja »Nalepka Photolandia«
+  R01: podlaga 60 × 16 × 0,15 (bela), napis Brush Script MT (`C:\Windows\Fonts\BRUSHSCI.TTF`, ista pisava kot napisi makete) širok 50 mm,
+  0,1 mm visok, temno siv; izhodišče sredina spodnje ploskve; v sestavu na dnu žepa (`M @ Translation(0, 0, −0,4)`).
+  **Izvoz DXF** (`igrisce.obrisi_xy`, `zapisi_dxf`, `izvozi_dxf`; ukaz `izvozi-dxf {ime?, objekti?}`, gumb Izvozi DXF, pomočnik
+  `izvozi_dxf(pot, objekti)`): zgornje ploskve (normala Z ≥ 0,5) vsakega vidnega objekta, robni robovi zvezani v zaprte poligone,
+  svetovne XY v mm, plast = ime objekta (ASCII), zapis DXF R12 POLYLINE/VERTEX (bere ga Illustrator, VersaWorks, FreeCAD) v
+  `Oblikovanje/Izvoz/<ideja>.dxf`. Nalepka: plast obrisa (44 točk) in plast napisa (19 obrisov, 2249 točk). Za rezalnik vzemi plast
+  obrisa, napis je za tisk.
   **Hitrost preklopa idej** (2026-10-12): predpomnilnik posnetkov `_PREDPOMNILNIK` je LRU (OrderedDict, ~1,5 GB) s ključem, ki nosi
   **prstni odtis mreže** (`_prstni_odtis`: blake2b koordinat oglišč + število ploskev, 527k točk ~10 ms), zato ob preklopu ideje
   (`_po_ideji`) ostane; poljubna koda pozabi le lokalne objekte (`_pozabi_lokalne`), vezane mreže iz datotek kosov so nespremenljive.

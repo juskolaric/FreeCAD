@@ -492,7 +492,8 @@ def _imenski_prostor():
     return {"bpy": bpy, "bmesh": bmesh, "np": np, "Vector": Vector, "Matrix": Matrix, "math": math,
             "dodaj_obliko": dodaj_obliko, "gladko": gladko, "material": material, "pocisti": pocisti,
             "nov_objekt": _nov_objekt, "nastavi_enote": nastavi_enote, "C": bpy.context, "D": bpy.data, "rezultat": None,
-            "vstavi_kos": vstavi_kos, "posodobi_kos": posodobi_kos, "odstrani_kos": odstrani_kos, "kosi": kosi}
+            "vstavi_kos": vstavi_kos, "posodobi_kos": posodobi_kos, "odstrani_kos": odstrani_kos, "kosi": kosi,
+            "izvozi_dxf": igrisce.izvozi_dxf, "obrisi_xy": igrisce.obrisi_xy}
 
 
 def _pot_datoteke(ime):
@@ -526,7 +527,7 @@ def obdelaj(vrsta, podatki, odgovor):
     odgovor["izpis"] = izpis.getvalue()
 
 
-BREZ_SPREMEMBE = ("shrani", "odpri", "nova", "izvozi", "izvozi-za-tisk", "izberi", "nova-ideja", "odpri-idejo", "shrani-razlicico",
+BREZ_SPREMEMBE = ("shrani", "odpri", "nova", "izvozi", "izvozi-dxf", "izvozi-za-tisk", "izberi", "nova-ideja", "odpri-idejo", "shrani-razlicico",
                   "odpri-razlicico", "uredi-razlicico", "uredi-idejo", "odpri-v-blenderju")
 
 
@@ -696,6 +697,12 @@ def ukaz(p):
         pot = os.path.join(mapa, ime + ".stl")
         izvozi_stl(pot)
         return {"ok": True, "pot": pot}
+    if d == "izvozi-dxf":
+        # DXF obrisov vidnih ploskih kosov (nalepka, pločevina): zgornje ploskve v svetovnih XY, plast = objekt
+        ime = p.get("ime") or (os.path.basename(IDEJE.mapa) if IDEJE.mapa else (os.path.splitext(os.path.basename(STANJE.datoteka))[0] if STANJE.datoteka else "Oblika"))
+        pot = os.path.join(MAPA_DATOTEK, "Izvoz", _pot_datoteke(ime).rsplit(os.sep, 1)[1][:-6] + ".dxf")
+        izid = igrisce.izvozi_dxf(pot, p.get("objekti") or None)
+        return {"ok": True, **izid}
     if d == "izvozi":
         # STL za tisk: vidni objekti z modifikatorji, v mm
         ime = p.get("ime") or (os.path.splitext(os.path.basename(STANJE.datoteka))[0] if STANJE.datoteka else "Oblika")
