@@ -109,7 +109,8 @@ class Ideje:
                          "zadnja": razl[-1]["id"] if razl else "", "aktivna": akt["id"] if akt else "",
                          "spremenjeno": os.path.getmtime(os.path.join(mapa, "ideja.json")),
                          "odprta": os.path.normcase(mapa) == os.path.normcase(self.mapa),
-                         "vrsta": "sestav" if deli else "kos", "deli": deli, "uporabljena_v": self.uporaba(ime, vse)})
+                         "vrsta": "sestav" if deli else "kos", "deli": deli, "uporabljena_v": self.uporaba(ime, vse),
+                         "razlicice": [{"id": r["id"], "deli": r.get("deli", [])} for r in razl]})
         izid.sort(key=lambda d: -d["spremenjeno"])
         return izid
 

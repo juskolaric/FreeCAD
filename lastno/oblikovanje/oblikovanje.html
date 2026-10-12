@@ -52,6 +52,10 @@
   .vrsta .gumbKos.ora:hover { background: #fde68a; }
   #meni button small { display: block; color: var(--besedilo3); font-size: 11px; }
   #ideje { max-height: 32vh; overflow: auto; }
+  #ideje .preklop { width: 14px; padding: 0; flex: none; font-size: 10px; color: var(--besedilo3); }
+  #ideje .vrsta.otrok img { width: 26px; height: 20px; }
+  #ideje .vrsta.otrok .ime { font-size: 12.5px; }
+  #ideje .vrsta .znacka.rev { flex: none; }
   .prazno { color: var(--besedilo3); font-size: 12px; padding: 4px 8px; line-height: 1.5; }
   .drsnik { padding: 4px 8px 8px; }
   .drsnik .glava { display: flex; justify-content: space-between; font-size: 12px; color: var(--besedilo2); margin-bottom: 2px; }
@@ -449,6 +453,7 @@ function narisiNaslov() {
 }
 
 // --- ideje in različice ------------------------------------------------------------------------------------------
+const drevoIdej = { zaprte: new Set() };   // strnjeni sestavi v drevesu idej (za sejo)
 const stevilo = (n, ena, dve, tri, vec) => n + ' ' + (n % 100 === 1 ? ena : n % 100 === 2 ? dve : n % 100 === 3 || n % 100 === 4 ? tri : vec);
 function odpriIdejo(ime) {
   if (stanje.ideja === ime) return;
@@ -460,20 +465,41 @@ async function naloziIdeje() {
   ideja = opis && opis.ime ? opis : null;
   const okvir = $('ideje'); okvir.innerHTML = '';
   if (!seznam.ideje.length) okvir.innerHTML = '<div class="prazno">Še ni idej. Napiši Claudu ali klikni + nova.</div>';
-  for (const i of seznam.ideje) {
-    const v = document.createElement('div'); v.className = 'vrsta' + (i.odprta ? ' izbran' : '');
+  // Drevo kot v strojništvu: glavni sestav je koren, pod njim sestavi in kosi z revizijo, ki jo sestav uporablja.
+  // Ideja, ki je kos v kakšnem sestavu (po aktivnih različicah), je v drevesu samo pod sestavom.
+  const poImenu = new Map(seznam.ideje.map(i => [i.ime, i]));
+  const vSestavu = new Set(); for (const i of seznam.ideje) for (const d of i.deli || []) vSestavu.add(d.ideja);
+  const deliZa = (i, rid) => { const r = (i.razlicice || []).find(x => x.id === rid); return r ? r.deli || [] : i.deli || []; };
+  function vozlisce(i, rid, globina, pot) {
+    const deli = deliZa(i, rid), sestav = deli.length > 0, zaprt = drevoIdej.zaprte.has(i.ime);
+    const v = document.createElement('div'); v.className = 'vrsta' + (i.odprta ? ' izbran' : '') + (globina ? ' otrok' : '');
+    v.style.paddingLeft = (6 + globina * 16) + 'px';
+    const p = document.createElement('button'); p.className = 'preklop'; p.textContent = sestav ? (zaprt ? '▸' : '▾') : ''; p.title = zaprt ? 'Razpri sestav' : 'Strni sestav';
+    if (sestav) p.addEventListener('click', e => { e.stopPropagation(); if (zaprt) drevoIdej.zaprte.delete(i.ime); else drevoIdej.zaprte.add(i.ime); naloziIdeje(); });
     const img = document.createElement('img'); img.alt = '';
-    if (i.zadnja) img.src = '/ideja/slicica?ideja=' + encodeURIComponent(i.ime) + '&r=' + i.zadnja + '&v=' + verzijaIdeje;
+    if (rid) img.src = '/ideja/slicica?ideja=' + encodeURIComponent(i.ime) + '&r=' + rid + '&v=' + verzijaIdeje;
     img.onerror = () => { img.style.visibility = 'hidden'; };
-    if (!i.zadnja) img.style.visibility = 'hidden';
-    const ime = document.createElement('span'); ime.className = 'ime'; ime.textContent = i.ime; ime.title = i.opis || i.ime;
-    const st = document.createElement('small'); st.textContent = i.razlicic; ime.appendChild(st);
-    v.append(img, ime);
-    if (i.vrsta === 'sestav') { const z = document.createElement('span'); z.className = 'znacka'; z.textContent = 'sestav'; z.title = 'Sestav s kosi: ' + (i.deli || []).map(d => d.ideja + ' ' + d.razlicica).join(', '); v.appendChild(z); }
-    if ((i.uporabljena_v || []).length) { const z = document.createElement('span'); z.className = 'znacka'; z.textContent = '⧉ v sestavu'; z.title = 'Kos v: ' + i.uporabljena_v.map(u => u.ideja + ' (' + u.v + ' uporablja ' + u.razlicica + ')').join(', '); v.appendChild(z); }
+    if (!rid) img.style.visibility = 'hidden';
+    const ime = document.createElement('span'); ime.className = 'ime'; ime.textContent = i.ime;
+    ime.title = (sestav ? 'Sestav' : 'Kos') + (globina ? ', v sestavu uporabljena revizija ' + rid + (i.aktivna && i.aktivna !== rid ? ' (aktivna ' + i.aktivna + ')' : '') : '') + (i.opis ? '\n' + i.opis : '');
+    if (!globina) { const st = document.createElement('small'); st.textContent = i.razlicic; ime.appendChild(st); }
+    v.append(p, img, ime);
+    if (globina) {   // revizija kosa v sestavu; oranžno, če je kos že naprej
+      const z = document.createElement('span'); const naprej = i.aktivna && i.aktivna !== rid;
+      z.className = 'znacka rev' + (naprej ? ' ora' : ' vij'); z.textContent = naprej ? rid + ' → ' + i.aktivna : rid;
+      if (naprej) z.title = 'Kos ima novejšo različico ' + i.aktivna + '; v odprtem sestavu jo pri kosu potrdi z ↻';
+      v.appendChild(z);
+    }
+    if (sestav) { const z = document.createElement('span'); z.className = 'znacka'; z.textContent = 'sestav'; z.title = 'Sestav s kosi: ' + deli.map(d => d.ideja + ' ' + d.razlicica).join(', '); v.appendChild(z); }
     v.addEventListener('click', () => { if (!i.odprta) odpriIdejo(i.ime); });
     okvir.appendChild(v);
+    if (sestav && !zaprt) for (const d of deli) {
+      const otrok = poImenu.get(d.ideja);
+      if (!otrok || pot.has(d.ideja)) continue;   // manjkajoča ideja ali krog
+      vozlisce(otrok, d.razlicica, globina + 1, new Set([...pot, d.ideja]));
+    }
   }
+  for (const i of seznam.ideje) if (!vSestavu.has(i.ime)) vozlisce(i, i.aktivna || i.zadnja, 0, new Set([i.ime]));
   narisiRazlicice();
   preveriSlicico();
   const kljucIdeje = ideja ? ideja.mapa : '';
