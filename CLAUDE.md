@@ -214,6 +214,10 @@ FreeCAD je motor, vmesnik in grafika nastajata v brskalniku (plan, korak 8 napre
   **Igrišče (faza 3, od 2026-10-10)**: `igrisce.py` (ideje in različice, parametrična oblika, pogledi za AI) in `ai_oblikovalec.py` (Claude v
   zavihku). Ideja = `Oblikovanje/Ideje/<ime>/` z `ideja.json`, `R01.blend`…, `R01.png` (sličico izriše stran iz svojega pogleda, `POST /slicica`),
   `pogovor.json` (sporočila API, **samo dodajanje**: bloki odgovora se vrnejo nespremenjeni), `prikaz.json` (koraki za stran), `pogledi/`.
+  **Sličice v ozadju** (od 2026-10-12, `slicice.py` + `slicica_izris.py`): različice brez `Rxx.png` (iz skript, kosi sestavov,
+  ki jih stran ni gledala) izriše ločen Blender brez okna (Workbench, studio Default, ekspozicija 1,6, Standard, prozorno, 320 × 240,
+  ista smer kot stran; barve iz Principled v `diffuse_color`, steklo alfa 0,18); sproži `GET /ideje` (`SLICICE.preveri`, največ na 5 s,
+  ena naloga naenkrat, padle datoteke si zapomni po mtime), ob koncu dvigne `verzija_ideje`. Dnevnik `FreeCAD-splet/slicice/dnevnik.txt`.
   Zadnja ideja se ob zagonu odpre sama (`FreeCAD-splet/oblikovanje-zadnja.json`). Parametrična oblika: besedilo `oblika.py` v .blend z
   `zgradi(p)` + lastnost scene `parametri` (JSON drsnikov); objekti v zbirki »Oblika« se ob drsniku zgradijo znova (`POST /ukaz {dejanje:
   parameter, vrednosti}`). AI: `claude-opus-5-5`, pretakanje, adaptivno razmišljanje s povzetkom (prikazan v klepetu), effort `medium`

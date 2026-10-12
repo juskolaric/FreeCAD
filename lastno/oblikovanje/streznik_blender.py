@@ -50,6 +50,7 @@ if MAPA not in sys.path:
 from upodabljanje import UPODABLJANJE, DELOVNA, najdi_blender  # noqa: E402
 import igrisce  # noqa: E402
 from ai_oblikovalec import AIOblikovalec  # noqa: E402
+from slicice import Slicice  # noqa: E402
 
 
 def _argument(ime, privzeto):
@@ -842,6 +843,7 @@ def zacni_ai(p):
 
 AI = AIOblikovalec(na_glavni)
 IDEJE = igrisce.Ideje(MAPA_DATOTEK)
+SLICICE = Slicice(ob_koncu=lambda: setattr(STANJE, "verzija_ideje", STANJE.verzija_ideje + 1), dnevnik=_log)   # manjkajoče sličice v ozadju
 
 
 # ---------------------------------------------------------------------------------------------------------------
@@ -905,6 +907,7 @@ class Zahteva(http.server.BaseHTTPRequestHandler):
             datoteke.sort(key=lambda d: -d["spremenjeno"])
             self._odgovor({"mapa": MAPA_DATOTEK, "datoteke": datoteke})
         elif pot == "/ideje":
+            SLICICE.preveri(IDEJE.koren)      # različice brez sličice (iz skript, kosi sestavov) se izrišejo v ozadju
             self._odgovor({"ideje": IDEJE.seznam(), "mapa": IDEJE.koren})
         elif pot == "/ideja":
             self._odgovor(IDEJE.opis() or {})
