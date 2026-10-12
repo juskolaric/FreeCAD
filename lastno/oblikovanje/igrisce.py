@@ -3,7 +3,11 @@
 
 Teče v Blenderju (strežnik streznik_blender.py), vse funkcije kliče samo glavna nit.
 
-Ideja = mapa <MAPA_DATOTEK>/Ideje/<ime>/ z:
+Projekt = mapa <MAPA_DATOTEK>/Projekti/<projekt>/ (od 2026-10-12; prej so bile vse ideje v eni mapi <MAPA_DATOTEK>/Ideje, ki jo
+strežnik ob prvem zagonu preseli v projekt »Photobox Slim«). Vsak projekt ima svoje ideje; odprt je en projekt naenkrat
+(stolpec Projekti čisto desno na strani), kosi sestava so iz idej istega projekta.
+
+Ideja = mapa <projekt>/Ideje/<ime>/ z:
     ideja.json      ime, opis, ustvarjeno, aktivna, razlicice [{id, opomba, vir, cas, zvezdica}]
     R01.blend …     različice (vsaka je cela scena; parametrična oblika je v njej kot besedilo »oblika.py«)
     R01.png …       sličice (izriše jih stran iz svojega pogleda)
@@ -46,9 +50,15 @@ def varno_ime(ime, privzeto="Ideja"):
 
 class Ideje:
     def __init__(self, mapa_datotek):
-        self.koren = os.path.join(mapa_datotek, "Ideje")
+        self.koren = os.path.join(mapa_datotek, "Ideje")   # do odprtja projekta: stara skupna mapa (glej Projekti.preseli)
         self.mapa = ""          # mapa odprte ideje
         self.razlicica = ""     # id različice, ki je naložena v sceni (ali iz katere izhaja)
+
+    def nastavi_koren(self, mapa_projekta):
+        """Ideje so odslej iz tega projekta; odprta ideja se zapre (scene ne spremeni)."""
+        self.koren = os.path.join(mapa_projekta, "Ideje")
+        self.mapa = ""
+        self.razlicica = ""
 
     # -- branje --
     def _pot(self, *deli):
@@ -147,7 +157,7 @@ class Ideje:
         p = self.podatki()
         rid = p.get("aktivna") or (p["razlicice"][-1]["id"] if p.get("razlicice") else "")
         if rid and os.path.isfile(self._pot(rid + ".blend")):
-            nalozi_blend(self._pot(rid + ".blend"))
+            nalozi_blend(self._pot(rid + ".blend"), self.koren)
             self.razlicica = rid
         else:
             prazna_scena()
@@ -187,7 +197,7 @@ class Ideje:
         pot = self._pot(varno_ime(rid) + ".blend")
         if not os.path.isfile(pot):
             raise ValueError("ni različice %s" % rid)
-        nalozi_blend(pot)
+        nalozi_blend(pot, self.koren)
         self.razlicica = rid
         p = self.podatki()
         p["aktivna"] = rid
@@ -229,14 +239,127 @@ class Ideje:
         return pot if os.path.isfile(pot) else None
 
 
+MAPA_PROJEKTOV = "Projekti"
+PRVI_PROJEKT = "Photobox Slim"      # ime, ki ga dobi stara skupna mapa Ideje ob selitvi (uporabnik ga lahko preimenuje)
+
+
+class Projekti:
+    """Projekti Oblikovanja: podmape <MAPA_DATOTEK>/Projekti/<ime>/, vsaka s svojo mapo Ideje. Brez bpy, le disk."""
+
+    def __init__(self, mapa_datotek):
+        self.mapa_datotek = mapa_datotek
+        self.koren = os.path.join(mapa_datotek, MAPA_PROJEKTOV)
+        self.ime = ""           # odprt projekt
+
+    def mapa(self, ime):
+        return os.path.join(self.koren, varno_ime(ime, "Projekt"))
+
+    def preseli(self, dnevnik=print):
+        """Enkratna selitev: skupna mapa Ideje iz časa pred projekti postane projekt PRVI_PROJEKT (mapa se preimenuje,
+        datoteke ostanejo nedotaknjene). Vrne ime projekta, če je selil, sicer ''."""
+        staro = os.path.join(self.mapa_datotek, "Ideje")
+        if not os.path.isdir(staro):
+            return ""
+        cilj = os.path.join(self.mapa(PRVI_PROJEKT), "Ideje")
+        if os.path.exists(cilj):
+            dnevnik("projekti: %s že obstaja, stare mape %s ne selim" % (cilj, staro))
+            return ""
+        os.makedirs(os.path.dirname(cilj), exist_ok=True)
+        os.rename(staro, cilj)
+        dnevnik("projekti: mapa Ideje preseljena v projekt »%s« (%s)" % (PRVI_PROJEKT, cilj))
+        return PRVI_PROJEKT
+
+    def seznam(self):
+        """[{ime, idej (brez arhiva), arhiv, spremenjeno, odprt}] po abecedi."""
+        izid = []
+        if not os.path.isdir(self.koren):
+            return izid
+        for ime in os.listdir(self.koren):
+            mapa = os.path.join(self.koren, ime)
+            if not os.path.isdir(mapa) or ime.startswith((".", "_")):
+                continue
+            ideje = os.path.join(mapa, "Ideje")
+            st, arhiv, zadnje = 0, 0, 0.0
+            if os.path.isdir(ideje):
+                for i in os.listdir(ideje):
+                    pot = os.path.join(ideje, i, "ideja.json")
+                    if not os.path.isfile(pot):
+                        continue
+                    try:
+                        with open(pot, encoding="utf-8") as f:
+                            v_arhivu = bool(json.load(f).get("arhiv"))
+                    except (OSError, ValueError):
+                        v_arhivu = False
+                    if v_arhivu:
+                        arhiv += 1
+                    else:
+                        st += 1
+                    zadnje = max(zadnje, os.path.getmtime(pot))
+            izid.append({"ime": ime, "idej": st, "arhiv": arhiv, "spremenjeno": zadnje or os.path.getmtime(mapa),
+                         "odprt": ime == self.ime})
+        izid.sort(key=lambda p: p["ime"].lower())
+        return izid
+
+    def nov(self, ime):
+        ime = varno_ime(ime, "Projekt")
+        osnova, i = ime, 2
+        while os.path.exists(self.mapa(ime)):
+            ime = "%s %d" % (osnova, i)
+            i += 1
+        os.makedirs(os.path.join(self.mapa(ime), "Ideje"), exist_ok=True)
+        return ime
+
+    def preimenuj(self, ime, novo):
+        """Preimenuje mapo projekta; vrne novo ime. Če je projekt odprt, kličoči popravi še poti odprte ideje."""
+        novo = varno_ime(novo, "Projekt")
+        if not os.path.isdir(self.mapa(ime)):
+            raise ValueError("ni projekta: %s" % ime)
+        if novo == ime:
+            return ime
+        if os.path.exists(self.mapa(novo)):
+            raise ValueError("projekt »%s« že obstaja" % novo)
+        os.rename(self.mapa(ime), self.mapa(novo))
+        if self.ime == ime:
+            self.ime = novo
+        return novo
+
+
 def prazna_scena():
     bpy.ops.wm.read_factory_settings(use_empty=True)
     nastavi_enote()
 
 
-def nalozi_blend(pot):
+def nalozi_blend(pot, koren=""):
     bpy.ops.wm.open_mainfile(filepath=pot)
     nastavi_enote()
+    if koren:
+        popravi_vezave(koren)
+
+
+def popravi_vezave(koren):
+    """Vezave na kose, ki kažejo na staro mesto (npr. skupna mapa Ideje pred projekti ali absolutna pot z drugega
+    računalnika), preveže na <koren>/<ideja>/<Rxx>.blend, če ta obstaja. Vrne število popravljenih vezav."""
+    popravljene = 0
+    for lib in list(bpy.data.libraries):
+        try:
+            stara = bpy.path.abspath(lib.filepath)
+        except (ValueError, TypeError):
+            continue
+        if os.path.isfile(stara):
+            continue
+        deli = os.path.normpath(stara).split(os.sep)
+        if len(deli) < 2:
+            continue
+        nova = os.path.join(koren, deli[-2], deli[-1])
+        if not os.path.isfile(nova):
+            continue
+        try:
+            lib.filepath = bpy.path.relpath(nova) if bpy.data.filepath else nova
+        except ValueError:      # drug disk: absolutna pot
+            lib.filepath = nova
+        lib.reload()
+        popravljene += 1
+    return popravljene
 
 
 def nastavi_enote(scena=None):

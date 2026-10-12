@@ -218,13 +218,18 @@ FreeCAD je motor, vmesnik in grafika nastajata v brskalniku (plan, korak 8 napre
   (`dnevnik.txt`). **OptiX** v Blenderju 5.2 z gonilnikom NVIDIA 566.03 ne dela (`OPTIX_ERROR_INTERNAL_COMPILER_ERROR`): prvi neuspeh zapiše
   `renderji/brez-optix.txt` in render teče s CUDA (7 dni, nato znova poskusi OptiX). Barve: `Khronos PBR Neutral` (AgX razbarva barve FreeCAD-a).
   **Igrišče (faza 3, od 2026-10-10)**: `igrisce.py` (ideje in različice, parametrična oblika, pogledi za AI) in `ai_oblikovalec.py` (Claude v
-  zavihku). Ideja = `Oblikovanje/Ideje/<ime>/` z `ideja.json`, `R01.blend`…, `R01.png` (sličico izriše stran iz svojega pogleda, `POST /slicica`),
+  zavihku). **Projekti** (od 2026-10-12, stolpec čisto desno na strani): `Oblikovanje/Projekti/<projekt>/`, vsak s svojo mapo `Ideje`; odprt je
+  en projekt (`PROJEKTI.ime`, `GET /projekti`, `POST /ukaz` nov-projekt | odpri-projekt | preimenuj-projekt), drevo idej levo kaže le njegove
+  ideje, kosi sestava so iz istega projekta. Stara skupna mapa `Oblikovanje/Ideje` se ob prvem zagonu preimenuje v
+  `Projekti/Photobox Slim/Ideje` (`Projekti.preseli`, enkratno, brez kopiranja); vezave na kose, ki še kažejo na staro pot, ob nalaganju
+  popravi `igrisce.popravi_vezave`. Ideja = `<projekt>/Ideje/<ime>/` z `ideja.json`, `R01.blend`…, `R01.png` (sličico izriše stran iz svojega pogleda, `POST /slicica`),
   `pogovor.json` (sporočila API, **samo dodajanje**: bloki odgovora se vrnejo nespremenjeni), `prikaz.json` (koraki za stran), `pogledi/`.
   **Sličice v ozadju** (od 2026-10-12, `slicice.py` + `slicica_izris.py`): različice brez `Rxx.png` (iz skript, kosi sestavov,
   ki jih stran ni gledala) izriše ločen Blender brez okna (Workbench, studio Default, ekspozicija 1,6, Standard, prozorno, 320 × 240,
   ista smer kot stran; barve iz Principled v `diffuse_color`, steklo alfa 0,18); sproži `GET /ideje` (`SLICICE.preveri`, največ na 5 s,
   ena naloga naenkrat, padle datoteke si zapomni po mtime), ob koncu dvigne `verzija_ideje`. Dnevnik `FreeCAD-splet/slicice/dnevnik.txt`.
-  Zadnja ideja se ob zagonu odpre sama (`FreeCAD-splet/oblikovanje-zadnja.json`). Parametrična oblika: besedilo `oblika.py` v .blend z
+  Zadnji projekt in njegova zadnja ideja se ob zagonu odpreta sama (`FreeCAD-splet/oblikovanje-zadnja.json`: `projekt`, `ideja`,
+  `zadnje` = zadnja ideja vsakega projekta). Parametrična oblika: besedilo `oblika.py` v .blend z
   `zgradi(p)` + lastnost scene `parametri` (JSON drsnikov); objekti v zbirki »Oblika« se ob drsniku zgradijo znova (`POST /ukaz {dejanje:
   parameter, vrednosti}`). AI: `claude-opus-5-5`, pretakanje, adaptivno razmišljanje s povzetkom (prikazan v klepetu), effort `medium`
   (pri `high` je prvi odgovor razmišljal > 5 min in povezava je padla), `fallbacks: "default"`, ponovitev ob prekinjeni povezavi; orodja

@@ -14,7 +14,8 @@ Zgradba (enako pravilo kot lastno/splet/streznik.py):
     math in pomočniki iz tega modula (dodaj_obliko, gladko, pocisti); spremenljivka `rezultat` gre nazaj.
   - Render: kopija scene (.blend) gre v ločen proces Blenderja (upodabljanje.py, render.py), zato oblikovanje med
     renderjem teče naprej.
-  - Igrišče (faza 3, igrisce.py): ideje z različicami (Oblikovanje/Ideje/<ime>/R01.blend …), parametrična oblika z
+  - Igrišče (faza 3, igrisce.py): projekti (Oblikovanje/Projekti/<projekt>/, stolpec čisto desno; GET /projekti, ukazi
+    nov-projekt, odpri-projekt, preimenuj-projekt), ideje z različicami (<projekt>/Ideje/<ime>/R01.blend …), parametrična oblika z
     drsniki (besedilo »oblika.py« z zgradi(p) + lastnost scene »parametri«), AI oblikovalec (ai_oblikovalec.py: Claude
     gradi, gleda in popravlja; orodja tečejo na glavni niti prek na_glavni), Odpri v Blenderju (okno Blenderja z
     različico; ko jo tam shraniš, se vrne kot nova različica). Sestav: kosi iz drugih idej kot vezave (igrisce.vstavi_kos;
@@ -464,7 +465,7 @@ class Stanje:
                 "spremenjeno": self.spremenjeno, "mapa": MAPA_DATOTEK, "blender": bpy.app.version_string,
                 "napaka": self.napaka, "verzijaIdeje": self.verzija_ideje,
                 "ideja": os.path.basename(IDEJE.mapa) if IDEJE.mapa else "", "razlicica": IDEJE.razlicica,
-                "vBlenderju": bool(self.zunanje), "ai": AI.stanje}
+                "projekt": PROJEKTI.ime, "vBlenderju": bool(self.zunanje), "ai": AI.stanje}
 
 
 STANJE = Stanje()
@@ -529,25 +530,114 @@ def obdelaj(vrsta, podatki, odgovor):
 
 
 BREZ_SPREMEMBE = ("shrani", "odpri", "nova", "izvozi", "izvozi-dxf", "izvozi-za-tisk", "izberi", "nova-ideja", "odpri-idejo", "shrani-razlicico",
-                  "odpri-razlicico", "uredi-razlicico", "uredi-idejo", "odpri-v-blenderju")
+                  "odpri-razlicico", "uredi-razlicico", "uredi-idejo", "odpri-v-blenderju", "nov-projekt", "odpri-projekt", "preimenuj-projekt")
 
 
 ZADNJA_IDEJA = os.path.join(LOKALNO, "oblikovanje-zadnja.json")
 
 
+def _zadnje():
+    """Vsebina oblikovanje-zadnja.json: {projekt, ideja, zadnje: {projekt: ideja}} (pred projekti le {ideja})."""
+    try:
+        with open(ZADNJA_IDEJA, encoding="utf-8") as f:
+            z = json.load(f)
+        return z if isinstance(z, dict) else {}
+    except (OSError, ValueError):
+        return {}
+
+
 def _po_ideji():
     STANJE.verzija_ideje += 1      # predpomnilnik posnetkov ostane: ključ nosi prstni odtis mreže
-    try:   # ob naslednjem zagonu se odpre ista ideja
+    try:   # ob naslednjem zagonu se odpreta isti projekt in ideja; za vsak projekt si zapomni zadnjo idejo
+        z = _zadnje()
+        zadnje = z.get("zadnje") if isinstance(z.get("zadnje"), dict) else {}
+        ideja = os.path.basename(IDEJE.mapa) if IDEJE.mapa else ""
+        if PROJEKTI.ime:
+            zadnje[PROJEKTI.ime] = ideja
         with open(ZADNJA_IDEJA, "w", encoding="utf-8") as f:
-            json.dump({"ideja": os.path.basename(IDEJE.mapa) if IDEJE.mapa else ""}, f, ensure_ascii=False)
+            json.dump({"projekt": PROJEKTI.ime, "ideja": ideja, "zadnje": zadnje}, f, ensure_ascii=False)
     except OSError:
         pass
     AI.nalozi(IDEJE.mapa)
     STANJE.datoteka = os.path.join(IDEJE.mapa, IDEJE.razlicica + ".blend") if IDEJE.razlicica else ""
 
 
+def odpri_projekt(ime, ideja=None):
+    """Odpre projekt: drevo idej in kosi sestavov so odslej iz njegove mape. Odpre idejo `ideja` (None = zadnja ideja tega
+    projekta po oblikovanje-zadnja.json), sicer prazno sceno."""
+    mapa = PROJEKTI.mapa(ime)
+    if not os.path.isdir(mapa):
+        raise ValueError("ni projekta: %s" % ime)
+    PROJEKTI.ime = os.path.basename(mapa)
+    IDEJE.nastavi_koren(mapa)
+    if ideja is None:
+        z = _zadnje()
+        ideja = (z.get("zadnje") or {}).get(PROJEKTI.ime, "") if isinstance(z.get("zadnje"), dict) else ""
+    if ideja and os.path.isfile(os.path.join(IDEJE.koren, igrisce.varno_ime(ideja), "ideja.json")):
+        try:
+            IDEJE.odpri(ideja)
+        except Exception:  # noqa: BLE001
+            _log("projekt %s: ideje %s ni mogoče odpreti: %s" % (PROJEKTI.ime, ideja, traceback.format_exc()))
+            nova_scena()
+    else:
+        nova_scena()
+    _po_ideji()
+    STANJE.spremenjeno = False
+
+
+def ukaz_projekti(p):
+    d = p.get("dejanje")
+    if d not in ("nov-projekt", "odpri-projekt", "preimenuj-projekt"):
+        return None
+    if AI.stanje == "dela":
+        return {"ok": False, "sporocilo": "Claude še dela; počakaj ali ga ustavi."}
+    if STANJE.zunanje and d != "preimenuj-projekt":
+        return {"ok": False, "sporocilo": "Ideja je odprta v oknu Blenderja; najprej jo tam shrani ali okno zapri."}
+    if d == "nov-projekt":
+        ime = PROJEKTI.nov(p.get("ime") or "Projekt")
+        odpri_projekt(ime, "")
+        return {"ok": True, "ime": ime}
+    if d == "odpri-projekt":
+        odpri_projekt(p.get("ime", ""))
+        return {"ok": True, "ime": PROJEKTI.ime}
+    if d == "preimenuj-projekt":
+        ime, novo = p.get("ime", ""), (p.get("novo") or "").strip()
+        if not novo:
+            return {"ok": False, "sporocilo": "Prazno ime."}
+        odprt = PROJEKTI.ime == ime
+        stara_ideja = os.path.basename(IDEJE.mapa) if (odprt and IDEJE.mapa) else ""
+        novo = PROJEKTI.preimenuj(ime, novo)
+        try:    # zadnja ideja projekta ostane zapisana pod novim imenom
+            z = _zadnje()
+            zadnje = z.get("zadnje") if isinstance(z.get("zadnje"), dict) else {}
+            if ime in zadnje:
+                zadnje[novo] = zadnje.pop(ime)
+            z["zadnje"] = zadnje
+            if z.get("projekt") == ime:
+                z["projekt"] = novo
+            with open(ZADNJA_IDEJA, "w", encoding="utf-8") as f:
+                json.dump(z, f, ensure_ascii=False)
+        except OSError:
+            pass
+        if odprt:       # poti odprte ideje kažejo v preimenovano mapo
+            IDEJE.koren = os.path.join(PROJEKTI.mapa(novo), "Ideje")
+            if stara_ideja:
+                IDEJE.mapa = os.path.join(IDEJE.koren, stara_ideja)
+                AI.nalozi(IDEJE.mapa)
+                STANJE.datoteka = os.path.join(IDEJE.mapa, IDEJE.razlicica + ".blend") if IDEJE.razlicica else ""
+                if STANJE.zunanje:
+                    STANJE.zunanje["pot"] = os.path.join(IDEJE.mapa, "_v_blenderju.blend")
+            _po_ideji()
+        STANJE.verzija_ideje += 1
+        return {"ok": True, "ime": novo}
+    return None
+
+
 def ukaz_ideje(p):
     d = p.get("dejanje")
+    izid = ukaz_projekti(p)
+    if izid is not None:
+        return izid
     if d in ("nova-ideja", "odpri-idejo", "odpri-razlicico") and AI.stanje == "dela":
         return {"ok": False, "sporocilo": "Claude še dela; počakaj ali ga ustavi."}
     if d == "nova-ideja":
@@ -622,7 +712,7 @@ def preveri_zunanje():
         return
     time.sleep(0.5)   # Blender še piše
     z["mtime"] = os.path.getmtime(z["pot"])
-    igrisce.nalozi_blend(z["pot"])
+    igrisce.nalozi_blend(z["pot"], IDEJE.koren)
     IDEJE.razlicica = z.get("izhaja", "")
     rid = IDEJE.shrani_razlicico("Ročno urejeno v Blenderju", "Blender")
     _po_ideji()
@@ -843,6 +933,7 @@ def zacni_ai(p):
 
 AI = AIOblikovalec(na_glavni)
 IDEJE = igrisce.Ideje(MAPA_DATOTEK)
+PROJEKTI = igrisce.Projekti(MAPA_DATOTEK)     # odprt projekt določi mapo idej (main: selitev stare mape Ideje, zadnji projekt)
 SLICICE = Slicice(ob_koncu=lambda: setattr(STANJE, "verzija_ideje", STANJE.verzija_ideje + 1), dnevnik=_log)   # manjkajoče sličice v ozadju
 
 
@@ -908,7 +999,9 @@ class Zahteva(http.server.BaseHTTPRequestHandler):
             self._odgovor({"mapa": MAPA_DATOTEK, "datoteke": datoteke})
         elif pot == "/ideje":
             SLICICE.preveri(IDEJE.koren)      # različice brez sličice (iz skript, kosi sestavov) se izrišejo v ozadju
-            self._odgovor({"ideje": IDEJE.seznam(), "mapa": IDEJE.koren})
+            self._odgovor({"ideje": IDEJE.seznam(), "mapa": IDEJE.koren, "projekt": PROJEKTI.ime})
+        elif pot == "/projekti":
+            self._odgovor({"projekti": PROJEKTI.seznam(), "mapa": PROJEKTI.koren, "odprt": PROJEKTI.ime})
         elif pot == "/ideja":
             self._odgovor(IDEJE.opis() or {})
         elif pot == "/ideja/slicica":
@@ -1017,16 +1110,19 @@ def main():
         _log("vrata %d so zasedena (%s); ali Oblikovanje že teče?" % (VRATA, e))
         return
     nova_scena()
-    try:
-        with open(ZADNJA_IDEJA, encoding="utf-8") as f:
-            zadnja = json.load(f).get("ideja", "")
-        if zadnja:
-            IDEJE.odpri(zadnja)
-            _po_ideji()
-    except (OSError, ValueError):
-        pass
+    try:   # projekti: stara skupna mapa Ideje postane prvi projekt; odpre se zadnji projekt in njegova zadnja ideja
+        preseljen = PROJEKTI.preseli(_log)
+        z = _zadnje()
+        projekti = [p["ime"] for p in PROJEKTI.seznam()]
+        if not projekti:
+            projekti = [PROJEKTI.nov("Projekt")]
+        projekt = z.get("projekt") or preseljen or projekti[0]
+        if projekt not in projekti:
+            projekt = projekti[0]
+        zadnje = z.get("zadnje") if isinstance(z.get("zadnje"), dict) else {}
+        odpri_projekt(projekt, zadnje.get(projekt) if projekt in zadnje else z.get("ideja", ""))   # stara datoteka: le {ideja}
     except Exception:  # noqa: BLE001
-        _log("zadnja ideja: " + traceback.format_exc())
+        _log("zadnji projekt: " + traceback.format_exc())
     zapisi_povezavo()
     threading.Thread(target=streznik.serve_forever, daemon=True, name="http").start()
     _log("Oblikovanje (Blender %s) na http://127.0.0.1:%d/" % (bpy.app.version_string, VRATA))

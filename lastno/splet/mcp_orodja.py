@@ -2086,7 +2086,8 @@ def _oblikovanje_klic(metoda, pot, telo=None, cas=60.0):
 }, opis="""
 Prosto oblikovanje v Blenderju (zavihek Oblikovanje: organske, gladke oblike, različice, render). Izvede Python v
 Blenderju, ki teče v ozadju (če ne teče, ga zažene), in vrne izpis, `rezultat` ter po želji sliko scene. Brez kode in
-slike vrne stanje (odprta datoteka, ideja, objekti).""")
+slike vrne stanje (odprta datoteka, projekt, ideja, objekti). Projekti (stolpec čisto desno v Oblikovanju) so mape
+Oblikovanje/Projekti/<projekt>/Ideje; v kodi jih vodi PROJEKTI (seznam, nov, preimenuj) in odpri_projekt(ime).""")
 def t_oblikovanje(a):
     if not S.oblikovanje_stanje().get("tece"):
         ok, sporocilo = S.oblikovanje_zazeni()
@@ -2138,8 +2139,9 @@ def t_oblikovanje(a):
     if not koda.strip() and not a.get("slika"):
         status, telo = _oblikovanje_klic("GET", "/stanje", cas=10)
         s = json.loads(telo.decode("utf-8"))
-        v.append("Oblikovanje (Blender %s) teče. Datoteka: %s%s. Ideja: %s." % (
+        v.append("Oblikovanje (Blender %s) teče. Datoteka: %s%s. Projekt: %s. Ideja: %s." % (
             s.get("blender", "?"), s.get("datoteka") or "ni shranjena", " (neshranjena)" if s.get("spremenjeno") else "",
+            s.get("projekt") or "–",
             (s.get("ideja") or {}).get("ime") if isinstance(s.get("ideja"), dict) else s.get("ideja") or "–"))
     return {"napaka": napaka, "besedilo": "\n".join(v), "slike": slike}
 

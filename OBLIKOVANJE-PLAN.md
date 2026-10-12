@@ -28,6 +28,8 @@ stene, pritrdila, STEP, tisk). Isti vmesnik v brskalniku, dva motorja v ozadju.
    Brskalnik isti pogled riše iz Blenderja; zavihek Oblikovanje.
 3. [x] **Igrišče** (2026-10-10): ideje z različicami (trak sličic, zvezdica, vir), klepet s Claudom v zavihku (gradi parametrično obliko, pogleda 4 poglede, popravi; skica ali fotografija kot priloga), drsniki iz parametrov oblike, Odpri v Blenderju (shranjeno v oknu se vrne kot različica). Prvotno: ideje in različice (galerija, sličice), AI zanka z izrisom slike (AI zgradi, pogleda, popravi), osnovni gradniki
    oblike: gladka kletka (SubD), zlivajoča se telesa (SDF/metaballi), cevi po krivulji, drsniki prek Geometry Nodes.
+   **Projekti (2026-10-12):** stolpec čisto desno našteje vse projekte (`Oblikovanje/Projekti/<projekt>/Ideje`); dotedanje ideje so postale
+   projekt »Photobox Slim«. Klik preklopi projekt (drevo idej levo kaže le njegove), + nov ustvari projekt, ✎ ga preimenuje.
    **Sestav (2026-10-12):** kos iz druge ideje kot vezava z revizijo (logika strojnega risanja), gumb + kos, ↻ ob novejši različici kosa,
    značke sestav / v sestavu; prvi sestav Maketa v pleksi vitrini R04 ← Photobox Slim za tisk R10.
 4. [x] **Render** (2026-10-10; slika, video, predloge osvetlitve in ozadja preverjeni; les in zrnatost iz Videza napisana, še nepreverjena): Cycles na grafični kartici, predloge studia (luči, ozadja, tla), materiali iz Videza, slika in vrtenje

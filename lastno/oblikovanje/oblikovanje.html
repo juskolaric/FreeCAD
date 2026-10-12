@@ -11,8 +11,9 @@
     --napaka: #b91c1c; --zvezdica: #f59e0b; --ozadje: #f3f5f8; --obroc: 0 0 0 3px rgba(37,99,235,.18); }
   * { box-sizing: border-box; }
   html, body { margin: 0; height: 100%; font: 13px "Segoe UI Variable Text", "Segoe UI", system-ui, -apple-system, sans-serif; color: var(--besedilo); background: #fff; -webkit-font-smoothing: antialiased; overflow: hidden; }
-  #ovoj { display: grid; grid-template-columns: 250px minmax(0, 1fr) 380px; grid-template-rows: auto minmax(0, 1fr) auto auto; height: 100%; }
-  #ovoj.brezKlepeta { grid-template-columns: 250px minmax(0, 1fr) 0; }
+  /* stolpci: ideje | pogled | klepet | projekti (čisto desno, od 2026-10-12: vsak projekt ima svoje ideje) */
+  #ovoj { display: grid; grid-template-columns: 290px minmax(0, 1fr) 380px 200px; grid-template-rows: auto minmax(0, 1fr) auto auto; height: 100%; }
+  #ovoj.brezKlepeta { grid-template-columns: 290px minmax(0, 1fr) 0 200px; }
   #ovoj.brezKlepeta #klepet { display: none; }
 
   /* vrstica orodij, namig o miški in razdelek Objekti: odstranjeni s strani na željo uporabnika (2026-10-12);
@@ -22,7 +23,7 @@
   #pogled { grid-row: 2; grid-column: 2; }
   #razlicice { grid-row: 3; }
   #statusna { grid-row: 4; }
-  #vrstica { grid-column: 1 / 4; display: flex; align-items: center; gap: 4px; padding: 6px 10px; border-bottom: 1px solid var(--crta); background: #fff; flex-wrap: wrap; }
+  #vrstica { grid-column: 1 / 5; display: flex; align-items: center; gap: 4px; padding: 6px 10px; border-bottom: 1px solid var(--crta); background: #fff; flex-wrap: wrap; }
   #vrstica .skupina { display: flex; gap: 2px; align-items: center; padding-right: 8px; margin-right: 4px; border-right: 1px solid var(--crta); }
   #vrstica .napis { font-size: 11px; color: var(--besedilo3); margin-right: 4px; }
   button.g { height: 30px; padding: 0 10px; border: 1px solid transparent; border-radius: 8px; background: none; cursor: pointer; font: inherit; color: var(--besedilo); display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
@@ -38,8 +39,8 @@
 
   /* levo */
   #stranski { border-right: 1px solid var(--crta); background: var(--plosca); overflow: auto; padding: 10px 8px; display: flex; flex-direction: column; gap: 14px; min-height: 0; }
-  #stranski h3 { margin: 2px 6px 6px; font-size: 11px; text-transform: uppercase; letter-spacing: .05em; color: var(--besedilo3); display: flex; align-items: center; gap: 6px; }
-  #stranski h3 button { margin-left: auto; border: 0; background: none; color: var(--poudarek); cursor: pointer; font: inherit; font-size: 11px; font-weight: 600; text-transform: none; letter-spacing: 0; }
+  #stranski h3, #projekti h3 { margin: 2px 6px 6px; font-size: 11px; text-transform: uppercase; letter-spacing: .05em; color: var(--besedilo3); display: flex; align-items: center; gap: 6px; }
+  #stranski h3 button, #projekti h3 button { margin-left: auto; border: 0; background: none; color: var(--poudarek); cursor: pointer; font: inherit; font-size: 11px; font-weight: 600; text-transform: none; letter-spacing: 0; }
   .vrsta { display: flex; align-items: center; gap: 6px; padding: 5px 6px; border-radius: 8px; cursor: pointer; min-width: 0; }
   .vrsta:hover { background: var(--lebdenje); }
   .vrsta.izbran { background: var(--poudarekMehko); }
@@ -62,11 +63,20 @@
   #ideje .vrsta.otrok img { width: 26px; height: 20px; }
   #ideje .vrsta.otrok .ime { font-size: 12.5px; }
   #ideje .vrsta .znacka.rev, #ideje .vrsta .znacka.kol { flex: none; }
-  #ideje .vrsta .arhiviraj { visibility: hidden; }
-  #ideje .vrsta:hover .arhiviraj { visibility: visible; }
-  #ideje .arhivPreklop { display: block; width: 100%; border: 0; background: none; color: var(--besedilo3); font: inherit; font-size: 11px; padding: 4px 8px; text-align: left; cursor: pointer; }
-  #ideje .arhivPreklop:hover { color: var(--besedilo); }
+  /* Ime se prelomi v največ dve vrstici, da se v ozkem stolpcu vidi celo (ne »Maketa v pl…«). */
+  #ideje .vrsta .ime { white-space: normal; overflow-wrap: anywhere; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; line-height: 1.25; }
+  #ideje .vrsta .arhiviraj { visibility: hidden; width: 0; padding: 0; margin-left: -6px; overflow: hidden; }   /* brez prostora, dokler vrstica ni pod kazalcem */
+  #ideje .vrsta:hover .arhiviraj { visibility: visible; width: auto; padding: 2px 4px; margin-left: 0; }
   .prazno { color: var(--besedilo3); font-size: 12px; padding: 4px 8px; line-height: 1.5; }
+  #stranski h3 .projektIme { font-weight: 500; text-transform: none; letter-spacing: 0; color: var(--besedilo2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+
+  /* projekti (čisto desno): vrstica = projekt s številom idej; odprti je moder; ✎ ob prehodu z miško preimenuje */
+  #projekti { grid-row: 2 / 4; grid-column: 4; border-left: 1px solid var(--crta); background: var(--plosca); overflow: auto; padding: 10px 8px; display: flex; flex-direction: column; gap: 2px; min-height: 0; }
+  #projekti .vrsta .ime { white-space: normal; overflow-wrap: anywhere; line-height: 1.25; }
+  #projekti .vrsta .stevilo { flex: none; font-size: 11px; color: var(--besedilo3); font-variant-numeric: tabular-nums; }
+  #projekti .vrsta.izbran .stevilo { color: var(--poudarekTemno); }
+  #projekti .vrsta .preimenuj { visibility: hidden; width: 0; padding: 0; margin-left: -6px; overflow: hidden; }
+  #projekti .vrsta:hover .preimenuj { visibility: visible; width: auto; padding: 2px 4px; margin-left: 0; }
   .drsnik { padding: 4px 8px 8px; }
   .drsnik .glava { display: flex; justify-content: space-between; font-size: 12px; color: var(--besedilo2); margin-bottom: 2px; }
   .drsnik .glava b { color: var(--besedilo); font-weight: 600; font-variant-numeric: tabular-nums; }
@@ -128,7 +138,7 @@
   .karta .spodaj b { font-size: 11.5px; }
   .karta .op { padding: 0 6px 5px; font-size: 10.5px; color: var(--besedilo3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
-  #statusna { grid-column: 1 / 4; display: flex; gap: 12px; padding: 4px 10px; border-top: 1px solid var(--crta); font-size: 11.5px; color: var(--besedilo3); background: #fff; }
+  #statusna { grid-column: 1 / 5; display: flex; gap: 12px; padding: 4px 10px; border-top: 1px solid var(--crta); font-size: 11.5px; color: var(--besedilo3); background: #fff; }
   #statusna .desno { margin-left: auto; }
   #meni { position: fixed; z-index: 50; background: #fff; border: 1px solid var(--crta); border-radius: 10px; box-shadow: var(--senca2); padding: 4px; min-width: 260px; max-height: 60vh; overflow: auto; }
   #meni.skrit { display: none; }
@@ -137,7 +147,7 @@
   #obvestilo { position: fixed; left: 50%; bottom: 130px; transform: translateX(-50%); background: #111827; color: #fff; padding: 8px 14px; border-radius: 9px; font-size: 12.5px; opacity: 0; transition: opacity .2s; pointer-events: none; z-index: 70; max-width: 80vw; }
   #obvestilo.viden { opacity: .94; }
   #obvestilo.slabo { background: var(--napaka); }
-  @media (max-width: 1100px) { #ovoj { grid-template-columns: 210px minmax(0, 1fr) 320px; } }
+  @media (max-width: 1100px) { #ovoj { grid-template-columns: 240px minmax(0, 1fr) 320px 160px; } #ovoj.brezKlepeta { grid-template-columns: 240px minmax(0, 1fr) 0 160px; } }
 </style>
 <script type="importmap">
 { "imports": {
@@ -171,7 +181,7 @@
     <div id="naslov"></div>
   </div>
   <aside id="stranski">
-    <section><h3>Ideje <button id="gNovaIdeja2" type="button">+ nova</button></h3><div id="ideje"></div></section>
+    <section><h3>Ideje <span class="projektIme" id="idejeProjekt" title="Odprt projekt; drugega izbereš v stolpcu Projekti čisto desno"></span><button id="gNovaIdeja2" type="button">+ nova</button></h3><div id="ideje"></div></section>
     <section id="drsnikiOkvir"><h3>Drsniki oblike</h3><div id="drsniki"></div></section>
     <section id="objektiOkvir"><h3>Objekti <button id="gVstaviKos" type="button" title="Vstavi kos iz druge ideje kot vezavo: sestav se na kos sklicuje (ideja + revizija), kopije ni">+ kos</button></h3><div id="seznam"></div><div id="info"></div></section>
   </aside>
@@ -195,6 +205,10 @@
         <button class="g glavni" id="gPoslji">Pošlji</button>
       </div>
     </div>
+  </aside>
+  <aside id="projekti">
+    <h3>Projekti <button id="gNovProjekt" type="button" title="Nov projekt: lastna mapa z idejami in različicami (Oblak/3D modeliranje/Oblikovanje/Projekti)">+ nov</button></h3>
+    <div id="seznamProjektov"></div>
   </aside>
   <div id="razlicice"></div>
   <div id="statusna"><span id="hud">Povezujem z Blenderjem …</span><span class="desno" id="hud2"></span></div>
@@ -479,7 +493,7 @@ async function osvezi(takoj) {
   if (!takoj) setTimeout(osvezi, vidno ? 700 : 3000);
 }
 function narisiNaslov() {
-  $('hud').textContent = 'Blender ' + stanje.blender + ' · ' + (model.objekti || []).length + ' objektov' + (stanje.napaka ? ' · napaka posnetka (dnevnik)' : '');
+  $('hud').textContent = 'Blender ' + stanje.blender + (stanje.projekt ? ' · projekt ' + stanje.projekt : '') + ' · ' + (model.objekti || []).length + ' objektov' + (stanje.napaka ? ' · napaka posnetka (dnevnik)' : '');
   const n = $('naslov'); n.innerHTML = '';
   if (stanje.ideja) {
     const b = document.createElement('b'); b.textContent = stanje.ideja; n.append(b);
@@ -496,8 +510,51 @@ function narisiNaslov() {
   $('gShraniRazlicico').disabled = !stanje.ideja;
 }
 
+// --- projekti (stolpec čisto desno) -------------------------------------------------------------------------------
+// Vsak projekt je mapa Projekti/<ime>/ s svojimi idejami; odprt je en projekt, njegove ideje so v drevesu levo.
+async function naloziProjekte() {
+  const okvir = $('seznamProjektov');
+  let p;
+  try { p = await (await fetch('/projekti', { cache: 'no-store' })).json(); }
+  catch (e) { okvir.innerHTML = '<div class="prazno">Strežnik Oblikovanja je starejši od te strani in projektov ne pozna. Zaženi ga znova.</div>'; return; }
+  okvir.innerHTML = '';
+  if (!(p.projekti || []).length) okvir.innerHTML = '<div class="prazno">Še ni projektov. Klikni + nov.</div>';
+  for (const pr of p.projekti || []) {
+    const v = document.createElement('div'); v.className = 'vrsta' + (pr.odprt ? ' izbran' : '');
+    const ime = document.createElement('span'); ime.className = 'ime'; ime.textContent = pr.ime;
+    ime.title = pr.ime + ': ' + stevilo(pr.idej, 'ideja', 'ideji', 'ideje', 'idej') + (pr.arhiv ? ', ' + pr.arhiv + ' v arhivu' : '') + (pr.odprt ? ' (odprt)' : '\nKlik odpre projekt.');
+    const st = document.createElement('span'); st.className = 'stevilo'; st.textContent = pr.idej; st.title = stevilo(pr.idej, 'ideja', 'ideji', 'ideje', 'idej');
+    const u = document.createElement('button'); u.className = 'preimenuj'; u.type = 'button'; u.textContent = '✎'; u.title = 'Preimenuj projekt (mapa se preimenuje, ideje ostanejo)';
+    u.addEventListener('click', e => { e.stopPropagation(); preimenujProjekt(pr.ime); });
+    v.append(ime, st, u);
+    v.addEventListener('click', () => odpriProjekt(pr.ime));
+    okvir.appendChild(v);
+  }
+}
+function odpriProjekt(ime) {
+  if (stanje.projekt === ime) return;
+  if (stanje.spremenjeno && !confirm('Trenutna scena ni shranjena kot različica. Vseeno odprem projekt »' + ime + '«?')) return;
+  prilagodiOb = true; drevoIdej.zaprte.clear();
+  ukaz({ dejanje: 'odpri-projekt', ime }, true);
+}
+async function novProjekt() {
+  const ime = prompt('Ime novega projekta:', '');
+  if (!ime) return;
+  if (stanje.spremenjeno && !confirm('Trenutna scena ni shranjena kot različica. Vseeno ustvarim nov projekt?')) return;
+  prilagodiOb = true; drevoIdej.zaprte.clear();
+  const d = await ukaz({ dejanje: 'nov-projekt', ime }, true);
+  if (d.ok) obvesti('Projekt »' + d.ime + '« je odprt; nove ideje nastajajo v njem.');
+}
+async function preimenujProjekt(ime) {
+  const novo = prompt('Novo ime projekta:', ime);
+  if (!novo || novo.trim() === ime) return;
+  const d = await ukaz({ dejanje: 'preimenuj-projekt', ime, novo: novo.trim() }, true);
+  if (d.ok) obvesti('Projekt se zdaj imenuje »' + d.ime + '«.');
+}
+$('gNovProjekt').addEventListener('click', novProjekt);
+
 // --- ideje in različice ------------------------------------------------------------------------------------------
-const drevoIdej = { zaprte: new Set(), arhiv: false };   // strnjeni sestavi in prikaz arhiva v drevesu idej (za sejo)
+const drevoIdej = { zaprte: new Set() };   // strnjeni sestavi v drevesu idej (za sejo)
 const stevilo = (n, ena, dve, tri, vec) => n + ' ' + (n % 100 === 1 ? ena : n % 100 === 2 ? dve : n % 100 === 3 || n % 100 === 4 ? tri : vec);
 function odpriIdejo(ime) {
   if (stanje.ideja === ime) return;
@@ -512,8 +569,9 @@ function zdruziDele(deli) {
 }
 function opisDelov(deli) { return zdruziDele(deli).map(d => d.ideja + ' ' + d.razlicica + (d.kolicina > 1 ? ' ×' + d.kolicina : '')).join(', '); }
 async function naloziIdeje() {
-  const [seznam, opis] = await Promise.all([fetch('/ideje', { cache: 'no-store' }).then(r => r.json()), fetch('/ideja', { cache: 'no-store' }).then(r => r.json())]);
+  const [seznam, opis] = await Promise.all([fetch('/ideje', { cache: 'no-store' }).then(r => r.json()), fetch('/ideja', { cache: 'no-store' }).then(r => r.json()), naloziProjekte()]);
   ideja = opis && opis.ime ? opis : null;
+  $('idejeProjekt').textContent = seznam.projekt ? '· ' + seznam.projekt : '';
   const okvir = $('ideje'); okvir.innerHTML = '';
   if (!seznam.ideje.length) okvir.innerHTML = '<div class="prazno">Še ni idej. Napiši Claudu ali klikni + nova.</div>';
   // Drevo kot v strojništvu: glavni sestav je koren, pod njim sestavi in kosi z revizijo, ki jo sestav uporablja.
@@ -557,14 +615,7 @@ async function naloziIdeje() {
       vozlisce(otrok, d.razlicica, globina + 1, new Set([...pot, d.ideja]), d.kolicina);
     }
   }
-  const arhiv = seznam.ideje.filter(i => !vSestavu.has(i.ime) && i.arhiv && !i.odprta);
-  for (const i of seznam.ideje) if (!vSestavu.has(i.ime) && (!i.arhiv || i.odprta || drevoIdej.arhiv)) vozlisce(i, i.aktivna || i.zadnja, 0, new Set([i.ime]));
-  if (arhiv.length) {
-    const b = document.createElement('button'); b.className = 'arhivPreklop'; b.type = 'button';
-    b.textContent = drevoIdej.arhiv ? 'skrij arhiv' : '+ ' + arhiv.length + ' v arhivu';
-    b.addEventListener('click', () => { drevoIdej.arhiv = !drevoIdej.arhiv; naloziIdeje(); });
-    okvir.appendChild(b);
-  }
+  for (const i of seznam.ideje) if (!vSestavu.has(i.ime) && (!i.arhiv || i.odprta)) vozlisce(i, i.aktivna || i.zadnja, 0, new Set([i.ime]));   // arhivirane ideje drevo skrije (odprta ostane vidna)
   narisiRazlicice();
   preveriSlicico();
   const kljucIdeje = ideja ? ideja.mapa : '';
