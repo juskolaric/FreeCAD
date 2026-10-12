@@ -41,6 +41,10 @@ Okolje:
   gladko(obj, nivo=2, nivo_render=3) – Subdivision Surface + gladko senčenje
   material(ime, barva=(r,g,b) v sRGB 0..1, kovinskost=0, hrapavost=0.4) – Principled BSDF; dodaj z obj.data.materials.append(...)
   nov_objekt(ime, mreza_ali_krivulja) – poveže nov objekt v sceno
+  vstavi_kos(ideja, razlicica=None, lega=None, ime=None) – kos iz druge ideje kot vezava (sestav, logika strojnega
+  risanja): mreža ostane v datoteki različice kosa, tu nastaneta nosilec (Empty) in telo z vezano mrežo; lega (x, y, z)
+  ali matrika 4 × 4; obliko kosa ne spreminjaj tu, ampak v njegovi ideji. posodobi_kos(ime, razlicica=None) preveže na
+  drugo revizijo, odstrani_kos(ime), kosi() našteje kose v sceni (ideja, revizija, novejša na voljo).
 - Dobre tehnike za organske oblike: kletka iz bmesh (malo ploskev, štirikotniki) + Subdivision Surface; zrcaljenje
   (Mirror modifikator) za simetrijo; Solidify za debelino sten; metaball za zlivajoče se gmote; krivulje z bevel_depth
   za cevi in ročaje; Remesh (voxel) + Smooth Corrective za zlitje več teles v eno; Displace s teksturo za relief.

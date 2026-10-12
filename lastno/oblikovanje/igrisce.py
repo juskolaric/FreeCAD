@@ -10,6 +10,12 @@ Ideja = mapa <MAPA_DATOTEK>/Ideje/<ime>/ z:
     pogovor.json    pogovor s Claudom (sporočila API, samo dodajanje), prikaz.json (koraki za stran)
     pogledi/        slike, ki jih je AI pogledal
 
+Sestav (logika strojnega risanja): ideja lahko vsebuje kose iz drugih idej kot vezave, ne kopije. Kos = nosilec (Empty z
+lastnostjo »kos« = JSON {ideja, razlicica}) + telesa: lokalni objekti, katerih mreža je vezana (link) iz datoteke
+<Ideje>/<kos>/R09.blend. Sestav nosi le lego kosa; oblika, materiali in revizija so v ideji kosa. Različica sestava v
+ideja.json zapiše »deli« (kateri kos, katera revizija), zato seznam idej ve, kaj je sestav in kje je kos uporabljen.
+Ko ima kos novejšo aktivno revizijo, sestav to pokaže (posodobi_kos = prevezava na drugo revizijo z isto lego).
+
 Parametrična oblika: besedilo »oblika.py« v .blend definira `zgradi(p)` (p: ime -> vrednost), parametri so v lastnosti
 scene »parametri« (JSON seznam {ime, oznaka, vrednost, min, max, korak, enota}). Objekti, ki jih zgradi, so v zbirki
 »Oblika«; ob spremembi drsnika se zbirka izprazni in zgradi znova.
@@ -23,7 +29,7 @@ import re
 
 import bpy
 import numpy as np
-from mathutils import Vector
+from mathutils import Matrix, Vector
 
 ZBIRKA = "Oblika"
 BESEDILO = "oblika.py"
@@ -63,19 +69,47 @@ class Ideje:
             json.dump(podatki, f, ensure_ascii=False, indent=1)
         os.replace(zacasna, self._pot("ideja.json"))
 
-    def seznam(self):
-        izid = []
+    def _vse(self):
+        """ime ideje -> podatki (ideja.json) za vse ideje v korenu."""
+        vse = {}
         if not os.path.isdir(self.koren):
-            return izid
+            return vse
         for ime in os.listdir(self.koren):
             mapa = os.path.join(self.koren, ime)
-            if not os.path.isfile(os.path.join(mapa, "ideja.json")):
-                continue
-            p = self.podatki(mapa)
+            if os.path.isfile(os.path.join(mapa, "ideja.json")):
+                vse[ime] = self.podatki(mapa)
+        return vse
+
+    @staticmethod
+    def _aktivna(p):
+        razl = p.get("razlicice", [])
+        rid = p.get("aktivna") or (razl[-1]["id"] if razl else "")
+        return next((r for r in razl if r["id"] == rid), None)
+
+    def uporaba(self, ime, vse=None):
+        """Kje je ideja uporabljena kot kos: [{ideja (sestav), v (različica sestava), razlicica (revizija kosa)}]
+        po aktivnih različicah drugih idej."""
+        izid = []
+        for drugo, p in (vse or self._vse()).items():
+            r = self._aktivna(p)
+            for d in (r or {}).get("deli", []):
+                if d.get("ideja") == ime:
+                    izid.append({"ideja": drugo, "v": r["id"], "razlicica": d.get("razlicica", "")})
+        return izid
+
+    def seznam(self):
+        izid = []
+        vse = self._vse()
+        for ime, p in vse.items():
+            mapa = os.path.join(self.koren, ime)
             razl = p.get("razlicice", [])
+            akt = self._aktivna(p)
+            deli = (akt or {}).get("deli", [])
             izid.append({"ime": ime, "opis": p.get("opis", ""), "razlicic": len(razl),
-                         "zadnja": razl[-1]["id"] if razl else "", "spremenjeno": os.path.getmtime(os.path.join(mapa, "ideja.json")),
-                         "odprta": os.path.normcase(mapa) == os.path.normcase(self.mapa)})
+                         "zadnja": razl[-1]["id"] if razl else "", "aktivna": akt["id"] if akt else "",
+                         "spremenjeno": os.path.getmtime(os.path.join(mapa, "ideja.json")),
+                         "odprta": os.path.normcase(mapa) == os.path.normcase(self.mapa),
+                         "vrsta": "sestav" if deli else "kos", "deli": deli, "uporabljena_v": self.uporaba(ime, vse)})
         izid.sort(key=lambda d: -d["spremenjeno"])
         return izid
 
@@ -87,6 +121,7 @@ class Ideje:
             r["slicica"] = os.path.isfile(self._pot(r["id"] + ".png"))
         p["mapa"] = self.mapa
         p["trenutna"] = self.razlicica
+        p["uporabljena_v"] = self.uporaba(os.path.basename(self.mapa))
         return p
 
     # -- dejanja --
@@ -124,10 +159,15 @@ class Ideje:
         p = self.podatki()
         stevilke = [int(m.group(1)) for r in p.get("razlicice", []) for m in [re.match(r"R(\d+)$", r["id"])] if m]
         rid = "R%02d" % ((max(stevilke) if stevilke else 0) + 1)
+        if bpy.data.libraries and bpy.data.filepath:     # vezave na kose relativno (Ideje se selijo kot celota)
+            try:
+                bpy.ops.file.make_paths_relative()
+            except RuntimeError:
+                pass
         bpy.ops.wm.save_as_mainfile(filepath=self._pot(rid + ".blend"), copy=True, compress=True)
         p.setdefault("razlicice", []).append({"id": rid, "opomba": (opomba or "").strip()[:300], "vir": vir,
                                              "cas": datetime.datetime.now().isoformat(timespec="seconds"),
-                                             "zvezdica": False, "izhaja": self.razlicica})
+                                             "zvezdica": False, "izhaja": self.razlicica, "deli": kosi_povzetek()})
         p["aktivna"] = rid
         self._zapisi(p)
         self.razlicica = rid
@@ -178,6 +218,179 @@ def nastavi_enote(scena=None):
     us.system = "METRIC"
     us.scale_length = 0.001
     us.length_unit = "MILLIMETERS"
+
+
+# ---------------------------------------------------------------------------------------------------------------
+# Sestav: kosi iz drugih idej (kot v strojništvu: sestav se na kos sklicuje po ideji in reviziji, kopije nima)
+
+LASTNOST_KOSA = "kos"
+
+
+def pot_razlicice(koren, ideja, rid):
+    return os.path.join(koren, varno_ime(ideja), varno_ime(rid) + ".blend")
+
+
+def aktivna_razlicica(koren, ideja):
+    """Aktivna (sicer zadnja) različica ideje po ideja.json; '' če je ni."""
+    try:
+        with open(os.path.join(koren, varno_ime(ideja), "ideja.json"), encoding="utf-8") as f:
+            p = json.load(f)
+    except (OSError, ValueError):
+        return ""
+    razl = p.get("razlicice", [])
+    return p.get("aktivna") or (razl[-1]["id"] if razl else "")
+
+
+def _podatki_kosa(nos):
+    if nos is None or nos.type != "EMPTY" or not nos.get(LASTNOST_KOSA):
+        return None
+    try:
+        k = json.loads(nos[LASTNOST_KOSA])
+    except (ValueError, TypeError):
+        return None
+    return k if isinstance(k, dict) and k.get("ideja") else None
+
+
+def nosilec_kosa(obj):
+    """Nosilec kosa, če je objekt telo kosa (ali nosilec sam); sicer None."""
+    if obj is None:
+        return None
+    if _podatki_kosa(obj):
+        return obj
+    return obj.parent if _podatki_kosa(obj.parent) else None
+
+
+def _skrit(obj):
+    try:
+        return obj.hide_get() or obj.hide_viewport
+    except RuntimeError:        # ni v pogledu
+        return obj.hide_viewport
+
+
+def _telesa(nos):
+    return [o for o in nos.children if o.type in VRSTE_GEOMETRIJE]
+
+
+def kosi(koren=None):
+    """Kosi v sceni: ime nosilca, ideja, revizija, telesa, lega (4 × 4); s korenom še aktivna revizija kosa, novejsa
+    (aktivna, če ni ista) in manjka (datoteke revizije ni)."""
+    izid = []
+    for nos in bpy.context.scene.objects:
+        k = _podatki_kosa(nos)
+        if not k:
+            continue
+        rid = k.get("razlicica", "")
+        d = {"ime": nos.name, "ideja": k["ideja"], "razlicica": rid, "telesa": [o.name for o in _telesa(nos)],
+             "lega": [list(v) for v in nos.matrix_world], "vidno": not _skrit(nos)}
+        if koren:
+            akt = aktivna_razlicica(koren, k["ideja"])
+            d["aktivna"] = akt
+            d["novejsa"] = akt if akt and akt != rid else ""
+            d["manjka"] = not os.path.isfile(pot_razlicice(koren, k["ideja"], rid))
+        izid.append(d)
+    return izid
+
+
+def kosi_povzetek():
+    """Za ideja.json: kateri kosi (ideja, revizija) so v sceni."""
+    return [{"ime": k["ime"], "ideja": k["ideja"], "razlicica": k["razlicica"]} for k in kosi()]
+
+
+def _matrika_lege(lega):
+    if lega is None:
+        return Matrix()
+    if isinstance(lega, Matrix):
+        return lega.copy()
+    lega = list(lega)
+    if len(lega) == 3 and not hasattr(lega[0], "__len__"):
+        return Matrix.Translation(Vector(lega))
+    return Matrix([list(v) for v in lega])
+
+
+def vstavi_kos(koren, ideja, rid=None, lega=None, ime=None, lastna=""):
+    """Kos (različica druge ideje) vstavi v sceno kot vezavo: mreže ostanejo v <Ideje>/<ideja>/<rid>.blend, tu nastanejo
+    nosilec (Empty z lastnostjo »kos«) in lokalna telesa z vezano mrežo. lega: (x, y, z) ali matrika 4 × 4 nosilca.
+    rid None = aktivna različica kosa. lastna = mapa odprte ideje (ideja ne more vsebovati same sebe)."""
+    ideja = varno_ime(ideja)
+    if lastna and os.path.normcase(os.path.normpath(lastna)) == os.path.normcase(os.path.normpath(os.path.join(koren, ideja))):
+        raise ValueError("Ideja ne more vsebovati same sebe kot kos.")
+    rid = varno_ime(rid or aktivna_razlicica(koren, ideja), "")
+    pot = pot_razlicice(koren, ideja, rid)
+    if not rid or not os.path.isfile(pot):
+        raise ValueError("Ideja »%s« nima različice %s." % (ideja, rid or "(nobene)"))
+    pred = set(bpy.data.objects)
+    with bpy.data.libraries.load(pot, link=True) as (vir, cilj):
+        cilj.objects = list(vir.objects)
+    scena = bpy.context.scene
+    nos = bpy.data.objects.new(varno_ime(ime or ideja), None)
+    nos.empty_display_type = "PLAIN_AXES"
+    nos.empty_display_size = 10.0
+    nos[LASTNOST_KOSA] = json.dumps({"ideja": ideja, "razlicica": rid}, ensure_ascii=False)
+    scena.collection.objects.link(nos)
+    nos.matrix_world = _matrika_lege(lega)
+    telesa = []
+    for izvor in cilj.objects:
+        if izvor is None or izvor.type not in VRSTE_GEOMETRIJE or izvor.hide_viewport or izvor.hide_render:
+            continue
+        telo = izvor.copy()            # lokalni objekt (lega, vidnost), mreža ostane vezana iz datoteke kosa
+        telo.name = izvor.name
+        telo.parent = nos
+        telo.matrix_parent_inverse = Matrix()
+        telo.matrix_basis = izvor.matrix_world.copy()   # lega telesa znotraj kosa (tudi če je bilo tam v hierarhiji)
+        scena.collection.objects.link(telo)
+        telesa.append(telo)
+    if not telesa:
+        bpy.data.objects.remove(nos, do_unlink=True)
+        for o in set(bpy.data.objects) - pred:
+            if o.library:
+                bpy.data.objects.remove(o)
+        raise ValueError("Različica %s ideje »%s« nima geometrije." % (rid, ideja))
+    return {"ime": nos.name, "ideja": ideja, "razlicica": rid, "telesa": [t.name for t in telesa], "datoteka": pot}
+
+
+def odstrani_kos(ime):
+    """Odstrani kos (nosilec in telesa); knjižnica datoteke kosa se sprosti, če je ne uporablja drug kos."""
+    nos = nosilec_kosa(bpy.data.objects.get(ime or ""))
+    if nos is None:
+        raise ValueError("»%s« ni kos." % ime)
+    knjiznice = set()
+    for o in list(nos.children):
+        if o.data is not None and o.data.library is not None:
+            knjiznice.add(o.data.library)
+        bpy.data.objects.remove(o, do_unlink=True)
+    podatki = _podatki_kosa(nos)
+    bpy.data.objects.remove(nos, do_unlink=True)
+    for knj in knjiznice:
+        if not any(o.library is None and o.data is not None and o.data.library == knj for o in bpy.data.objects):
+            bpy.data.libraries.remove(knj)
+    return podatki
+
+
+def posodobi_kos(koren, ime, rid=None, lastna=""):
+    """Kos preveže na drugo revizijo (privzeto aktivno) z isto lego in vidnostjo."""
+    nos = nosilec_kosa(bpy.data.objects.get(ime or ""))
+    k = _podatki_kosa(nos)
+    if not k:
+        raise ValueError("»%s« ni kos." % ime)
+    rid = varno_ime(rid or aktivna_razlicica(koren, k["ideja"]), "")
+    if rid == k.get("razlicica"):
+        return {"ime": nos.name, "ideja": k["ideja"], "razlicica": rid, "nespremenjeno": True}
+    lega, ime_nos, skrit = nos.matrix_world.copy(), nos.name, _skrit(nos)
+    odstrani_kos(ime_nos)
+    izid = vstavi_kos(koren, k["ideja"], rid, lega, ime_nos, lastna)
+    if skrit:
+        vidnost_kosa(izid["ime"], False)
+    return izid
+
+
+def vidnost_kosa(ime, vidno):
+    nos = nosilec_kosa(bpy.data.objects.get(ime or ""))
+    if nos is None:
+        return False
+    for o in [nos] + list(nos.children):
+        o.hide_set(not vidno)
+        o.hide_render = not vidno
+    return True
 
 
 # ---------------------------------------------------------------------------------------------------------------

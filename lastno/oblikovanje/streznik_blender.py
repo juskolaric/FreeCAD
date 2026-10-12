@@ -17,7 +17,9 @@ Zgradba (enako pravilo kot lastno/splet/streznik.py):
   - Igrišče (faza 3, igrisce.py): ideje z različicami (Oblikovanje/Ideje/<ime>/R01.blend …), parametrična oblika z
     drsniki (besedilo »oblika.py« z zgradi(p) + lastnost scene »parametri«), AI oblikovalec (ai_oblikovalec.py: Claude
     gradi, gleda in popravlja; orodja tečejo na glavni niti prek na_glavni), Odpri v Blenderju (okno Blenderja z
-    različico; ko jo tam shraniš, se vrne kot nova različica).
+    različico; ko jo tam shraniš, se vrne kot nova različica). Sestav: kosi iz drugih idej kot vezave (igrisce.vstavi_kos;
+    nosilec Empty z lastnostjo »kos«, telesa z vezano mrežo iz <Ideje>/<kos>/Rxx.blend), posnetek nosi »kosi« z revizijo
+    in opozorilom na novejšo, ukazi vstavi-kos, posodobi-kos, odstrani-kos.
   - Varnost: vsak POST potrebuje žeton (glava X-Zeton), ki je vpisan v stran in v povezava.json.
 """
 
@@ -235,7 +237,8 @@ def _kljuc_objekta(obj):
         st = len(obj.data.vertices) if obj.type == "MESH" else 0
     except AttributeError:
         st = 0
-    return (obj.name, obj.data.name if obj.data else "", st, tuple(round(x, 4) for vr in obj.matrix_world for x in vr),
+    return (obj.name, obj.data.name if obj.data else "", obj.data.library.filepath if obj.data and obj.data.library else "", st,
+            tuple(round(x, 4) for vr in obj.matrix_world for x in vr),
             tuple((sl.material.name if sl.material else "") for sl in obj.material_slots),
             tuple((m.type, m.show_viewport) for m in obj.modifiers), obj.data.is_editmode if hasattr(obj.data, "is_editmode") else False)
 
@@ -249,9 +252,10 @@ def zgradi_posnetek():
         if obj.type not in VRSTE_GEOMETRIJE:
             continue
         vidno = not obj.hide_get() and not obj.hide_viewport
+        nos = igrisce.nosilec_kosa(obj)
         seznam.append({"ime": obj.name, "vrsta": obj.type, "vidno": vidno,
                        "modifikatorji": [mod.type for mod in obj.modifiers],
-                       "izbran": obj.select_get()})
+                       "izbran": obj.select_get(), "kos": nos.name if nos is not None else ""})
         if not vidno:
             continue
         # objekti parametrične oblike se ob drsniku zgradijo znova z istim imenom in istim številom točk: brez predpomnilnika
@@ -275,8 +279,13 @@ def zgradi_posnetek():
     STANJE.ima_obliko = bool(igrisce.koda_oblike())
     if len(_PREDPOMNILNIK) > 400:
         _PREDPOMNILNIK.clear()
+    try:
+        kosi = igrisce.kosi(IDEJE.koren)
+    except Exception:  # noqa: BLE001
+        _log("kosi: " + traceback.format_exc())
+        kosi = []
     glava = json.dumps({"verzija": STANJE.verzija, "seznam": seznam, "datoteka": STANJE.datoteka,
-                        "parametri": STANJE.parametri, "imaObliko": STANJE.ima_obliko}, separators=(",", ":"))
+                        "parametri": STANJE.parametri, "imaObliko": STANJE.ima_obliko, "kosi": kosi}, separators=(",", ":"))
     STANJE.posnetek = (glava[:-1] + ',"objekti":[' + ",".join(objekti) + "]}").encode("utf-8")
     STANJE.seznam = seznam
     _log("posnetek %d: %d objektov (%d iz predpomnilnika), %.0f kB, %.2f s" % (
@@ -411,10 +420,33 @@ class Stanje:
 STANJE = Stanje()
 
 
+def vstavi_kos(ideja, razlicica=None, lega=None, ime=None):
+    """Kos iz druge ideje kot vezava (sestav): ideja, revizija (privzeto aktivna), lega (x, y, z) ali matrika 4 × 4."""
+    _PREDPOMNILNIK.clear()
+    return igrisce.vstavi_kos(IDEJE.koren, ideja, razlicica, lega, ime, IDEJE.mapa)
+
+
+def posodobi_kos(ime, razlicica=None):
+    """Kos preveže na drugo revizijo (privzeto aktivno), lega ostane."""
+    _PREDPOMNILNIK.clear()
+    return igrisce.posodobi_kos(IDEJE.koren, ime, razlicica, IDEJE.mapa)
+
+
+def odstrani_kos(ime):
+    _PREDPOMNILNIK.clear()
+    return igrisce.odstrani_kos(ime)
+
+
+def kosi():
+    """Kosi v sceni (sestav): ime, ideja, revizija, telesa, lega, aktivna in novejša revizija kosa."""
+    return igrisce.kosi(IDEJE.koren)
+
+
 def _imenski_prostor():
     return {"bpy": bpy, "bmesh": bmesh, "np": np, "Vector": Vector, "Matrix": Matrix, "math": math,
             "dodaj_obliko": dodaj_obliko, "gladko": gladko, "material": material, "pocisti": pocisti,
-            "nov_objekt": _nov_objekt, "nastavi_enote": nastavi_enote, "C": bpy.context, "D": bpy.data, "rezultat": None}
+            "nov_objekt": _nov_objekt, "nastavi_enote": nastavi_enote, "C": bpy.context, "D": bpy.data, "rezultat": None,
+            "vstavi_kos": vstavi_kos, "posodobi_kos": posodobi_kos, "odstrani_kos": odstrani_kos, "kosi": kosi}
 
 
 def _pot_datoteke(ime):
@@ -565,15 +597,30 @@ def ukaz(p):
         return {"ok": True}
     if d == "vidnost":
         obj = bpy.data.objects.get(p.get("ime") or "")
+        if obj is not None and igrisce._podatki_kosa(obj):     # nosilec kosa: vsa telesa
+            return {"ok": igrisce.vidnost_kosa(obj.name, bool(p.get("vidno", True)))}
         if obj:
             obj.hide_set(not p.get("vidno", True))
             obj.hide_render = not p.get("vidno", True)
         return {"ok": bool(obj)}
     if d == "odstrani":
         obj = bpy.data.objects.get(p.get("ime") or "")
+        if obj is not None and igrisce.nosilec_kosa(obj) is not None:   # kos je v sestavu ena enota
+            odstrani_kos(igrisce.nosilec_kosa(obj).name)
+            return {"ok": True}
         if obj:
             bpy.data.objects.remove(obj, do_unlink=True)
         return {"ok": bool(obj)}
+    if d == "vstavi-kos":
+        izid = vstavi_kos(p.get("ideja", ""), p.get("razlicica") or None, p.get("lega"), p.get("ime") or None)
+        izberi(izid["telesa"][0])
+        return {"ok": True, **izid, "sporocilo": "Kos %s %s vstavljen kot vezava." % (izid["ideja"], izid["razlicica"])}
+    if d == "posodobi-kos":
+        izid = posodobi_kos(p.get("ime", ""), p.get("razlicica") or None)
+        return {"ok": True, **izid, "sporocilo": "Kos %s je zdaj %s." % (izid["ideja"], izid["razlicica"])}
+    if d == "odstrani-kos":
+        odstrani_kos(p.get("ime", ""))
+        return {"ok": True}
     if d == "shrani":
         pot = _pot_datoteke(p["ime"]) if p.get("ime") else STANJE.datoteka
         if not pot:

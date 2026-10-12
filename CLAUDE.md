@@ -230,6 +230,19 @@ FreeCAD je motor, vmesnik in grafika nastajata v brskalniku (plan, korak 8 napre
   dejanje: 'natisni', pot}`, stran pokliče `POST /tiskaj/datoteka {pot}` (`tiskaj_datoteka`: le datoteke iz te mape, kopija v vhod
   plošče prek `.delno`, oznaka za ročno pripravo) in odpre zavihek Tiskanje z oknom Pripravi. Regularni izrazi v `oblikovanje.html`: pri popravkih iz Pythona pazi, da `\n` ne postane
   pravi prelom (stran se potem sploh ne zažene, 2026-10-10).
+  **Sestav v Igrišču** (od 2026-10-12, logika strojnega risanja): ideja lahko vsebuje **kose iz drugih idej kot vezave**, ne kopije.
+  `igrisce.vstavi_kos(koren, ideja, rid=None, lega, ime, lastna)`: mreže ostanejo v `<Ideje>/<kos>/Rxx.blend` (link), v sestavu nastaneta
+  nosilec (Empty z lastnostjo `kos` = JSON `{ideja, razlicica}`) in telesa kot lokalni objekti z vezano mrežo (`obj.copy()` vezanega objekta:
+  lega in vidnost lokalni, oblika in materiali iz kosa, zato je sestav majhen — Maketa 0,5 MB namesto 11 MB). Revizija kosa je datoteka
+  različice (nespremenljiva); `posodobi_kos(ime, rid=None)` preveže na drugo (privzeto aktivno) z isto lego, `odstrani_kos`, `kosi(koren)`
+  (tudi `aktivna`, `novejsa`, `manjka`). Pri `shrani_razlicico` gredo vezave relativno (`//../<kos>/R10.blend`, `make_paths_relative`) in
+  v `ideja.json` k različici polje `deli`; `/ideje` zato pove `vrsta` (sestav/kos), `deli` in `uporabljena_v` (kje je ideja kos; po aktivnih
+  različicah drugih idej). Posnetek `/model` nosi `kosi` in pri telesu `kos` (ime nosilca); stran kaže kos kot vrstico ⧉ z revizijo in gumbi
+  ✎ (odpre idejo kosa), ↻ (ko ima kos novejšo aktivno različico), 👁, ✕, gumb **+ kos** (meni idej), značke »sestav« in »⧉ v sestavu« v
+  seznamu idej in v naslovu. Ukazi `vstavi-kos {ideja, razlicica?, lega?, ime?}`, `posodobi-kos {ime, razlicica?}`, `odstrani-kos`;
+  `vidnost`/`odstrani` na kosu veljata za cel kos. Pomočniki za AI in skripte: `vstavi_kos`, `posodobi_kos`, `odstrani_kos`, `kosi`.
+  Obliko kosa se spreminja v njegovi ideji (nova različica), sestav nato pokaže ↻ — kot risba sestava, ki navaja kos z revizijo.
+  Prvi sestav: »Maketa v pleksi vitrini« R04 vsebuje »Photobox Slim za tisk« R10 (prej kopija z barvami Opatije; barve naj dobi kos).
 - **Lega za tisk** (od 2026-10-10, `lastno/splet/tisk_lega.py`, samo numpy): desni klik v drevesu -> ⊥ Lega za tisk. `POST /tisk/lega
   {dokument, imena, kot_previsa}`: glavna nit le zmreži kose (`_tisk_mreze`; kosi kot pri Natisni, `_kosi_za_tisk`: objekt z več telesi =
   več kosov, mreža v koordinatah STEP-a), iskanje teče na niti strežnika (`tisk_lega_kosov`, ~1,5 s za 50k trikotnikov). Preizkusi ~450
