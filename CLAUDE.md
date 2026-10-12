@@ -193,6 +193,12 @@ FreeCAD je motor, vmesnik in grafika nastajata v brskalniku (plan, korak 8 napre
   `3D print/tiskaj` ali `3D tisk/3D print/tiskaj`; prepis `SPLET_TISKAJ_MAPA`, vrata `SPLET_TISKAJ_VRATA`). 2026-10-09 vroče zamenjano v
   tekoči strežnik (nove funkcije + `Stanje._izvedi`, `Zahteva.do_GET`/`do_POST`). Skripta strani je modul: v konzoli brskalnika
   `tiskanje` ni spremenljivka strani, ampak element `#tiskanje`.
+- **Grafika (Grafika Studio v zavihku)** (od 2026-10-12): 4. stopnja »Grafika« (`#gumbGrafika`) je okvir na `http://<gostitelj>:3040/` — Grafika Studio
+  (`CAD in 3D/Grafika Studio/`, lasten Python program: SVG dokumenti v `Dokumenti\Grafika Studio`, Inkscape v ozadju, spletni pogled za človeka in MCP `grafika`
+  za AI modele v enem procesu). Strežnik FreeCAD-a ga le zažene (`POST /grafika/zazeni`: sistemski `pythonw run_studio.py` brez okna, kot plošča Tiskaj;
+  dnevnik `FreeCAD-splet/grafika.log`; mapa ob repozitoriju ali `SPLET_GRAFIKA_MAPA`, vrata `SPLET_GRAFIKA_VRATA`) in pove, ali teče (`GET /grafika/stanje`,
+  bere `/api/status` Studia). Stran: `grafika` (stanje), `odpriGrafiko`/`zapriGrafiko`/`osveziGrafiko`/`zazeniGrafiko`, okno `#grafikaStanje` z gumbom za zagon,
+  zažene se sam ob prvem odprtju; v 4. stopnji velja `body.stopnjaZunaj` kot v 1. in 3. Studio teče naprej po Izhodu FreeCAD-a. Z okvirjem ni postMessage.
 - **Oblikovanje in render (Blender)** (od 2026-10-10, plan `OBLIKOVANJE-PLAN.md`, mapa `lastno/oblikovanje/`): Blender 5.2 (Program Files,
   `upodabljanje.najdi_blender` vzame najnovejšega; prepis `SPLET_BLENDER`) je drugi motor za proste, organske oblike. **Strežnik Oblikovanja**
   `streznik_blender.py` teče v Blenderju brez okna (`blender -b --factory-startup --python streznik_blender.py -- --vrata 3030`), enako pravilo niti
