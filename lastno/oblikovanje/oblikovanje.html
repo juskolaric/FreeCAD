@@ -15,7 +15,13 @@
   #ovoj.brezKlepeta { grid-template-columns: 250px minmax(0, 1fr) 0; }
   #ovoj.brezKlepeta #klepet { display: none; }
 
-  /* vrstica orodij */
+  /* vrstica orodij, namig o miški in razdelek Objekti: odstranjeni s strani na željo uporabnika (2026-10-12);
+     elementi ostanejo v DOM-u, ker se nanje sklicuje koda (naslov, seznam, info, gumbi), a se ne prikazujejo */
+  #vrstica, #namig, #objektiOkvir { display: none !important; }
+  #stranski { grid-row: 2; grid-column: 1; }   /* brez vrstice orodij bi samodejna razporeditev mreže stolpca potisnila v 1. vrstico */
+  #pogled { grid-row: 2; grid-column: 2; }
+  #razlicice { grid-row: 3; }
+  #statusna { grid-row: 4; }
   #vrstica { grid-column: 1 / 4; display: flex; align-items: center; gap: 4px; padding: 6px 10px; border-bottom: 1px solid var(--crta); background: #fff; flex-wrap: wrap; }
   #vrstica .skupina { display: flex; gap: 2px; align-items: center; padding-right: 8px; margin-right: 4px; border-right: 1px solid var(--crta); }
   #vrstica .napis { font-size: 11px; color: var(--besedilo3); margin-right: 4px; }
@@ -167,7 +173,7 @@
   <aside id="stranski">
     <section><h3>Ideje <button id="gNovaIdeja2" type="button">+ nova</button></h3><div id="ideje"></div></section>
     <section id="drsnikiOkvir"><h3>Drsniki oblike</h3><div id="drsniki"></div></section>
-    <section><h3>Objekti <button id="gVstaviKos" type="button" title="Vstavi kos iz druge ideje kot vezavo: sestav se na kos sklicuje (ideja + revizija), kopije ni">+ kos</button></h3><div id="seznam"></div><div id="info"></div></section>
+    <section id="objektiOkvir"><h3>Objekti <button id="gVstaviKos" type="button" title="Vstavi kos iz druge ideje kot vezavo: sestav se na kos sklicuje (ideja + revizija), kopije ni">+ kos</button></h3><div id="seznam"></div><div id="info"></div></section>
   </aside>
   <div id="pogled">
     <div id="prazno"><div><b>Oblikovanje</b><br>Opiši idejo Claudu v klepetu desno (npr. »ergonomska ročka za vrtno lopatko, 120 mm«) —
