@@ -4,7 +4,7 @@ Pripravljeno in izvedeno 2026-10-10 (koraki 1–6; glej Stanje). Izhodišče: sp
 na glavni niti (`/python`, `izvedi.py`), sproži vseh 198 ukazov okolij, pozna drevo, izbiro, skice, obrazce, bazo
 standardnih delov, videz, tiskanje, render in oblak. Claude Code (pa tudi Claude Desktop in Cursor) pa do tega pride le
 obvozno: seja mora vedeti za `izvedi.py`, brati `CLAUDE.md` in ugibati imena funkcij. Zgled, ki ga že imamo in deluje:
-`simplyprint-mcp` (Python brez odvisnosti, stdio, 30 orodij, registriran za vse projekte).
+`simplyprint-mcp` (Python brez odvisnosti, stdio, 30 orodij, registriran za vse projekte; 12. 10. 2026 odstranjen, mapa v `Arhiv/2026-10-12-simplyprint/`).
 
 **Cilj.** Vsaka seja Claude Code (tudi v drugi mapi, npr. ob modelih v Oblaku) ima orodja `mcp__freecad__*`, s katerimi
 vidi stanje programa in model (slika, drevo, mere), požene **katero koli** funkcijo (Python, ukaz okolja, spletna končna
