@@ -988,6 +988,7 @@ addEventListener('message', e => {
   const m = e.data || {};
   if (m.dejanje === 'skrit') vidno = false;
   if (m.dejanje === 'viden') { vidno = true; osvezi(true); }
+  if (m.dejanje === 'natisni') $('gNatisni').click();   // gumb 3D natisni v glavi spletnega FreeCAD-a (orodna vrstica tu je skrita)
 });
 if (parent !== window) parent.postMessage({ vir: 'oblikovanje', dejanje: 'pripravljen' }, '*');
 velikost();
