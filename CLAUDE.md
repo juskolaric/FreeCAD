@@ -254,6 +254,15 @@ FreeCAD je motor, vmesnik in grafika nastajata v brskalniku (plan, korak 8 napre
   podstavek, poglobitev 2,5 → glava 1,5 mm čez zadnjo ploskev; 5,3 mm vrezovanja). Luknje se režejo v ideji kosa (Boolean modifikator +
   `meshes.new_from_object`, brez `bpy.ops`), kos se nato v sestavu posodobi (↻); rezalnik z prekrivajočimi se telesi (žep + skoznja
   luknja v enem) EXACT boolean napačno reže — dva ločena reza. Box je poln (527k točk, Boolean ~6 s).
+  R08: podstavek R04 (navpični robovi r 8 z rezom ∩ zaobljena prizma, ki sledi poševnemu čelu, z enakim 1,6 mm posnetjem zgoraj in
+  spodaj; poglobitev zadaj Ø8 do 4,5 mm), zadnji vijak na (0; 40; 22) — glava 0,5 mm pod ploskvijo, 7,3 mm vrezovanja.
+  **Hitrost preklopa idej** (2026-10-12): predpomnilnik posnetkov `_PREDPOMNILNIK` je LRU (OrderedDict, ~1,5 GB) s ključem, ki nosi
+  **prstni odtis mreže** (`_prstni_odtis`: blake2b koordinat oglišč + število ploskev, 527k točk ~10 ms), zato ob preklopu ideje
+  (`_po_ideji`) ostane; poljubna koda pozabi le lokalne objekte (`_pozabi_lokalne`), vezane mreže iz datotek kosov so nespremenljive.
+  Vsak objekt v posnetku nosi `kljuc` (kratek hash), `GET /model?imam=k1,k2` vrne za te objekte le `{ime, kljuc, predpomnjen}`
+  (`posnetek_brez`, sestavi nit HTTP iz `STANJE.posnetek_objekti`); stran hrani geometrije po ključu (`geomCache`, LRU 48) in po
+  gradnji vrže polja točk iz `model.objekti` (`o.trikotnikov` namesto `o.trikotniki.length`). Preklop Maketa ↔ box: prej ~6 s
+  (posnetek 3,7 s + prenos in razčlenitev 75 MB), zdaj le odpiranje .blend in majhni objekti.
   **Pasti**: (1) `matrix_world` vezanega objekta, ki ni v nobenem pogledu, je enotska — lego telesa iz datoteke kosa izračuna
   `lega_v_datoteki` po verigi staršev iz `matrix_basis`; (2) scena iz nič (`nova` + kosi) nima `bpy.data.filepath`, zato
   `shrani_razlicico` najprej shrani brez kopije, nato `make_paths_relative` in kopijo (z `save_version = 0`, da ni `.blend1`);

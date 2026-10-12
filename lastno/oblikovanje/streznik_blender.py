@@ -23,7 +23,9 @@ Zgradba (enako pravilo kot lastno/splet/streznik.py):
   - Varnost: vsak POST potrebuje žeton (glava X-Zeton), ki je vpisan v stran in v povezava.json.
 """
 
+import collections
 import contextlib
+import hashlib
 import http.server
 import io
 import json
@@ -226,21 +228,51 @@ def posnetek_objekta(obj, dg):
         ev.to_mesh_clear()
 
 
-# Predpomnilnik posnetkov objektov: ključ -> JSON objekta. Ključ zajame ime, podatke, lego, materiale in modifikatorje;
-# poljubna koda (POST /python, izvedi_kodo, uvoz) ga izprazni, ker lahko spremeni mrežo na mestu. Drsnik zgradi znova le
-# zbirko Oblika (nova imena podatkov), uvoženi kosi (Slim A: 360 tisoč trikotnikov) ostanejo iz predpomnilnika.
-_PREDPOMNILNIK = {}
+# Predpomnilnik posnetkov objektov: ključ -> (kratek ključ za stran, ime, JSON objekta). Ključ zajame ime, podatke, datoteko
+# vezave, prstni odtis mreže (zgoščene koordinate oglišč: isti kos v drugi ideji ali različici se ne gradi znova — preklop
+# Makete in boxa z milijonom trikotnikov je zato takojšen), lego, materiale in modifikatorje. Poljubna koda (POST /python,
+# izvedi_kodo) pozabi lokalne objekte (lahko spremeni nastavitve modifikatorjev, ki jih odtis ne zajame); vezane mreže so
+# nespremenljive. LRU po bajtih (največ ~1,5 GB). Drsnik zgradi znova le zbirko Oblika (brez predpomnilnika).
+_PREDPOMNILNIK = collections.OrderedDict()
+_PREDPOMNILNIK_BAJTI = [0]
+PREDPOMNILNIK_NAJVEC = 1500 * 1024 * 1024
+
+
+def _prstni_odtis(obj):
+    """Zgoščena vsebina mreže (koordinate oglišč, število ploskev); 527k točk ~10 ms. Prazno za ne-mreže."""
+    try:
+        me = obj.data
+        n = len(me.vertices)
+        co = np.empty(n * 3, dtype=np.float32)
+        me.vertices.foreach_get("co", co)
+        return hashlib.blake2b(co.tobytes(), digest_size=8).hexdigest() + ":%d" % len(me.polygons)
+    except (AttributeError, TypeError):
+        return ""
 
 
 def _kljuc_objekta(obj):
-    try:
-        st = len(obj.data.vertices) if obj.type == "MESH" else 0
-    except AttributeError:
-        st = 0
-    return (obj.name, obj.data.name if obj.data else "", obj.data.library.filepath if obj.data and obj.data.library else "", st,
-            tuple(round(x, 4) for vr in obj.matrix_world for x in vr),
+    return (obj.name, obj.data.name if obj.data else "", obj.data.library.filepath if obj.data and obj.data.library else "",
+            _prstni_odtis(obj), tuple(round(x, 4) for vr in obj.matrix_world for x in vr),
             tuple((sl.material.name if sl.material else "") for sl in obj.material_slots),
             tuple((m.type, m.show_viewport) for m in obj.modifiers), obj.data.is_editmode if hasattr(obj.data, "is_editmode") else False)
+
+
+def _kratek_kljuc(kljuc):
+    return hashlib.blake2b(repr(kljuc).encode("utf-8"), digest_size=8).hexdigest()
+
+
+def _pozabi_lokalne():
+    """Po poljubni kodi: posnetki lokalnih objektov zastarijo (modifikatorji), vezane mreže iz datotek kosov ostanejo."""
+    for k in [k for k in _PREDPOMNILNIK if not k[2]]:
+        _PREDPOMNILNIK_BAJTI[0] -= len(_PREDPOMNILNIK.pop(k)[2])
+
+
+def _shrani_v_predpomnilnik(kljuc, vrednost):
+    _PREDPOMNILNIK[kljuc] = vrednost
+    _PREDPOMNILNIK_BAJTI[0] += len(vrednost[2])
+    while _PREDPOMNILNIK and (_PREDPOMNILNIK_BAJTI[0] > PREDPOMNILNIK_NAJVEC or len(_PREDPOMNILNIK) > 400):
+        _, star = _PREDPOMNILNIK.popitem(last=False)
+        _PREDPOMNILNIK_BAJTI[0] -= len(star[2])
 
 
 def zgradi_posnetek():
@@ -261,6 +293,7 @@ def zgradi_posnetek():
         # objekti parametrične oblike se ob drsniku zgradijo znova z istim imenom in istim številom točk: brez predpomnilnika
         kljuc = None if any(z.name == igrisce.ZBIRKA for z in obj.users_collection) else _kljuc_objekta(obj)
         if kljuc is not None and kljuc in _PREDPOMNILNIK:
+            _PREDPOMNILNIK.move_to_end(kljuc)
             objekti.append(_PREDPOMNILNIK[kljuc])
             zadetkov += 1
             continue
@@ -270,15 +303,15 @@ def zgradi_posnetek():
             _log("objekt %s: %s" % (obj.name, traceback.format_exc()))
             p = None
         if p:
-            p = json.dumps(p, separators=(",", ":"))
+            kratek = _kratek_kljuc(kljuc) if kljuc is not None else ""
+            p["kljuc"] = kratek
+            vrednost = (kratek, obj.name, json.dumps(p, separators=(",", ":")))
             if kljuc is not None:
-                _PREDPOMNILNIK[kljuc] = p
-            objekti.append(p)
+                _shrani_v_predpomnilnik(kljuc, vrednost)
+            objekti.append(vrednost)
     STANJE.verzija += 1
     STANJE.parametri = igrisce.parametri()
     STANJE.ima_obliko = bool(igrisce.koda_oblike())
-    if len(_PREDPOMNILNIK) > 400:
-        _PREDPOMNILNIK.clear()
     try:
         kosi = igrisce.kosi(IDEJE.koren)
     except Exception:  # noqa: BLE001
@@ -286,10 +319,24 @@ def zgradi_posnetek():
         kosi = []
     glava = json.dumps({"verzija": STANJE.verzija, "seznam": seznam, "datoteka": STANJE.datoteka,
                         "parametri": STANJE.parametri, "imaObliko": STANJE.ima_obliko, "kosi": kosi}, separators=(",", ":"))
-    STANJE.posnetek = (glava[:-1] + ',"objekti":[' + ",".join(objekti) + "]}").encode("utf-8")
+    STANJE.posnetek_glava = glava[:-1] + ',"objekti":['
+    STANJE.posnetek_objekti = objekti      # nit HTTP sestavi odgovor sama (lahko brez objektov, ki jih stran že ima)
+    STANJE.posnetek = (STANJE.posnetek_glava + ",".join(o[2] for o in objekti) + "]}").encode("utf-8")
     STANJE.seznam = seznam
     _log("posnetek %d: %d objektov (%d iz predpomnilnika), %.0f kB, %.2f s" % (
         STANJE.verzija, len(objekti), zadetkov, len(STANJE.posnetek) / 1024, time.time() - zacetek))
+
+
+def posnetek_brez(imam):
+    """Posnetek za stran, ki objekte s ključi v `imam` že ima: zanje le {ime, kljuc, predpomnjen}."""
+    glava, objekti = STANJE.posnetek_glava, STANJE.posnetek_objekti
+    deli = []
+    for kratek, ime, js in objekti:
+        if kratek and kratek in imam:
+            deli.append(json.dumps({"ime": ime, "kljuc": kratek, "predpomnjen": True}, separators=(",", ":")))
+        else:
+            deli.append(js)
+    return (glava + ",".join(deli) + "]}").encode("utf-8")
 
 
 # ---------------------------------------------------------------------------------------------------------------
@@ -396,6 +443,8 @@ class Stanje:
     def __init__(self):
         self.vrsta = queue.Queue()
         self.posnetek = b'{"verzija":0,"objekti":[],"seznam":[]}'
+        self.posnetek_glava = '{"verzija":0,"seznam":[],"objekti":['
+        self.posnetek_objekti = []
         self.seznam = []
         self.verzija = 0
         self.datoteka = ""
@@ -422,18 +471,15 @@ STANJE = Stanje()
 
 def vstavi_kos(ideja, razlicica=None, lega=None, ime=None):
     """Kos iz druge ideje kot vezava (sestav): ideja, revizija (privzeto aktivna), lega (x, y, z) ali matrika 4 × 4."""
-    _PREDPOMNILNIK.clear()
     return igrisce.vstavi_kos(IDEJE.koren, ideja, razlicica, lega, ime, IDEJE.mapa)
 
 
 def posodobi_kos(ime, razlicica=None):
     """Kos preveže na drugo revizijo (privzeto aktivno), lega ostane."""
-    _PREDPOMNILNIK.clear()
     return igrisce.posodobi_kos(IDEJE.koren, ime, razlicica, IDEJE.mapa)
 
 
 def odstrani_kos(ime):
-    _PREDPOMNILNIK.clear()
     return igrisce.odstrani_kos(ime)
 
 
@@ -461,7 +507,7 @@ def obdelaj(vrsta, podatki, odgovor):
             if vrsta == "klic":
                 odgovor["rezultat"] = podatki()
             elif vrsta == "python":
-                _PREDPOMNILNIK.clear()
+                _pozabi_lokalne()
                 ns = _imenski_prostor()
                 exec(compile(podatki.get("koda", ""), "<oblikovanje>", "exec"), ns)
                 odgovor["rezultat"] = ns.get("rezultat")
@@ -488,8 +534,7 @@ ZADNJA_IDEJA = os.path.join(LOKALNO, "oblikovanje-zadnja.json")
 
 
 def _po_ideji():
-    _PREDPOMNILNIK.clear()      # odprta druga različica ima lahko ista imena objektov z drugo geometrijo
-    STANJE.verzija_ideje += 1
+    STANJE.verzija_ideje += 1      # predpomnilnik posnetkov ostane: ključ nosi prstni odtis mreže
     try:   # ob naslednjem zagonu se odpre ista ideja
         with open(ZADNJA_IDEJA, "w", encoding="utf-8") as f:
             json.dump({"ideja": os.path.basename(IDEJE.mapa) if IDEJE.mapa else ""}, f, ensure_ascii=False)
@@ -730,7 +775,7 @@ def _orodje_nastavi_obliko(vhod):
 
 
 def _orodje_izvedi_kodo(vhod):
-    _PREDPOMNILNIK.clear()
+    _pozabi_lokalne()
     izpis = io.StringIO()
     ns = _imenski_prostor()
     with contextlib.redirect_stdout(izpis):
@@ -835,7 +880,8 @@ class Zahteva(http.server.BaseHTTPRequestHandler):
         elif pot == "/stanje":
             self._odgovor(STANJE.stanje())
         elif pot == "/model":
-            self._odgovor(STANJE.posnetek)
+            imam = set(filter(None, q.get("imam", "").split(",")))
+            self._odgovor(posnetek_brez(imam) if imam else STANJE.posnetek)
         elif pot == "/datoteke":
             datoteke = []
             for koren, _, imena in os.walk(MAPA_DATOTEK):

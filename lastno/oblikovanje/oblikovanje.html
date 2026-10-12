@@ -267,7 +267,11 @@ new ResizeObserver(velikost).observe(pogled);
 renderer.setAnimationLoop(() => { if (!vidno) return; korakAnimacije(); posodobiOznakoVrtenja(); tesnaGlobina(); composer.render(); });
 
 // --- posnetek iz Blenderja -------------------------------------------------------------------------------------
+// Geometrije po ključu objekta (vsebina mreže + lega + materiali) ostanejo med preklopi idej: /model?imam=ključi vrne le
+// nove objekte, že videni kosi (box z milijonom trikotnikov) se ne prenašajo in ne gradijo znova.
 const objekti = new Map();
+const geomCache = new Map();   // kljuc -> { geometry, materiali, okvir, trikotnikov } (LRU)
+const GEOM_CACHE_NAJVEC = 48;
 let model = { objekti: [], seznam: [], parametri: [] }, verzija = -1, prilagodiOb = true;
 const okvirModela = new THREE.Box3();
 
@@ -278,24 +282,53 @@ function material(m) {
     envMapIntensity: m.kovinskost >= 0.5 ? 2.2 : 1.0, side: THREE.DoubleSide, vertexColors: !!m.poOgliscih,
   });
 }
-function zgradiObjekt(o) {
+function zgradiGeometrijo(o) {
   const g = new THREE.BufferGeometry();
   g.setAttribute('position', new THREE.Float32BufferAttribute(o.tocke, 3));
   g.setAttribute('normal', new THREE.Float32BufferAttribute(o.normale, 3));
   if (o.barve) { const b = new THREE.Float32BufferAttribute(o.barve, 3); for (let i = 0; i < b.array.length; i++) { const c = b.array[i]; b.array[i] = c <= 0.04045 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4); } g.setAttribute('color', b); }
   const n = o.tocke.length / 3;
   g.setIndex(n > 65535 ? new THREE.Uint32BufferAttribute(o.trikotniki, 1) : new THREE.Uint16BufferAttribute(o.trikotniki, 1));
-  const mats = o.materiali.map(material);
-  for (const [t0, nt, mi] of o.skupine) g.addGroup(t0 * 3, nt * 3, Math.min(mi, mats.length - 1));
-  const mesh = new THREE.Mesh(g, mats);
-  mesh.castShadow = true; mesh.userData.ime = o.ime;
+  for (const [t0, nt, mi] of o.skupine) g.addGroup(t0 * 3, nt * 3, Math.min(mi, o.materiali.length - 1));
+  return g;
+}
+function zgradiObjekt(o, g) {
+  const mesh = new THREE.Mesh(g, o.materiali.map(material));
+  mesh.castShadow = true; mesh.userData.ime = o.ime; mesh.userData.kljuc = o.kljuc || '';
   return mesh;
 }
+function vzemiIzPredpomnilnika(o) {
+  const c = geomCache.get(o.kljuc);
+  if (!c) return null;
+  geomCache.delete(o.kljuc); geomCache.set(o.kljuc, c);   // LRU: nazadnje uporabljen na konec
+  o.okvir = c.okvir; o.trikotnikov = c.trikotnikov; o.materiali = c.materiali;
+  return c.geometry;
+}
+function pospraviPredpomnilnik() {
+  const vUporabi = new Set([...objekti.values()].map(z => z.userData.kljuc));
+  for (const [k, c] of geomCache) {
+    if (geomCache.size <= GEOM_CACHE_NAJVEC) break;
+    if (vUporabi.has(k)) continue;
+    c.geometry.dispose(); geomCache.delete(k);
+  }
+}
 async function naloziModel() {
-  model = await (await fetch('/model', { cache: 'no-store' })).json();
-  for (const z of objekti.values()) { koren.remove(z); z.geometry.dispose(); for (const m of z.material) m.dispose(); }
+  const imam = [...geomCache.keys()];
+  let m = await (await fetch('/model' + (imam.length ? '?imam=' + imam.join(',') : ''), { cache: 'no-store' })).json();
+  if ((m.objekti || []).some(o => o.predpomnjen && !geomCache.has(o.kljuc))) m = await (await fetch('/model', { cache: 'no-store' })).json();
+  model = m;
+  for (const z of objekti.values()) { koren.remove(z); for (const mat of z.material) mat.dispose(); if (!z.userData.kljuc) z.geometry.dispose(); }
   objekti.clear();
-  for (const o of model.objekti) { const m = zgradiObjekt(o); koren.add(m); objekti.set(o.ime, m); }
+  for (const o of model.objekti) {
+    let g = o.predpomnjen ? vzemiIzPredpomnilnika(o) : null;
+    if (!g) {
+      g = zgradiGeometrijo(o); o.trikotnikov = o.trikotniki.length / 3;
+      if (o.kljuc) geomCache.set(o.kljuc, { geometry: g, materiali: o.materiali, okvir: o.okvir, trikotnikov: o.trikotnikov });
+      delete o.tocke; delete o.normale; delete o.trikotniki; delete o.barve;   // podatki so v geometriji
+    }
+    const mesh = zgradiObjekt(o, g); koren.add(mesh); objekti.set(o.ime, mesh);
+  }
+  pospraviPredpomnilnik();
   okvirModela.setFromObject(koren);
   if (!okvirModela.isEmpty()) {
     const c = okvirModela.getCenter(new THREE.Vector3()), r2 = okvirModela.getBoundingSphere(new THREE.Sphere()).radius;
@@ -363,7 +396,7 @@ function narisiSeznam() {
   $('info').textContent = '';
   if (o) {
     const d = o.okvir[1].map((v, i) => v - o.okvir[0][i]);
-    $('info').textContent = o.ime + ': ' + d.map(v => v.toFixed(1)).join(' × ') + ' mm · ' + (o.trikotniki.length / 3).toLocaleString('sl') + ' trikotnikov';
+    $('info').textContent = o.ime + ': ' + d.map(v => v.toFixed(1)).join(' × ') + ' mm · ' + (o.trikotnikov || 0).toLocaleString('sl') + ' trikotnikov';
   }
 }
 function osveziIzbiro() {
