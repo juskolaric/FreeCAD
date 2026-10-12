@@ -247,6 +247,13 @@ FreeCAD je motor, vmesnik in grafika nastajata v brskalniku (plan, korak 8 napre
   s `deli` po vseh različicah, da drevo kaže kose točno te revizije). Zgradba (2026-10-12): »Maketa v pleksi vitrini« R05 (glavni sestav,
   brez lastnih teles) → »Maketa boxa« R01 (kos »Photobox Slim za tisk« R10 v izhodišču + napisi, nalepke, okvirji) na (0; 0,16; 26) in
   »Pleksi vitrina« R01 (podstavek, pleksi, vložek z napisom); R04 je bila vmesna oblika (vitrina lokalno, box kot kos).
+  R06: brez barv (podsestava R02). **R07 (vijačenje, 2026-10-12)**: standardni del »Vijak M4x12 DIN 912« (ideja, R01: glava Ø7 × 4 s
+  šestrobom 3, steblo Ø4 × 12, izhodišče na naležni ploskvi glave, steblo +Z) 4× kot kos sestava — 3 od spodaj na (±11; −7,84; 20) in
+  (0; 14,16; 20) (podstavek R03: skoznja Ø4,5, žep Ø8 do z 20 → 6 mm dna; box R11: slepe luknje Ø3,4 globine 7 v dnu na (±11, −8), (0, 14)
+  v koordinatah boxa → 6 mm vrezovanja), 1 zadaj na (0; 42; 22) z zasukom 90° okoli X (obstoječa luknja Ø3,4 skozi pleksi in 10 mm v
+  podstavek, poglobitev 2,5 → glava 1,5 mm čez zadnjo ploskev; 5,3 mm vrezovanja). Luknje se režejo v ideji kosa (Boolean modifikator +
+  `meshes.new_from_object`, brez `bpy.ops`), kos se nato v sestavu posodobi (↻); rezalnik z prekrivajočimi se telesi (žep + skoznja
+  luknja v enem) EXACT boolean napačno reže — dva ločena reza. Box je poln (527k točk, Boolean ~6 s).
   **Pasti**: (1) `matrix_world` vezanega objekta, ki ni v nobenem pogledu, je enotska — lego telesa iz datoteke kosa izračuna
   `lega_v_datoteki` po verigi staršev iz `matrix_basis`; (2) scena iz nič (`nova` + kosi) nima `bpy.data.filepath`, zato
   `shrani_razlicico` najprej shrani brez kopije, nato `make_paths_relative` in kopijo (z `save_version = 0`, da ni `.blend1`);
