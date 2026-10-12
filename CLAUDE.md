@@ -228,7 +228,10 @@ FreeCAD je motor, vmesnik in grafika nastajata v brskalniku (plan, korak 8 napre
   uredi-razlicico, parameter, odpri-v-blenderju, izvozi-za-tisk). **3D natisni** (gumb v Oblikovanju, od 2026-10-10): Blender izvozi STL
   vidnih objektov v `%LOCALAPPDATA%/FreeCAD-splet/tisk/<ideja>.stl`, okvir pošlje oknu FreeCAD-a `postMessage {vir: 'oblikovanje',
   dejanje: 'natisni', pot}`, stran pokliče `POST /tiskaj/datoteka {pot}` (`tiskaj_datoteka`: le datoteke iz te mape, kopija v vhod
-  plošče prek `.delno`, oznaka za ročno pripravo) in odpre zavihek Tiskanje z oknom Pripravi. Regularni izrazi v `oblikovanje.html`: pri popravkih iz Pythona pazi, da `\n` ne postane
+  plošče prek `.delno`, oznaka za ročno pripravo) in odpre zavihek Tiskanje z oknom Pripravi. **Stran brez orodne vrstice** (od 2026-10-12,
+  želja uporabnika): vrstica z gumbi (Nova ideja, Shrani različico, Odpri v Blenderju, Dodaj, Izvozi STL/DXF, 3D natisni, Render, Claude), namig
+  o miški in razdelek Objekti so skriti s CSS (`#vrstica, #namig, #objektiOkvir`); elementi in koda ostajajo (naslov, seznam, info), `#stranski`,
+  `#pogled`, `#razlicice`, `#statusna` imajo zato izrecne vrstice mreže. Regularni izrazi v `oblikovanje.html`: pri popravkih iz Pythona pazi, da `\n` ne postane
   pravi prelom (stran se potem sploh ne zažene, 2026-10-10).
   **Sestav v Igrišču** (od 2026-10-12, logika strojnega risanja): ideja lahko vsebuje **kose iz drugih idej kot vezave**, ne kopije.
   `igrisce.vstavi_kos(koren, ideja, rid=None, lega, ime, lastna)`: mreže ostanejo v `<Ideje>/<kos>/Rxx.blend` (link), v sestavu nastaneta
