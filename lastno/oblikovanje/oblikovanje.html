@@ -55,7 +55,11 @@
   #ideje .preklop { width: 14px; padding: 0; flex: none; font-size: 10px; color: var(--besedilo3); }
   #ideje .vrsta.otrok img { width: 26px; height: 20px; }
   #ideje .vrsta.otrok .ime { font-size: 12.5px; }
-  #ideje .vrsta .znacka.rev { flex: none; }
+  #ideje .vrsta .znacka.rev, #ideje .vrsta .znacka.kol { flex: none; }
+  #ideje .vrsta .arhiviraj { visibility: hidden; }
+  #ideje .vrsta:hover .arhiviraj { visibility: visible; }
+  #ideje .arhivPreklop { display: block; width: 100%; border: 0; background: none; color: var(--besedilo3); font: inherit; font-size: 11px; padding: 4px 8px; text-align: left; cursor: pointer; }
+  #ideje .arhivPreklop:hover { color: var(--besedilo); }
   .prazno { color: var(--besedilo3); font-size: 12px; padding: 4px 8px; line-height: 1.5; }
   .drsnik { padding: 4px 8px 8px; }
   .drsnik .glava { display: flex; justify-content: space-between; font-size: 12px; color: var(--besedilo2); margin-bottom: 2px; }
@@ -474,9 +478,9 @@ function narisiNaslov() {
     const b = document.createElement('b'); b.textContent = stanje.ideja; n.append(b);
     if (stanje.razlicica) { const z = document.createElement('span'); z.className = 'znacka vij'; z.textContent = stanje.razlicica; n.append(z); }
     const kosi = model.kosi || [];
-    if (kosi.length) { const z = document.createElement('span'); z.className = 'znacka'; z.textContent = 'sestav · ' + stevilo(kosi.length, 'kos', 'kosa', 'kosi', 'kosov'); z.title = kosi.map(k => k.ideja + ' ' + k.razlicica).join(', '); n.append(z); }
+    if (kosi.length) { const z = document.createElement('span'); z.className = 'znacka'; z.textContent = 'sestav · ' + stevilo(kosi.length, 'kos', 'kosa', 'kosi', 'kosov'); z.title = opisDelov(kosi); n.append(z); }
     const zastareli = kosi.filter(k => k.novejsa);
-    if (zastareli.length) { const z = document.createElement('span'); z.className = 'znacka ora'; z.textContent = zastareli.map(k => k.ideja + ' ' + k.razlicica + ' → ' + k.novejsa).join(', '); z.title = 'Kos ima novejšo različico; v seznamu Objekti klikni ↻'; n.append(z); }
+    if (zastareli.length) { const z = document.createElement('span'); z.className = 'znacka ora'; z.textContent = [...new Set(zastareli.map(k => k.ideja + ' ' + k.razlicica + ' → ' + k.novejsa))].join(', '); z.title = 'Kos ima novejšo različico; v seznamu Objekti klikni ↻'; n.append(z); }
     const uporaba = (ideja && ideja.uporabljena_v) || [];
     if (uporaba.length) { const z = document.createElement('span'); z.className = 'znacka'; z.textContent = 'kos v: ' + uporaba.map(u => u.ideja).join(', '); z.title = uporaba.map(u => u.ideja + ' (' + u.v + ') uporablja ' + u.razlicica).join('\n'); n.append(z); }
   } else n.append('Brez ideje');
@@ -486,13 +490,20 @@ function narisiNaslov() {
 }
 
 // --- ideje in različice ------------------------------------------------------------------------------------------
-const drevoIdej = { zaprte: new Set() };   // strnjeni sestavi v drevesu idej (za sejo)
+const drevoIdej = { zaprte: new Set(), arhiv: false };   // strnjeni sestavi in prikaz arhiva v drevesu idej (za sejo)
 const stevilo = (n, ena, dve, tri, vec) => n + ' ' + (n % 100 === 1 ? ena : n % 100 === 2 ? dve : n % 100 === 3 || n % 100 === 4 ? tri : vec);
 function odpriIdejo(ime) {
   if (stanje.ideja === ime) return;
   if (stanje.spremenjeno && !confirm('Trenutna scena ni shranjena kot različica. Vseeno odprem drugo idejo?')) return;
   prilagodiOb = true; ukaz({ dejanje: 'odpri-idejo', ime });
 }
+// Enaki kosi (ista ideja, ista revizija) so ena vrstica s količino, ne vsak vstavljen primerek posebej.
+function zdruziDele(deli) {
+  const m = new Map();
+  for (const d of deli || []) { const k = JSON.stringify([d.ideja, d.razlicica]); const z = m.get(k); if (z) z.kolicina++; else m.set(k, { ideja: d.ideja, razlicica: d.razlicica, kolicina: 1 }); }
+  return [...m.values()];
+}
+function opisDelov(deli) { return zdruziDele(deli).map(d => d.ideja + ' ' + d.razlicica + (d.kolicina > 1 ? ' ×' + d.kolicina : '')).join(', '); }
 async function naloziIdeje() {
   const [seznam, opis] = await Promise.all([fetch('/ideje', { cache: 'no-store' }).then(r => r.json()), fetch('/ideja', { cache: 'no-store' }).then(r => r.json())]);
   ideja = opis && opis.ime ? opis : null;
@@ -503,7 +514,7 @@ async function naloziIdeje() {
   const poImenu = new Map(seznam.ideje.map(i => [i.ime, i]));
   const vSestavu = new Set(); for (const i of seznam.ideje) for (const d of i.deli || []) vSestavu.add(d.ideja);
   const deliZa = (i, rid) => { const r = (i.razlicice || []).find(x => x.id === rid); return r ? r.deli || [] : i.deli || []; };
-  function vozlisce(i, rid, globina, pot) {
+  function vozlisce(i, rid, globina, pot, kolicina) {
     const deli = deliZa(i, rid), sestav = deli.length > 0, zaprt = drevoIdej.zaprte.has(i.ime);
     const v = document.createElement('div'); v.className = 'vrsta' + (i.odprta ? ' izbran' : '') + (globina ? ' otrok' : '');
     v.style.paddingLeft = (6 + globina * 16) + 'px';
@@ -514,7 +525,7 @@ async function naloziIdeje() {
     img.onerror = () => { img.style.visibility = 'hidden'; };
     if (!rid) img.style.visibility = 'hidden';
     const ime = document.createElement('span'); ime.className = 'ime'; ime.textContent = i.ime;
-    ime.title = (sestav ? 'Sestav' : 'Kos') + (globina ? ', v sestavu uporabljena revizija ' + rid + (i.aktivna && i.aktivna !== rid ? ' (aktivna ' + i.aktivna + ')' : '') : '') + (i.opis ? '\n' + i.opis : '');
+    ime.title = (sestav ? 'Sestav' : 'Kos') + (globina ? ', v sestavu uporabljena revizija ' + rid + (i.aktivna && i.aktivna !== rid ? ' (aktivna ' + i.aktivna + ')' : '') + (kolicina > 1 ? ', v sestavu ' + stevilo(kolicina, 'kos', 'kosa', 'kosi', 'kosov') : '') : '') + (i.opis ? '\n' + i.opis : '');
     if (!globina) { const st = document.createElement('small'); st.textContent = i.razlicic; ime.appendChild(st); }
     v.append(p, img, ime);
     if (globina) {   // revizija kosa v sestavu; oranžno, če je kos že naprej
@@ -523,16 +534,30 @@ async function naloziIdeje() {
       if (naprej) z.title = 'Kos ima novejšo različico ' + i.aktivna + '; v odprtem sestavu jo pri kosu potrdi z ↻';
       v.appendChild(z);
     }
-    if (sestav) { const z = document.createElement('span'); z.className = 'znacka'; z.textContent = 'sestav'; z.title = 'Sestav s kosi: ' + deli.map(d => d.ideja + ' ' + d.razlicica).join(', '); v.appendChild(z); }
+    if (kolicina > 1) { const z = document.createElement('span'); z.className = 'znacka kol'; z.textContent = '×' + kolicina; z.title = 'V sestavu ' + stevilo(kolicina, 'kos', 'kosa', 'kosi', 'kosov') + ' te revizije'; v.appendChild(z); }
+    if (sestav) { const z = document.createElement('span'); z.className = 'znacka'; z.textContent = 'sestav'; z.title = 'Sestav s kosi: ' + opisDelov(deli); v.appendChild(z); }
+    if (!globina) {   // korenska vrstica: v arhiv ali iz njega (ideja in datoteke ostanejo, drevo jo le skrije)
+      const a = document.createElement('button'); a.className = 'arhiviraj'; a.textContent = i.arhiv ? '↩' : '⌫';
+      a.title = i.arhiv ? 'Vrni iz arhiva' : 'Premakni v arhiv (ideja ostane na disku, drevo jo skrije)';
+      a.addEventListener('click', e => { e.stopPropagation(); ukaz({ dejanje: 'uredi-idejo', ime: i.ime, arhiv: !i.arhiv }, true); });
+      v.appendChild(a);
+    }
     v.addEventListener('click', () => { if (!i.odprta) odpriIdejo(i.ime); });
     okvir.appendChild(v);
-    if (sestav && !zaprt) for (const d of deli) {
+    if (sestav && !zaprt) for (const d of zdruziDele(deli)) {
       const otrok = poImenu.get(d.ideja);
       if (!otrok || pot.has(d.ideja)) continue;   // manjkajoča ideja ali krog
-      vozlisce(otrok, d.razlicica, globina + 1, new Set([...pot, d.ideja]));
+      vozlisce(otrok, d.razlicica, globina + 1, new Set([...pot, d.ideja]), d.kolicina);
     }
   }
-  for (const i of seznam.ideje) if (!vSestavu.has(i.ime)) vozlisce(i, i.aktivna || i.zadnja, 0, new Set([i.ime]));
+  const arhiv = seznam.ideje.filter(i => !vSestavu.has(i.ime) && i.arhiv && !i.odprta);
+  for (const i of seznam.ideje) if (!vSestavu.has(i.ime) && (!i.arhiv || i.odprta || drevoIdej.arhiv)) vozlisce(i, i.aktivna || i.zadnja, 0, new Set([i.ime]));
+  if (arhiv.length) {
+    const b = document.createElement('button'); b.className = 'arhivPreklop'; b.type = 'button';
+    b.textContent = drevoIdej.arhiv ? 'skrij arhiv' : '+ ' + arhiv.length + ' v arhivu';
+    b.addEventListener('click', () => { drevoIdej.arhiv = !drevoIdej.arhiv; naloziIdeje(); });
+    okvir.appendChild(b);
+  }
   narisiRazlicice();
   preveriSlicico();
   const kljucIdeje = ideja ? ideja.mapa : '';
@@ -545,7 +570,7 @@ function narisiRazlicice() {
   for (const r of [...ideja.razlicice].reverse()) {
     const k = document.createElement('button'); k.type = 'button'; k.className = 'karta' + (r.id === ideja.trenutna ? ' trenutna' : '');
     k.title = (r.opomba || '') + '\n' + r.cas.replace('T', ' ') + ' · ' + r.vir + (r.izhaja ? ' · iz ' + r.izhaja : '') +
-      ((r.deli || []).length ? '\nkosi: ' + r.deli.map(d => d.ideja + ' ' + d.razlicica).join(', ') : '');
+      ((r.deli || []).length ? '\nkosi: ' + opisDelov(r.deli) : '');
     k.innerHTML = `<div class="slika"><span class="zv${r.zvezdica ? ' da' : ''}" title="Označi kot priljubljeno">★</span></div>
       <div class="spodaj"><b>${esc(r.id)}</b><span class="znacka${r.vir === 'AI' ? ' vij' : ''}">${esc(r.vir)}</span></div><div class="op">${esc(r.opomba || '')}</div>`;
     if (r.slicica) k.querySelector('.slika').style.backgroundImage = `url("/ideja/slicica?ideja=${encodeURIComponent(ideja.ime)}&r=${r.id}&v=${verzijaIdeje}")`;

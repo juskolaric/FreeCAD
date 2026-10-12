@@ -256,6 +256,10 @@ FreeCAD je motor, vmesnik in grafika nastajata v brskalniku (plan, korak 8 napre
   luknja v enem) EXACT boolean napačno reže — dva ločena reza. Box je poln (527k točk, Boolean ~6 s).
   R08: podstavek R04 (navpični robovi r 8 z rezom ∩ zaobljena prizma, ki sledi poševnemu čelu, z enakim 1,6 mm posnetjem zgoraj in
   spodaj; poglobitev zadaj Ø8 do 4,5 mm), zadnji vijak na (0; 40; 22) — glava 0,5 mm pod ploskvijo, 7,3 mm vrezovanja.
+  **R09 (2026-10-12, odločitev uporabnika)**: nivo »Maketa boxa« odpade — kos »Photobox Slim za tisk« R11 je neposredno v glavnem
+  sestavu na (0; 0,16; 26), napisi, nalepke in okvirji so lastni objekti sestava; ideja »Maketa boxa« je v **arhivu** (`ideja.json`
+  `arhiv: true`: drevo jo skrije, povezava »+N v arhivu« jo pokaže, gumb ⌫/↩ na korenski vrstici, ukaz `uredi-idejo {ime, arhiv|opis}`,
+  `Ideje.uredi_idejo`). Enaki kosi (ista ideja in revizija, npr. 4 vijaki) so v drevesu ena vrstica s količino ×N (`zdruziDele`).
   **Hitrost preklopa idej** (2026-10-12): predpomnilnik posnetkov `_PREDPOMNILNIK` je LRU (OrderedDict, ~1,5 GB) s ključem, ki nosi
   **prstni odtis mreže** (`_prstni_odtis`: blake2b koordinat oglišč + število ploskev, 527k točk ~10 ms), zato ob preklopu ideje
   (`_po_ideji`) ostane; poljubna koda pozabi le lokalne objekte (`_pozabi_lokalne`), vezane mreže iz datotek kosov so nespremenljive.

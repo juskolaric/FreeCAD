@@ -527,7 +527,7 @@ def obdelaj(vrsta, podatki, odgovor):
 
 
 BREZ_SPREMEMBE = ("shrani", "odpri", "nova", "izvozi", "izvozi-za-tisk", "izberi", "nova-ideja", "odpri-idejo", "shrani-razlicico",
-                  "odpri-razlicico", "uredi-razlicico", "odpri-v-blenderju")
+                  "odpri-razlicico", "uredi-razlicico", "uredi-idejo", "odpri-v-blenderju")
 
 
 ZADNJA_IDEJA = os.path.join(LOKALNO, "oblikovanje-zadnja.json")
@@ -569,6 +569,11 @@ def ukaz_ideje(p):
         IDEJE.odpri_razlicico(p.get("id", ""))
         _po_ideji()
         STANJE.spremenjeno = False
+        return {"ok": True}
+    if d == "uredi-idejo":
+        polja = {k: p[k] for k in ("arhiv", "opis") if k in p}
+        IDEJE.uredi_idejo(p.get("ime", ""), **polja)
+        STANJE.verzija_ideje += 1
         return {"ok": True}
     if d == "uredi-razlicico":
         polja = {k: p[k] for k in ("zvezdica", "opomba") if k in p}

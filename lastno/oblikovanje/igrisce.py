@@ -110,7 +110,7 @@ class Ideje:
                          "spremenjeno": os.path.getmtime(os.path.join(mapa, "ideja.json")),
                          "odprta": os.path.normcase(mapa) == os.path.normcase(self.mapa),
                          "vrsta": "sestav" if deli else "kos", "deli": deli, "uporabljena_v": self.uporaba(ime, vse),
-                         "razlicice": [{"id": r["id"], "deli": r.get("deli", [])} for r in razl]})
+                         "razlicice": [{"id": r["id"], "deli": r.get("deli", [])} for r in razl], "arhiv": bool(p.get("arhiv"))})
         izid.sort(key=lambda d: -d["spremenjeno"])
         return izid
 
@@ -192,6 +192,23 @@ class Ideje:
         p = self.podatki()
         p["aktivna"] = rid
         self._zapisi(p)
+
+    def uredi_idejo(self, ime, **polja):
+        """Opis ali arhiv ideje (arhiv: skrita v drevesu, datoteke ostanejo)."""
+        mapa = os.path.join(self.koren, varno_ime(ime))
+        if not os.path.isfile(os.path.join(mapa, "ideja.json")):
+            raise ValueError("ni ideje: %s" % ime)
+        p = self.podatki(mapa)
+        for k, v in polja.items():
+            if k == "arhiv":
+                p["arhiv"] = bool(v)
+            elif k == "opis":
+                p["opis"] = str(v)[:500]
+        stara, self.mapa = self.mapa, mapa
+        try:
+            self._zapisi(p)
+        finally:
+            self.mapa = stara
 
     def uredi_razlicico(self, rid, **polja):
         p = self.podatki()
