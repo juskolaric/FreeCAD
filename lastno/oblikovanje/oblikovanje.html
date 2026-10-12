@@ -181,6 +181,10 @@
 <script type="module">
 import * as THREE from 'three';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+import { GTAOPass } from 'three/addons/postprocessing/GTAOPass.js';
+import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import { odpriRender } from '/render-plosca.js';
 
 const ZETON = '__ZETON__';
@@ -189,8 +193,9 @@ const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': 
 
 // --- 3D pogled (Z gor kot v FreeCAD-u in Blenderju) -----------------------------------------------------------
 const pogled = $('pogled');
-// logaritemska globina: ploskve, ki skoraj sovpadajo (nalepke, napisi, okvirji na vratih), se sicer prepletajo
-const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, logarithmicDepthBuffer: true });
+// Brez logaritemske globine (senčenje GTAO bere navadno perspektivno globino): ploskve, ki skoraj sovpadajo (nalepke,
+// napisi, okvirji na vratih), se ne prepletajo, ker se bližnja in daljna ravnina kamere sproti prilegata modelu (tesnaGlobina).
+const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
 renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
 renderer.toneMapping = THREE.NeutralToneMapping;
 pogled.prepend(renderer.domElement);
@@ -198,9 +203,14 @@ const scene = new THREE.Scene();
 const pmrem = new THREE.PMREMGenerator(renderer);
 scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
 scene.environmentRotation = new THREE.Euler(Math.PI / 2, 0, 0);
-scene.environmentIntensity = 0.55;
-const luc = new THREE.DirectionalLight(0xffffff, 2.0); luc.position.set(1, -1.2, 2.2); scene.add(luc); scene.add(luc.target);
-const luc2 = new THREE.DirectionalLight(0xffffff, 0.5); luc2.position.set(-1.5, 1, 0.6); scene.add(luc2);
+scene.environmentIntensity = 0.25;
+// Osvetlitev kot »Studio« v Blenderju: glavna luč spredaj levo zgoraj (sprednja ploskev svetlejša od stranske, da se
+// ploskve ločijo tudi na belem modelu), šibkejša z desne, nebo/tla za mehke prehode; okolje le za odboje.
+const SMER_LUCI = new THREE.Vector3(-0.5, -1.5, 1.3).normalize();
+const luc = new THREE.DirectionalLight(0xffffff, 1.6); luc.position.copy(SMER_LUCI); scene.add(luc); scene.add(luc.target);
+const luc2 = new THREE.DirectionalLight(0xdfe8ff, 0.45); luc2.position.set(1.5, 0.4, 0.5); scene.add(luc2);
+const luc3 = new THREE.DirectionalLight(0xffffff, 0.3); luc3.position.set(-0.6, -1.5, -0.4); scene.add(luc3);
+scene.add(new THREE.HemisphereLight(0xffffff, 0x8a8f99, 0.5));
 const camera = new THREE.PerspectiveCamera(35, 1, 0.1, 100000);
 camera.up.set(0, 0, 1);
 camera.position.set(160, -190, 140);
@@ -209,16 +219,40 @@ window.__oblikovanje = { THREE, camera, koren, scene, nadzor: () => nadzor };   
 const tla = new THREE.Mesh(new THREE.CircleGeometry(1, 64), new THREE.ShadowMaterial({ opacity: 0.12 }));
 tla.receiveShadow = true; tla.visible = false; scene.add(tla);
 renderer.shadowMap.enabled = true; renderer.shadowMap.type = THREE.PCFSoftShadowMap;
-luc.castShadow = true; luc.shadow.mapSize.set(2048, 2048);
+luc.castShadow = true; luc.shadow.mapSize.set(2048, 2048); luc.shadow.radius = 4; luc.shadow.bias = -0.0005; luc.shadow.normalBias = 0.02;
+
+// Senčenje kotov in vdolbin (ambient occlusion, GTAO) kot v Blenderjevem pogledu: RenderPass -> GTAO -> OutputPass
+// (tonska preslikava in sRGB). Prozorno ozadje strani ostane (alfa gre skozi).
+const composer = new EffectComposer(renderer, new THREE.WebGLRenderTarget(1, 1, { type: THREE.HalfFloatType, samples: 4 }));
+composer.addPass(new RenderPass(scene, camera, null, new THREE.Color(0x000000), 0));
+const ao = new GTAOPass(scene, camera, 1, 1);
+ao.blendIntensity = 1.0;
+composer.addPass(ao);
+composer.addPass(new OutputPass());
+function nastaviAO() {   // polmer vzorčenja glede na velikost modela (mm)
+  const r = okvirModela.isEmpty() ? 50 : okvirModela.getBoundingSphere(new THREE.Sphere()).radius;
+  ao.updateGtaoMaterial({ radius: r * 0.04, distanceExponent: 1.5, thickness: r * 0.02, scale: 1.0, samples: 16, distanceFallOff: 1.0 });
+  ao.updatePdMaterial({ lumaPhi: 10, depthPhi: 2, normalPhi: 3, radius: 6, rings: 2, samples: 16 });
+}
+// bližnja in daljna ravnina tik ob modelu: dobra natančnost globine brez logaritemskega medpomnilnika
+const _sfera = new THREE.Sphere();
+function tesnaGlobina() {
+  if (okvirModela.isEmpty()) return;
+  okvirModela.getBoundingSphere(_sfera);
+  const d = camera.position.distanceTo(_sfera.center), r = Math.max(_sfera.radius, 1);
+  const near = Math.max(d - r * 3, r * 0.002), far = d + r * 8;
+  if (Math.abs(camera.near - near) > near * 0.01 || Math.abs(camera.far - far) > far * 0.01) { camera.near = near; camera.far = far; camera.updateProjectionMatrix(); }
+}
 
 let vidno = true;
 function velikost() {
   const w = pogled.clientWidth, h = pogled.clientHeight;
   if (!w || !h) return;
   renderer.setSize(w, h, false); camera.aspect = w / h; camera.updateProjectionMatrix();
+  composer.setPixelRatio(renderer.getPixelRatio()); composer.setSize(w, h);
 }
 new ResizeObserver(velikost).observe(pogled);
-renderer.setAnimationLoop(() => { if (!vidno) return; korakAnimacije(); posodobiOznakoVrtenja(); renderer.render(scene, camera); });
+renderer.setAnimationLoop(() => { if (!vidno) return; korakAnimacije(); posodobiOznakoVrtenja(); tesnaGlobina(); composer.render(); });
 
 // --- posnetek iz Blenderja -------------------------------------------------------------------------------------
 const objekti = new Map();
@@ -255,8 +289,9 @@ async function naloziModel() {
     const c = okvirModela.getCenter(new THREE.Vector3()), r2 = okvirModela.getBoundingSphere(new THREE.Sphere()).radius;
     tla.position.set(c.x, c.y, okvirModela.min.z - 0.001); tla.scale.setScalar(r2 * 6); tla.visible = true;
     const s = luc.shadow.camera; s.left = s.bottom = -r2 * 2; s.right = s.top = r2 * 2; s.near = 0.1; s.far = r2 * 20;
-    luc.position.copy(c).add(new THREE.Vector3(1, -1.2, 2.2).normalize().multiplyScalar(r2 * 6)); luc.target.position.copy(c); luc.target.updateMatrixWorld();
+    luc.position.copy(c).add(SMER_LUCI.clone().multiplyScalar(r2 * 6)); luc.target.position.copy(c); luc.target.updateMatrixWorld();
     s.updateProjectionMatrix();
+    nastaviAO();
   } else tla.visible = false;
   $('prazno').style.display = model.objekti.length ? 'none' : '';
   if (prilagodiOb && model.objekti.length) { prilagodi(); prilagodiOb = false; }
@@ -439,8 +474,8 @@ async function preveriSlicico() {
   if (!r || r.slicica || slicicaPoslana === kljuc) return;
   slicicaPoslana = kljuc;
   const W = 320, H = 240;
-  const cam = new THREE.PerspectiveCamera(30, W / H, 0.1, 100000); cam.up.set(0, 0, 1);
   const s = okvirModela.getBoundingSphere(new THREE.Sphere());
+  const cam = new THREE.PerspectiveCamera(30, W / H, s.radius * 0.5, s.radius * 20); cam.up.set(0, 0, 1);
   cam.position.copy(s.center).add(new THREE.Vector3(1, -1.25, 0.9).normalize().multiplyScalar(s.radius / Math.sin(THREE.MathUtils.degToRad(15)) * 1.05));
   cam.lookAt(s.center);
   const rt = new THREE.WebGLRenderTarget(W, H, { samples: 4 }); rt.texture.colorSpace = THREE.SRGBColorSpace;
