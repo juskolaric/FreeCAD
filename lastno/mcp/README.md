@@ -20,7 +20,7 @@ Claude API teče v strežniku, stran kaže korake, slike in potrditve.
 ## Namestitev (enkrat, za vse projekte)
 
 ```bash
-claude mcp add --scope user --transport stdio freecad -- "C:/Users/Uporabnik/AppData/Local/Programs/Python/Python311/python.exe" "C:/Users/Uporabnik/Desktop/Apps/FreeCAD/lastno/mcp/freecad_mcp.py"
+claude mcp add --scope user --transport stdio freecad -- "C:/Users/Uporabnik/AppData/Local/Programs/Python/Python311/python.exe" "C:/Users/Uporabnik/Desktop/GitHub/CAD in 3D/FreeCAD/lastno/mcp/freecad_mcp.py"
 ```
 
 **Namizna aplikacija Claude** (pogovor, Cowork): razširitev `freecad.mcpb` (dvojni klik ali Nastavitve → Razširitve →
