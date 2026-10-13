@@ -3287,6 +3287,10 @@ class Stanje:
             rezultat = _tiskaj_natisni(self, podatki)
             if odgovor is not None:
                 odgovor["rezultat"] = rezultat
+        elif ukaz == "meritev":
+            # mere izbire za statusno vrstico brskalnika (mcp_orodja.meritev_izbire); brskalnik počaka
+            if odgovor is not None:
+                odgovor["rezultat"] = mcp_orodja.meritev_izbire(podatki)
         elif ukaz == "risba":
             rezultat = _risba_dejanje(self, podatki)
             if odgovor is not None:
@@ -3664,6 +3668,18 @@ class Zahteva(http.server.BaseHTTPRequestHandler):
         if pot == "/mcp/odgovor":
             # stran v brskalniku odgovarja na zahtevo orodja (slika pogleda, kamera, okno Pripravi)
             self._odgovor(json.dumps({"ok": mcp_orodja.brskalnik_odgovor(podatki)}).encode("utf-8"))
+            return
+        if pot == "/meritev":
+            # Mere trenutne izbire (statusna vrstica, kot Onshape): glavna nit izmeri, brskalnik počaka največ 30 s.
+            odgovor = {"konec": threading.Event(), "izpis": "", "napaka": "", "rezultat": None}
+            STANJE.vrsta.put(("meritev", podatki, odgovor))
+            if not odgovor["konec"].wait(30):
+                telo = {"ok": False, "sporocilo": "FreeCAD še meri."}
+            elif odgovor["napaka"]:
+                telo = {"ok": False, "sporocilo": odgovor["napaka"].strip().splitlines()[-1]}
+            else:
+                telo = odgovor["rezultat"] or {"ok": False, "sporocilo": "Brez odgovora."}
+            self._odgovor(json.dumps(telo, ensure_ascii=False).encode("utf-8"))
             return
         if pot == "/risba":
             # Risbe (TechDraw): izvoz PDF/DXF/SVG ali seznam strani; dela glavna nit, brskalnik počaka na pot datoteke.

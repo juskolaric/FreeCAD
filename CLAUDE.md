@@ -330,6 +330,22 @@ FreeCAD je motor, vmesnik in grafika nastajata v brskalniku (plan, korak 8 napre
   (`makeCosmeticVertex3d`), ker kota do krožnice meri do roba; (5) `DrawPage.addView` nov pogled postavi na sredino lista — lego
   nastavi šele po njem. Zgled celotnega postopka: `Oblak/3D modeliranje/Pleksi vitrina/Skripte/vitrina.py` (3 faze).
   Vroča zamenjava kode strežnika brez ponovnega zagona: `lastno/splet/vroca_zamenjava.py` (`IMENA` funkcij, `METODE` razredov).
+- **Meritve: statusna vrstica in meter** (od 2026-10-13, `index.html` razdelek »Meritve«, `mcp_orodja.meritev_izbire`,
+  `POST /meritev` -> ukaz glavne niti `meritev`): kot v Onshapu so mere izbire **vedno vidne** — ob vsakem dogodku `izbira`
+  brskalnik pokliče `/meritev` (brez telesa = trenutna `Gui.Selection`, največ 12 sklicev, isti razreševalnik kot orodje `izmeri`)
+  in statusna vrstica (`#hud .mera`; krči se najprej desni del, zato se mere ne odrežejo) pokaže ploskev (vrsta, cm², normala, R),
+  rob (vrsta, mm, smer; krog Ø/R, obseg, središče), točko ali telo (okvir, cm³, cm²); pri dveh sklicih najmanjšo razdaljo
+  (`distToShape`) z ΔX/ΔY/ΔZ v barvah osi (X rdeča, Y zelena, Z modra), kot med ravninami/premicami/osmi, razdaljo središč
+  krožnih elementov in pri telesih z razdaljo 0 vrsto stika; najkrajša razdalja dveh elementov je narisana tudi v pogledu
+  (rožnata črta + oznaka, do naslednje izbire). Telesi s produktom števil ploskev > 60000 se preskočita (orodje `izmeri`).
+  **Meter** (gumb z ravnilom v vrstici pogledov, tipka M; SolidWorks »točka–točka«): kazalec se pripne (≤ 12 px; prednost
+  oglišče > središče > sredina) na krajišča in sredine robov ter središča krogov iz `robInfo` posnetka (s premikom razstavitve),
+  sicer na prosto točko ploskve (raycast); dva klika narišeta črto (`depthTest: false`) z oznako (mm, ΔX/ΔY/ΔZ, × pobriše) v
+  `#meritve`, ki sledi sredini črte v zanki izrisa (`posodobiMeritve`). Esc prekine točko oziroma konča meter, odprtje skice ga
+  konča, zamenjava dokumenta pobriše oznake (`pocistiMeritve`); levi klik v metru ne izbira. Pasti: ime `najdiPripenjanje` je
+  zasedeno (skica), meter ima `najdiPripenjanjeMetra`; pripenja tudi na zakrita oglišča (zakritost se ne preverja); oznake ne
+  preživijo osvežitve strani. Vgradnja v tekoči strežnik: `lastno/mcp/namesti_v_tekoci.py` (reload `mcp_orodja`, `_izvedi`,
+  `do_POST`), stran le F5.
 - **Knjižnica standardnih delov** (od 2026-10-09, gumb ▦ Knjižnica v glavi stranskega stolpca): okno `#knjiznica` z mrežo
   kartic po kategorijah (mape baze, sličice prek `/slicica`, iskanje). `GET /knjiznica` (`zgradi_knjiznico`, nit strežnika,
   brez FreeCAD API-ja; izpušča mape `_*`, `.*`, `DXF`), `POST /knjiznica {dejanje: vstavi | odpri, pot, dokument}`

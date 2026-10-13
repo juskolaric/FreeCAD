@@ -1609,6 +1609,157 @@ def t_izmeri(a):
     return "\n".join(v)
 
 
+# ---------------------------------------------------------------------------
+# Mere izbire za statusno vrstico brskalnika (od 2026-10-13): isto kot orodje izmeri, a strukturirano (JSON) in
+# le za izbrane elemente; brskalnik pokliče POST /meritev ob vsaki spremembi izbire (kot Onshape: mere so vedno vidne).
+
+def _tocka3(v, dec=4):
+    return [round(v.x, dec), round(v.y, dec), round(v.z, dec)]
+
+
+def _podatki_elementa(o):
+    """Mere enega elementa (ploskev, rob, oglišče) ali telesa v globalnih koordinatah (mm, mm², mm³)."""
+    t = o.ShapeType
+    p = {"vrsta": t}
+    try:
+        if t == "Face":
+            ploskev = o.Surface
+            p["tip"] = type(ploskev).__name__
+            p["povrsina"] = round(o.Area, 4)
+            p["sredisce"] = _tocka3(o.CenterOfMass)
+            p["obseg"] = round(sum(e.Length for e in o.Edges), 4)
+            if p["tip"] == "Plane":
+                p["normala"] = _tocka3(o.normalAt(*ploskev.parameter(o.CenterOfMass)), 4)
+            if hasattr(ploskev, "Radius"):
+                p["polmer"] = round(ploskev.Radius, 4)
+            if hasattr(ploskev, "Axis"):
+                p["os"] = _tocka3(ploskev.Axis, 4)
+        elif t == "Edge":
+            p["tip"] = type(o.Curve).__name__
+            p["dolzina"] = round(o.Length, 4)
+            if o.Vertexes:
+                p["p1"] = _tocka3(o.Vertexes[0].Point)
+                p["p2"] = _tocka3(o.Vertexes[-1].Point)
+            if hasattr(o.Curve, "Radius"):
+                p["polmer"] = round(o.Curve.Radius, 4)
+                p["sredisce"] = _tocka3(o.Curve.Center)
+                p["zaprt"] = bool(o.isClosed())
+            elif p["tip"] in ("Line", "LineSegment") and o.Vertexes:
+                s = o.Vertexes[-1].Point - o.Vertexes[0].Point
+                if s.Length:
+                    p["smer"] = _tocka3(s.normalize(), 4)
+        elif t == "Vertex":
+            p["tocka"] = _tocka3(o.Point)
+        else:
+            bb = o.BoundBox
+            p["okvir"] = [round(bb.XLength, 4), round(bb.YLength, 4), round(bb.ZLength, 4)]
+            p["od"] = _tocka3(App.Vector(bb.XMin, bb.YMin, bb.ZMin))
+            p["do"] = _tocka3(App.Vector(bb.XMax, bb.YMax, bb.ZMax))
+            p["ploskev"] = len(o.Faces)
+            if o.Solids:
+                p["prostornina"] = round(o.Volume, 3)
+                p["povrsina"] = round(o.Area, 3)
+                p["tezisce"] = _tocka3(_tezisce(o))
+                p["teles"] = len(o.Solids)
+            elif o.Faces:
+                p["povrsina"] = round(o.Area, 3)
+                p["lupina"] = True
+            if not o.isValid():
+                p["neveljavna"] = True
+    except Exception as e:  # noqa: BLE001
+        p["napaka"] = str(e)
+    return p
+
+
+def _sredisce_kroznega(o):
+    try:
+        if o.ShapeType == "Edge" and hasattr(o.Curve, "Center"):
+            return o.Curve.Center
+        if o.ShapeType == "Face" and hasattr(o.Surface, "Center"):
+            return o.Surface.Center
+        if o.ShapeType == "Face" and hasattr(o.Surface, "Axis") and hasattr(o.Surface, "Radius"):
+            # valj, stožec: točka osi, najbližja središču ploskve
+            c = o.CenterOfMass
+            os_ = o.Surface.Axis
+            p0 = o.Surface.Center if hasattr(o.Surface, "Center") else o.Surface.Position
+            return p0 + os_ * ((c - p0).dot(os_) / (os_.Length ** 2 or 1.0))
+    except Exception:  # noqa: BLE001
+        pass
+    return None
+
+
+def _par_meritev(oa, ob):
+    """Najmanjša razdalja med dvema oblikama s točkama in ΔX/ΔY/ΔZ, kot med ravninami/premicami/osmi, razdalja
+    središč krožnih elementov, pri dveh telesih z razdaljo 0 še vrsta stika."""
+    r = {}
+    elementa = oa.ShapeType in ("Face", "Edge", "Vertex") and ob.ShapeType in ("Face", "Edge", "Vertex")
+    if not elementa and len(oa.Faces) * len(ob.Faces) > 60000:
+        r["preskok"] = "telesi sta preveliki za razdaljo v statusni vrstici (uporabi orodje izmeri)"
+    else:
+        try:
+            d, tocke, _ = oa.distToShape(ob)
+            r["razdalja"] = round(d, 4)
+            if tocke:
+                a, b = tocke[0]
+                r["p1"] = _tocka3(a)
+                r["p2"] = _tocka3(b)
+                r["delta"] = [round(b.x - a.x, 4), round(b.y - a.y, 4), round(b.z - a.z, 4)]
+            if d < 1e-6 and oa.Solids and ob.Solids:
+                r["stik"] = _vrsta_stika(oa, ob)
+        except Exception as e:  # noqa: BLE001
+            r["napaka"] = str(e)
+    kot = _kot(oa, ob)
+    if kot is not None:
+        r["kot"] = round(kot, 3)
+    ca, cb = _sredisce_kroznega(oa), _sredisce_kroznega(ob)
+    if ca is not None and cb is not None:
+        r["sredisca"] = round((cb - ca).Length, 4)
+        r["sredisceA"] = _tocka3(ca)
+        r["sredisceB"] = _tocka3(cb)
+    return r
+
+
+def meritev_izbire(a):
+    """Mere trenutne izbire (ali sklicev a["objekti"]) kot slovar za brskalnik: elementi (mere vsakega), par (razdalja,
+    ΔX/ΔY/ΔZ, kot, središča) pri natanko dveh sklicih, skupni okvir pri več. Teče na glavni niti (FreeCAD API)."""
+    t0 = time.time()
+    doc = _dokument(a.get("dokument"), obvezen=False)
+    if doc is None:
+        return {"ok": True, "elementi": [], "cas": 0}
+    refs = list(a.get("objekti") or [])
+    if not refs:
+        for s in Gui.Selection.getSelectionEx("", 0):
+            if s.SubElementNames:
+                refs.extend("%s.%s" % (s.Object.Name, _cisto_podime(sub)) for sub in s.SubElementNames)
+            else:
+                refs.append(s.Object.Name)
+    refs = list(dict.fromkeys(refs))[:12]
+    elementi, oblike = [], []
+    for ref in refs:
+        try:
+            oblika, obj = _oblika(doc, ref)
+        except Exception as e:  # noqa: BLE001
+            elementi.append({"sklic": ref, "napaka": str(e)})
+            continue
+        p = _podatki_elementa(oblika)
+        p["sklic"] = ref
+        p["oznaka"] = obj.Label
+        p["element"] = ref.split(".")[-1] if "." in ref and oblika.ShapeType in ("Face", "Edge", "Vertex") else ""
+        elementi.append(p)
+        oblike.append(oblika)
+    izid = {"ok": True, "elementi": elementi}
+    if len(oblike) == 2:
+        izid["par"] = _par_meritev(oblike[0], oblike[1])
+    if len(oblike) > 1:
+        bb = None
+        for o in oblike:
+            bb = o.BoundBox if bb is None else bb.united(o.BoundBox)
+        if bb is not None and bb.isValid():
+            izid["okvir"] = [round(bb.XLength, 4), round(bb.YLength, 4), round(bb.ZLength, 4)]
+    izid["cas"] = round((time.time() - t0) * 1000)
+    return izid
+
+
 VSEBNIKI = ("App::Part", "Assembly::AssemblyObject", "App::DocumentObjectGroup", "App::Origin")
 
 
