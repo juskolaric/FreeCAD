@@ -70,6 +70,42 @@
   .cipTiskalnika:hover { background: var(--lebdenje); color: var(--besedilo); }
   .cipTiskalnika b { font-weight: 600; color: var(--besedilo); }
   .cipTiskalnika .pika { width: 7px; height: 7px; border-radius: 50%; background: #9ca3af; flex: none; }
+  /* Vrstica različic pod pogledom (od 2026-10-13, kot v Oblikovanju): kartice različic dokumenta iz oblaka; v 1., 3. in 4. stopnji je ni */
+  #trakRazlicic { flex: none; display: flex; align-items: stretch; gap: 8px; padding: 8px 10px; height: 104px; box-sizing: border-box;
+                  overflow-x: auto; overflow-y: hidden; background: var(--ozadje); border-top: 1px solid var(--crta); user-select: none; }
+  body.stopnjaZunaj #trakRazlicic { display: none !important; }
+  #trakRazlicic .glavaTraku { flex: none; display: flex; flex-direction: column; justify-content: center; gap: 5px; padding-right: 10px;
+                              margin-right: 2px; border-right: 1px solid var(--crta); min-width: 150px; max-width: 230px; }
+  #trakRazlicic .glavaTraku .naslov { font-weight: 600; font-size: 12.5px; display: flex; gap: 6px; align-items: center; }
+  #trakRazlicic .glavaTraku .stevilo { font-size: 10.5px; font-weight: 600; background: var(--lebdenje); color: var(--besedilo2); border-radius: 999px;
+                                       padding: 0 6px; line-height: 16px; }
+  #trakRazlicic .glavaTraku .opis { font-size: 11px; color: var(--besedilo3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  #trakRazlicic .glavaTraku .gumbi { display: flex; gap: 5px; }
+  #trakRazlicic button.g { height: 24px; padding: 0 9px; border: 1px solid var(--crtaMocna); background: var(--plosca); border-radius: 7px; cursor: pointer;
+                           font: inherit; font-size: 11.5px; white-space: nowrap; color: var(--besedilo); }
+  #trakRazlicic button.g:hover { background: var(--lebdenje); }
+  #trakRazlicic button.g.glavni { background: var(--poudarek); border-color: var(--poudarek); color: #fff; }
+  #trakRazlicic button.g.glavni:hover { background: var(--poudarekTemen); }
+  #trakRazlicic .prazno { align-self: center; font-size: 12px; color: var(--besedilo2); display: flex; gap: 10px; align-items: center; white-space: nowrap; }
+  .kartaRazlicice { flex: none; width: 116px; border: 2px solid transparent; border-radius: 10px; background: var(--plosca); cursor: pointer; padding: 0;
+                    overflow: hidden; display: flex; flex-direction: column; box-shadow: var(--senca1); font: inherit; text-align: left; position: relative;
+                    color: var(--besedilo); transition: border-color .12s; }
+  .kartaRazlicice:hover { border-color: var(--crtaMocna); }
+  .kartaRazlicice.trenutna { border-color: var(--poudarek); }
+  .kartaRazlicice .slika { height: 52px; background: var(--plosca2) center / contain no-repeat; position: relative; }
+  .kartaRazlicice .slika.brez { background-size: 24px; opacity: .6; }
+  .kartaRazlicice .povrni { position: absolute; top: 2px; right: 3px; width: 20px; height: 20px; border: 0; border-radius: 50%; background: rgba(255,255,255,.9);
+                            color: var(--besedilo2); font-size: 13px; line-height: 20px; cursor: pointer; display: none; padding: 0; box-shadow: var(--senca1); }
+  .kartaRazlicice:hover .povrni { display: block; }
+  .kartaRazlicice .povrni:hover { color: var(--poudarek); background: #fff; }
+  .kartaRazlicice .spodaj { padding: 3px 6px 0; display: flex; gap: 4px; align-items: center; font-size: 11px; min-width: 0; }
+  .kartaRazlicice .spodaj b { font-size: 11.5px; flex: none; }
+  .kartaRazlicice .znacka { font-size: 9.5px; font-weight: 600; letter-spacing: .03em; text-transform: uppercase; padding: 0 5px; border-radius: 999px;
+                            line-height: 14px; background: var(--lebdenje); color: var(--besedilo2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .kartaRazlicice .znacka.ok { background: var(--poudarekMehko); color: var(--poudarekTemen); }
+  .kartaRazlicice .znacka.izdano { background: #dcf3e2; color: #1b6b32; }
+  .kartaRazlicice .znacka.pregled { background: #fef3c7; color: #92400e; }
+  .kartaRazlicice .op { padding: 0 6px 4px; font-size: 10.5px; color: var(--besedilo3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .cipTiskalnika.tiska .pika { background: #2563eb; box-shadow: 0 0 0 2px rgba(37,99,235,.18); }
   .cipTiskalnika.prost .pika, .cipTiskalnika.koncano .pika { background: #16a34a; }
   .cipTiskalnika.premor .pika, .cipTiskalnika.caka-mizo .pika { background: #f59e0b; }
@@ -924,6 +960,8 @@
   </footer>
 </aside>
 </div>
+<!-- Vrstica različic (od 2026-10-13): kartice različic aktivnega dokumenta iz oblaka, kot v Oblikovanju; polni jo narisiTrakRazlicic -->
+<div id="trakRazlicic"><div class="prazno">Različice se pokažejo tu, ko odpreš dokument iz oblaka.</div></div>
 <div id="statusna"><div id="hud">Povezujem s FreeCAD-om …</div><div id="tiskalnikiCipi"></div></div>
 </div>
 </div>
@@ -2043,6 +2081,7 @@ function narisiProjekte(p) {
   nacrtujSlicico();   // pot aktivnega dokumenta je zdaj znana (ob prvem nalaganju še ni bila)
   narisiOdprteDokumente();
   posodobiVrstoDrevesa();
+  osveziTrakRazlicic();   // pot in oznaka »neshranjeno« aktivnega dokumenta za vrstico različic
 }
 // Levi stolpec: odprti dokumenti, zgoraj sestavi, spodaj deli; iskanje v glavi stolpca filtrira po imenu.
 let dokumentiIskanje = '', prviNajdeniDokument = null;
@@ -2192,7 +2231,7 @@ function obrazecPrijave(poTem) {
   const g = el('div', 'gumbi'); const pri = el('button', '', 'Prijava'); pri.type = 'button';
   const prijavi = async () => {
     pri.disabled = true;
-    try { stanje.oblak = await oblakKlic('POST', '/oblak/prijava', { email: email.value.trim(), geslo: geslo.value }); obvesti('Prijavljen v oblak.'); poTem(); }
+    try { stanje.oblak = await oblakKlic('POST', '/oblak/prijava', { email: email.value.trim(), geslo: geslo.value }); obvesti('Prijavljen v oblak.'); poTem(); osveziTrakRazlicic(true); }
     catch (e) { obvesti(e.message, true); pri.disabled = false; }
   };
   pri.addEventListener('click', prijavi);
@@ -2207,7 +2246,7 @@ function nogaRazlicic() {
   if (o && o.prijavljen) {
     n.append('Prijavljen: ' + (o.ime ? o.ime + ' (' + o.email + ')' : o.email) + ' · ');
     const odj = el('button', 'povezava', 'Odjava'); odj.type = 'button';
-    odj.addEventListener('click', async () => { try { stanje.oblak = await oblakKlic('POST', '/oblak/odjava'); if (stanje.razlicice) pokaziRazlicice(stanje.razlicice.pot, stanje.razlicice.ime); } catch (e) { obvesti(e.message, true); } });
+    odj.addEventListener('click', async () => { try { stanje.oblak = await oblakKlic('POST', '/oblak/odjava'); if (stanje.razlicice) pokaziRazlicice(stanje.razlicice.pot, stanje.razlicice.ime); osveziTrakRazlicic(true); } catch (e) { obvesti(e.message, true); } });
     n.append(odj);
   }
 }
@@ -2225,6 +2264,7 @@ async function pokaziRazlicice(pot, ime) {
   try {
     const z = await oblakKlic('GET', '/oblak/zgodovina', { pot });
     if (!stanje.razlicice || stanje.razlicice.pot !== pot) return;
+    if (potNiz(pot) === potNiz(trakRazlicic.pot)) { trakRazlicic.zgodovina = z; narisiTrakRazlicic(); }   // vrstica pod pogledom iz istega odgovora
     const pdm = z.pdm || {};
     const IME_STANJA = { osnutek: 'osnutek', v_pregledu: 'v pregledu', izdano: 'izdano' };
     const stanjeDatoteke = pdm.stanje === 'izdano' ? 'izdana revizija ' + (pdm.oznaka || '')
@@ -2311,6 +2351,128 @@ async function pokaziRazlicice(pot, ime) {
   } catch (e) {
     v.innerHTML = ''; v.append(el('div', 'prazno', String(e.message || e)));
   }
+}
+// --- Vrstica različic pod pogledom (od 2026-10-13, kot v Oblikovanju) ---------------------------------------------
+// Kartice različic aktivnega dokumenta iz oblaka (isti GET /oblak/zgodovina kot plošča): sličica (render strani po
+// reviziji, GET /oblak/slicica?rev=), številka, stanje, komentar ali datum. Klik odpre kopijo različice za ogled, ↶ jo
+// povrne, Podrobnosti odpre ploščo (zaklep, stanje, komentarji, reference). Sličico trenutne različice pošlje stran
+// (POST /oblak/slicica {pot, png}) po shranjevanju in kadar dokument nima neshranjenih sprememb; strežnik jo pripne
+// reviziji z enakim content_hash (takoj ali ko jo odjemalec oblaka pošlje → dogodek oblak »razlicica«). Starejše
+// različice dobijo sličico, ko jih odpreš za ogled (render kopije gre k reviziji). V 1., 3. in 4. stopnji je vrstica skrita.
+const trakRazlicic = { pot: '', zgodovina: null, zahteva: 0, podpis: '', poslanaSlicica: '' };
+const trakRazlicicEl = $('trakRazlicic');
+function aktivniOdprti() {
+  const odprti = stanje.projekti && stanje.projekti.odprti || [];
+  return odprti.find(o => o.ime === stanje.dokument || o.oznaka === stanje.dokument) || odprti.find(o => o.aktiven) || null;
+}
+function praznoTraku(besedilo, gumb, klik) {
+  trakRazlicic.podpis = '';
+  trakRazlicicEl.innerHTML = '';
+  const p = el('div', 'prazno', besedilo);
+  if (gumb) { const g = el('button', 'g', gumb); g.type = 'button'; g.addEventListener('click', klik); p.append(g); }
+  trakRazlicicEl.append(p);
+}
+async function osveziTrakRazlicic(znova) {
+  const o = aktivniOdprti(), pot = o && o.pot || '';
+  if (!pot || !stanje.oblak || jeRazlicica(pot) || !vOblaku(pot) || !stanje.oblak.prijavljen) {
+    trakRazlicic.pot = ''; trakRazlicic.zgodovina = null; trakRazlicic.zahteva++;
+    if (!stanje.dokument) praznoTraku('Različice se pokažejo tu, ko odpreš dokument iz oblaka.');
+    else if (!pot) praznoTraku('Dokument še ni shranjen v mapo oblaka; različice nastanejo s shranjevanjem.');
+    else if (!stanje.oblak) praznoTraku('Strežnik FreeCAD-a različic iz oblaka še ne pozna (zaženi ga znova).');
+    else if (jeRazlicica(pot)) praznoTraku('Ogled starejše različice: ' + (o.oznaka || o.ime) + '. Shranjevanje ne spremeni datoteke v oblaku; različice so pri izvirniku.');
+    else if (!vOblaku(pot)) praznoTraku('Dokument ni v mapi oblaka (' + stanje.oblak.mapa + '), zato nima različic.');
+    else praznoTraku('Različice so v oblaku; prijavi se.', 'Prijava v oblak', () => pokaziRazlicice(pot, o.oznaka || o.ime));
+    return;
+  }
+  if (potNiz(pot) !== potNiz(trakRazlicic.pot) || znova || !trakRazlicic.zgodovina) {
+    const zahteva = ++trakRazlicic.zahteva;
+    if (potNiz(pot) !== potNiz(trakRazlicic.pot)) { trakRazlicic.pot = pot; trakRazlicic.zgodovina = null; praznoTraku('Nalagam različice …'); }
+    try {
+      const z = await oblakKlic('GET', '/oblak/zgodovina', { pot });
+      if (zahteva !== trakRazlicic.zahteva) return;
+      trakRazlicic.zgodovina = z;
+    } catch (e) { if (zahteva !== trakRazlicic.zahteva) return; trakRazlicic.zgodovina = null; praznoTraku(String(e.message || e)); return; }
+  }
+  narisiTrakRazlicic();
+}
+function narisiTrakRazlicic() {
+  const z = trakRazlicic.zgodovina, o = aktivniOdprti();
+  if (!z || !o || potNiz(o.pot) !== potNiz(trakRazlicic.pot)) return;
+  const podpis = JSON.stringify([o.pot, !!o.spremenjen, z.pdm, z.razlicice.map(r => [r.rev_id, r.current, r.stanje, r.oznaka, r.komentar, r.slicica])]);
+  if (podpis !== trakRazlicic.podpis) {
+    trakRazlicic.podpis = podpis;
+    trakRazlicicEl.innerHTML = '';
+    const pdm = z.pdm || {}, n = z.razlicice.length;
+    const IME_STANJA = { osnutek: 'osnutek', v_pregledu: 'v pregledu', izdano: 'izdano' };
+    const glava = el('div', 'glavaTraku');
+    const naslov = el('div', 'naslov', 'Različice'); naslov.append(el('span', 'stevilo', String(n)));
+    const opis = el('div', 'opis', (pdm.stanje === 'izdano' ? 'izdana revizija ' + (pdm.oznaka || '')
+      : (IME_STANJA[pdm.stanje] || 'osnutek') + (pdm.zadnja_izdana ? ' · zadnja izdana ' + pdm.zadnja_izdana.oznaka : '')) + (o.spremenjen ? ' · neshranjene spremembe' : ''));
+    opis.title = z.prostor + ' · ' + z.potVOblaku;
+    const gumbi = el('div', 'gumbi');
+    const shrani = el('button', 'g' + (o.spremenjen ? ' glavni' : ''), 'Shrani različico'); shrani.type = 'button';
+    shrani.title = 'Shrani dokument (kot Ctrl+S v FreeCAD-u); odjemalec oblaka pošlje novo različico, stran nato vpraša, kaj si spremenil';
+    shrani.addEventListener('click', () => objavi('/ukaz', { ime: 'Std_Save' }).catch(pokaziNapako));
+    const vse = el('button', 'g', 'Podrobnosti'); vse.type = 'button'; vse.title = 'Plošča z različicami: zaklep, stanje revizije, komentarji, reference';
+    vse.addEventListener('click', () => pokaziRazlicice(o.pot, o.oznaka || o.ime));
+    gumbi.append(shrani, vse); glava.append(naslov, opis, gumbi); trakRazlicicEl.append(glava);
+    if (!n) trakRazlicicEl.append(el('div', 'prazno', 'Dokument še nima različic v oblaku: shrani ga, odjemalec oblaka pošlje prvo.'));
+    for (const r of z.razlicice) trakRazlicicEl.append(kartaRazlicice(o, r));   // najnovejša levo, kot v plošči
+  }
+  posljiSlicicoTrenutne();
+}
+function kartaRazlicice(o, r) {
+  const k = el('button', 'kartaRazlicice' + (r.current ? ' trenutna' : '')); k.type = 'button';
+  const kdo = r.device ? [r.device.user, r.device.name].filter(Boolean).join(' · ') : '';
+  k.title = '#' + r.st + ' · ' + datumRazlicice(r.at) + (kdo ? ' · ' + kdo : '') + ' · ' + velikostB(r.size)
+    + (r.komentar ? '\n' + r.komentar : '') + (r.current ? '\nTrenutna različica (vsebina datoteke).' : '\nKlik: odpri kopijo te različice za ogled.');
+  const slika = el('div', 'slika' + (r.slicica ? '' : ' brez'));
+  slika.style.backgroundImage = 'url("' + (r.slicica ? '/oblak/slicica?rev=' + encodeURIComponent(r.rev_id) : IKONA_KOCKE(false)) + '")';
+  if (!r.current) {
+    const p = el('button', 'povrni', '↶'); p.type = 'button'; p.title = 'Povrni: nova trenutna različica z vsebino te';
+    p.addEventListener('click', e => { e.stopPropagation(); povrniRazlicico(o, r); }); slika.append(p);
+  }
+  const spodaj = el('div', 'spodaj'); spodaj.append(el('b', '', '#' + r.st));
+  if (r.current) spodaj.append(el('span', 'znacka ok', 'trenutna'));
+  if (r.stanje === 'izdano') spodaj.append(el('span', 'znacka izdano', ('izdano ' + (r.oznaka || '')).trim()));
+  else if (r.stanje === 'v_pregledu') spodaj.append(el('span', 'znacka pregled', 'v pregledu'));
+  else if (!r.current && r.obnovljenaIz) spodaj.append(el('span', 'znacka', 'iz #' + r.obnovljenaIz));
+  k.append(slika, spodaj, el('div', 'op', r.komentar || datumRazlicice(r.at)));
+  k.addEventListener('click', () => odpriRazlicico(o, r));
+  return k;
+}
+async function odpriRazlicico(o, r) {
+  if (r.current) { obvesti('To je trenutna različica; odprta je v pogledu.'); return; }
+  try { const d = await oblakKlic('POST', '/oblak/odpri', { pot: o.pot, rev: r.rev_id }); obvesti('Odprta različica #' + d.st + ' (samo za ogled).'); }
+  catch (e) { obvesti(e.message, true); }
+}
+async function povrniRazlicico(o, r) {
+  if (!confirm('Povrnem različico #' + r.st + ' z dne ' + datumRazlicice(r.at) + '?\n\nTrenutna vsebina ostane v zgodovini kot starejša različica. Lokalno datoteko bo posodobil odjemalec oblaka, odprt dokument brez neshranjenih sprememb se osveži sam.')) return;
+  try {
+    const d = await oblakKlic('POST', '/oblak/obnovi', { pot: o.pot, rev: r.rev_id });
+    obvesti(d.unchanged ? 'Ta različica je že trenutna.' : 'Različica #' + r.st + ' je povrnjena v oblaku; čakam, da odjemalec oblaka posodobi datoteko.');
+  } catch (e) { obvesti(e.message, true); }
+  osveziTrakRazlicic(true);
+  if (stanje.razlicice) pokaziRazlicice(stanje.razlicice.pot, stanje.razlicice.ime);
+}
+// Sličica trenutne različice: render strani, kadar dokument nima neshranjenih sprememb in revizija sličice še nima.
+function posljiSlicicoTrenutne() {
+  const z = trakRazlicic.zgodovina, o = aktivniOdprti();
+  if (!z || !o || o.spremenjen || !koren.children.length || skica.posnetek) return;
+  const t = z.razlicice.find(r => r.current);
+  if (!t || t.slicica) return;
+  posljiSlicicoRazlicice(o.pot, o.pot + '|' + t.rev_id);
+}
+async function posljiSlicicoRazlicice(pot, kljuc) {
+  if (!pot || !koren.children.length || skica.posnetek) return;
+  if (kljuc && trakRazlicic.poslanaSlicica === kljuc) return;
+  trakRazlicic.poslanaSlicica = kljuc || '';
+  try {
+    const platno = await izrisiIzometrijo(null, VELIKOST_SLICICE);
+    if (!platno) { trakRazlicic.poslanaSlicica = ''; return; }
+    const d = await oblakKlic('POST', '/oblak/slicica', { pot, png: platno.toDataURL('image/png') });
+    if (d.takoj) osveziTrakRazlicic(true);
+  } catch (e) { trakRazlicic.poslanaSlicica = ''; console.warn('sličica različice:', e); }
 }
 // Reference (PDM): katere datoteke sestav vsebuje (povezave App::Link v druge FCStd), kje je ta datoteka uporabljena,
 // in poenostavljena kosovnica. Oblak jih prebere iz Document.xml ob vsaki novi različici.
@@ -2818,6 +2980,7 @@ async function naloziModel() {
   stanje.dokument = model.dokument; stanje.verzija = model.verzija;
   if (meritve.dokument !== model.dokument) pocistiMeritve();
   meritve.dokument = model.dokument; meritve.tocke = null;
+  osveziTrakRazlicic();   // vrstica različic sledi aktivnemu dokumentu (zgodovina se naloži le ob drugi datoteki)
   narisiDrevo(model.drevo);
   posodobiRisbe(model.drevo);   // strani TechDraw: gumb Risbe, odprt list se naloži znova
   uporabiRazstavitev();   // nove skupine objektov dobijo odmik trenutne razstavitve; nastavi tudi sferaModela
@@ -5381,9 +5544,16 @@ if (pomocnikNastavitev('pomocnikOdprt', '0') === '1') odpriPomocnika();
 dogodki.addEventListener('oblak', e => {
   try {
     const o = JSON.parse(e.data);
-    if (o.vrsta === 'shranjeno') { vprasajKomentar(o); return; }
+    if (o.vrsta === 'shranjeno') {
+      vprasajKomentar(o);
+      // sličica nove različice: render strani, a le če je shranjeni dokument tisti v pogledu (samodejno shranjevanje shrani tudi druge)
+      if (potNiz(o.pot) === potNiz(potDokumenta())) { trakRazlicic.poslanaSlicica = ''; posljiSlicicoRazlicice(o.pot, o.pot + '|shranjeno'); }
+      return;
+    }
+    if (o.vrsta === 'slicica') { osveziTrakRazlicic(true); return; }   // render odprte kopije je pri reviziji: brez obvestila
     obvesti(o.sporocilo, o.vrsta === 'neosvezeno' || o.vrsta === 'cakanje' || o.vrsta === 'napaka' || o.vrsta === 'zaklep-tuj');
     if (stanje.razlicice) pokaziRazlicice(stanje.razlicice.pot, stanje.razlicice.ime);
+    osveziTrakRazlicic(true);
   } catch (err) { pokaziNapako(err); }
 });
 // Po shranjevanju datoteke iz mape oblaka: »Kaj si spremenil?« (PDM). Komentar gre k reviziji, ki jo oblaku
@@ -5395,7 +5565,7 @@ function vprasajKomentar(o) {
   const poslji = async () => {
     const besedilo = vnos.value.trim();
     if (!besedilo) { zapri(); return; }
-    try { const r = await oblakKlic('POST', '/oblak/komentar', { pot: o.pot, komentar: besedilo }); obvesti(r.takoj ? 'Komentar je zapisan k različici #' + r.st + '.' : 'Komentar bo zapisan, ko odjemalec oblaka pošlje novo različico.'); if (stanje.razlicice) pokaziRazlicice(stanje.razlicice.pot, stanje.razlicice.ime); }
+    try { const r = await oblakKlic('POST', '/oblak/komentar', { pot: o.pot, komentar: besedilo }); obvesti(r.takoj ? 'Komentar je zapisan k različici #' + r.st + '.' : 'Komentar bo zapisan, ko odjemalec oblaka pošlje novo različico.'); if (stanje.razlicice) pokaziRazlicice(stanje.razlicice.pot, stanje.razlicice.ime); if (r.takoj) osveziTrakRazlicic(true); }
     catch (e) { obvesti(e.message, true); }
     zapri();
   };

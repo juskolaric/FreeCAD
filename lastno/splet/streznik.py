@@ -88,7 +88,7 @@ from drevo import drevo_dejanje, drevo_dokumenta  # noqa: E402
 from baza import baza_dejanje, v_bazi as _v_bazi, tarca as _tarca_baze, BAZA as MAPA_BAZE  # noqa: E402
 import videz  # noqa: E402
 import samodejno  # noqa: E402  (tiha obnova dokumentov, samodejno shranjevanje)
-from oblak import Oblak, obdelaj_zahtevo as oblak_zahteva  # noqa: E402
+from oblak import Oblak, obdelaj_zahtevo as oblak_zahteva, pot_slicice_revizije as oblak_slicica_revizije  # noqa: E402
 import mcp_orodja  # noqa: E402  (orodja za AI prek MCP: GET /mcp/orodja, POST /mcp/orodje; most lastno/mcp)
 import pomocnik  # noqa: E402  (pomočnik AI v stranski plošči strani: GET/POST /pomocnik, isti katalog orodij)
 
@@ -3551,6 +3551,20 @@ class Zahteva(http.server.BaseHTTPRequestHandler):
             self._odgovor(STANJE.projekti())
         elif pot == "/knjiznica":
             self._odgovor(json.dumps(zgradi_knjiznico(), ensure_ascii=False).encode("utf-8"))
+        elif pot == "/oblak/slicica":
+            # Sličica različice (render strani, oblak.shrani_slicico) za vrstico različic pod pogledom; PNG ali 404.
+            import urllib.parse
+            q = urllib.parse.parse_qs(self.path.partition("?")[2])
+            p = oblak_slicica_revizije((q.get("rev") or [""])[0])
+            try:
+                with open(p, "rb") as f:
+                    slika = f.read()
+            except (OSError, TypeError):
+                slika = None
+            if slika is None:
+                self._odgovor(b"", "text/plain", 404)
+            else:
+                self._odgovor(slika, "image/png", predpomni=True)
         elif pot.startswith("/oblak/"):
             # Različice iz oblaka (oblak.py): klici v oblak tečejo tu, na niti strežnika.
             import urllib.parse
@@ -3781,6 +3795,10 @@ class Zahteva(http.server.BaseHTTPRequestHandler):
             except OSError as e:
                 self._odgovor(json.dumps({"napaka": str(e)}).encode("utf-8"), koda=500)
                 return
+            try:
+                OBLAK.slicica_kopije(iskana, bajti)   # odprta kopija različice: render gre tudi k tej reviziji (vrstica različic)
+            except Exception as e:  # noqa: BLE001
+                _log("oblak: sličica kopije: %r" % e)
             STANJE.zadnji_projekti = 0.0   # seznam se pošlje znova z novo različico sličice
             self._odgovor(b'{"ok":true}')
         elif pot == "/python":

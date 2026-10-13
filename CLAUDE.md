@@ -533,6 +533,17 @@ FreeCAD je motor, vmesnik in grafika nastajata v brskalniku (plan, korak 8 napre
   (`GET /oblak/reference?pot=` → `razdelekReferenc` na dnu plošče z različicami; poti povezanih datotek se preslikajo
   nazaj v lokalne, klik jih odpre). Odpiranje sestava s povezavami (XLink) v FreeCAD-u samodejno odpre tudi povezane
   dokumente — vsi dobijo zaklep in ga ob izhodu sprostijo.
+  **Vrstica različic pod pogledom** (od 2026-10-13, želja uporabnika »kot pri Oblikovanju«; `#trakRazlicic` nad `#statusna`,
+  `osveziTrakRazlicic`/`narisiTrakRazlicic`, v 1., 3. in 4. stopnji skrita): kartice različic aktivnega dokumenta iz oblaka (najnovejša
+  levo; sličica, #N, značke trenutna/v pregledu/izdano, komentar ali datum), klik = Odpri kopijo za ogled, ↶ = Povrni, glava s
+  »Shrani različico« (`Std_Save`) in »Podrobnosti« (plošča). Vir je isti `GET /oblak/zgodovina` (zdaj z `slicica` po reviziji); zgodovina
+  se naloži ob drugi datoteki, ob dogodku `oblak` in prijavi/odjavi. Ogled kopije, neshranjen dokument, datoteka zunaj oblaka ali
+  neprijavljen: vrstica to pove (s prijavo). **Sličice različic** so lokalne (oblak jih ne hrani): `%LOCALAPPDATA%/FreeCAD-splet/slicice/
+  razlicice/<rev_id>.png`, `GET /oblak/slicica?rev=`. Stran pošlje render (`POST /oblak/slicica {pot, png}`) po shranjevanju (dogodek
+  `shranjeno`, le za dokument v pogledu) in kadar trenutna revizija sličice nima, dokument pa ni spremenjen; `Oblak.shrani_slicico` jo
+  pripne reviziji z enakim `content_hash` takoj ali počaka v `slicice/cakajoce/<hash>.png` (nit do 3 min, nato dogodek `oblak` vrste
+  `razlicica`; `zgodovina` čakajoče pripenja tudi sama). Render odprte kopije (`POST /slicica`) gre prek `Oblak.slicica_kopije` k njeni
+  reviziji (`_kopije` iz `prenesi`, dogodek `slicica`) — starejše različice dobijo sličico, ko jih enkrat odpreš.
 - Obrazci (od 2026-10-07): **vsa** okna FreeCAD-a gredo v brskalnik, okno FreeCAD-a se ne pokaže. Filter dogodkov na
   aplikaciji vsako novo okno (pogovor, sporočilo, izbira datoteke) ob prikazu naredi nevidno (prosojnost 0, zunaj zaslona,
   brez fokusa tipkovnice; skriti ga ne sme, ker `hide()` konča modalni pogovor). Vsakih 250 ms `_zajemi_obrazec` prebere

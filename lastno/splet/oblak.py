@@ -27,6 +27,11 @@ import urllib.request
 MAPA_NASTAVITEV = os.path.join(os.environ.get("LOCALAPPDATA") or os.path.expanduser("~"), "FreeCAD-splet")
 DATOTEKA_SEJE = os.path.join(MAPA_NASTAVITEV, "oblak.json")
 MAPA_RAZLICIC = os.path.join(MAPA_NASTAVITEV, "razlicice")
+# Sličice različic za vrstico pod pogledom (od 2026-10-13): render strani po reviziji (<rev_id>.png) in sličice, ki čakajo
+# na revizijo z enakim content_hash (<hash>.png), dokler je odjemalec oblaka ne pošlje.
+MAPA_SLICIC_RAZLICIC = os.path.join(MAPA_NASTAVITEV, "slicice", "razlicice")
+MAPA_SLICIC_CAKAJOCIH = os.path.join(MAPA_NASTAVITEV, "slicice", "cakajoce")
+_REV_ID = re.compile(r"^[A-Za-z0-9_-]{1,80}$")
 NASTAVITVE_ODJEMALCA = os.path.join(os.environ.get("APPDATA") or os.path.expanduser("~"), "Oblak", "nastavitve.json")
 OSEBNA_MAPA = "Osebno"
 PRIVZETI_API = "http://127.0.0.1:8790"
@@ -48,6 +53,20 @@ def varno_ime(ime):
     if len(ocisceno) > 80:
         ocisceno = ocisceno[:80].rstrip()
     return ocisceno or "Prostor"
+
+
+def pot_slicice_revizije(rev):
+    """Pot PNG sličice revizije (render strani) ali None pri neveljavnem id-ju; nit strežnika jo streže kot GET /oblak/slicica."""
+    rev = str(rev or "")
+    return os.path.join(MAPA_SLICIC_RAZLICIC, rev + ".png") if _REV_ID.match(rev) else None
+
+
+def _zapisi_png(pot, png):
+    os.makedirs(os.path.dirname(pot), exist_ok=True)
+    zacasna = pot + ".tmp"
+    with open(zacasna, "wb") as f:
+        f.write(png)
+    os.replace(zacasna, pot)
 
 
 def _skupina(prostor):
@@ -89,6 +108,8 @@ class Oblak:
         self._zaklepi = {}       # pot (normcase) -> zaklep iz oblaka (slovar) ali None; predpomnilnik za seznam dokumentov
         self._moji = set()       # poti, ki jih je zaklenil ta primerek (ob zaprtju/izhodu jih sprosti)
         self._zahtevani = set()  # poti, za katere je samodejni zaklep ob odprtju že sprožen
+        self._kopije = {}        # pot prenesene različice (normcase) -> {izvirnik, rev}: sličica odprte kopije gre k tej reviziji
+        self._cakajoce = set()   # content_hash sličic, na katerih revizijo že čaka nit v ozadju
 
     # ------------------------------------------------------------------ nastavitve
     @staticmethod
@@ -408,9 +429,12 @@ class Oblak:
         razlicice = z.get("revisions") or []
         n = len(razlicice)
         po_id = {r["rev_id"]: n - i for i, r in enumerate(razlicice)}
+        self._pripni_cakajoce_slicice(razlicice)
         for i, r in enumerate(razlicice):
             r["st"] = n - i
             r["obnovljenaIz"] = po_id.get(r.get("restored_from"))
+            p = pot_slicice_revizije(r.get("rev_id"))
+            r["slicica"] = bool(p and os.path.isfile(p))
         return {"pot": lokalna_pot, "ime": z.get("name"), "prostor": prostor["name"], "potVOblaku": pot,
                 "trenutna": z.get("current_rev"), "razlicice": razlicice, "lokalnoSpremenjeno": lokalno,
                 "pdm": z.get("pdm") or {}, "mapaRazlicic": MAPA_RAZLICIC}
@@ -440,7 +464,86 @@ class Oblak:
                 f.write(kos)
         os.replace(zacasna, cilj)
         oznaka = "%s · različica %d (%s)" % (ime, st, datum)
+        self._kopije[os.path.normcase(os.path.normpath(cilj))] = {"izvirnik": lokalna_pot, "rev": rev}
         return cilj, oznaka, st
+
+    # ------------------------------------------------------------------ sličice različic (vrstica pod pogledom)
+    def _pripni_cakajoce_slicice(self, razlicice):
+        """Sličice, ki čakajo po content_hash (shrani_slicico pred prihodom revizije), preseli k revizijam z istim hashem."""
+        if not os.path.isdir(MAPA_SLICIC_CAKAJOCIH):
+            return
+        for r in razlicice:
+            h, p = r.get("content_hash") or "", pot_slicice_revizije(r.get("rev_id"))
+            if not p or not re.match(r"^[0-9a-f]{16,128}$", h) or os.path.isfile(p):
+                continue
+            cakajoca = os.path.join(MAPA_SLICIC_CAKAJOCIH, h + ".png")
+            if os.path.isfile(cakajoca):
+                try:
+                    os.makedirs(MAPA_SLICIC_RAZLICIC, exist_ok=True)
+                    os.replace(cakajoca, p)
+                except OSError as e:
+                    self._log("oblak: sličica različice: %r" % e)
+
+    def shrani_slicico(self, lokalna_pot, png):
+        """Render strani kot sličica različice, katere vsebina je datoteka na disku (po shranjevanju ali ob nespremenjenem
+        dokumentu): k reviziji z enakim content_hash takoj, sicer čaka po hashu in nit v ozadju jo pripne, ko odjemalec
+        oblaka revizijo pošlje (dogodek »oblak« vrste »razlicica«, da stran vrstico osveži)."""
+        prostor, pot = self.razresi(lokalna_pot)
+        hash_ = self._vsebinski_hash(lokalna_pot)
+
+        def poisci():
+            z = self._klic("GET", "/v1/zgodovina", poizvedba={"namespace_id": prostor["id"], "path": pot})
+            razlicice = z.get("revisions") or []
+            for i, r in enumerate(razlicice):
+                if r.get("content_hash") == hash_:
+                    return r, len(razlicice) - i
+            return None, None
+
+        try:
+            r, st = poisci()
+        except NapakaOblaka as e:
+            if e.status != 404:
+                raise
+            r, st = None, None
+        if r is not None:
+            _zapisi_png(pot_slicice_revizije(r["rev_id"]), png)
+            return {"ok": True, "takoj": True, "st": st, "rev": r["rev_id"]}
+        _zapisi_png(os.path.join(MAPA_SLICIC_CAKAJOCIH, hash_ + ".png"), png)
+        with self.kljuc:
+            if hash_ in self._cakajoce:
+                return {"ok": True, "takoj": False}
+            self._cakajoce.add(hash_)
+
+        def cakaj():
+            konec = time.time() + CAKANJE_NA_ODJEMALCA
+            ime = os.path.basename(lokalna_pot)
+            try:
+                while time.time() < konec:
+                    time.sleep(2.0)
+                    try:
+                        r2, st2 = poisci()
+                    except NapakaOblaka:
+                        continue
+                    if r2 is not None:
+                        self._pripni_cakajoce_slicice([r2])
+                        self._oddaj_dogodek("razlicica", lokalna_pot, "Nova različica #%d datoteke »%s« je v oblaku." % (st2, ime))
+                        return
+            finally:
+                with self.kljuc:
+                    self._cakajoce.discard(hash_)
+
+        threading.Thread(target=cakaj, name="oblak-slicica", daemon=True).start()
+        return {"ok": True, "takoj": False}
+
+    def slicica_kopije(self, pot, png):
+        """Render odprte kopije različice (POST /slicica strani) gre tudi k tej reviziji; vrne rev ali None."""
+        k = self._kopije.get(os.path.normcase(os.path.normpath(pot or "")))
+        p = pot_slicice_revizije(k["rev"]) if k else None
+        if not p or os.path.isfile(p):
+            return None
+        _zapisi_png(p, png)
+        self._oddaj_dogodek("slicica", k["izvirnik"], "")
+        return k["rev"]
 
     # ------------------------------------------------------------------ komentar in stanje (PDM, korak 3)
     @staticmethod
@@ -593,6 +696,17 @@ def obdelaj_zahtevo(oblak, metoda, pot, podatki):
             return 200, r
         if metoda == "POST" and pot == "/oblak/komentar":
             return 200, oblak.komentar_ob_shranjevanju(podatki.get("pot", ""), podatki.get("komentar", ""))
+        if metoda == "POST" and pot == "/oblak/slicica":
+            # Render strani (PNG kot data URL) za različico z vsebino datoteke na disku (vrstica različic pod pogledom).
+            import base64
+            png = podatki.get("png", "") or ""
+            try:
+                bajti = base64.b64decode(png.partition(",")[2] if png.startswith("data:") else png)
+            except (ValueError, TypeError):
+                bajti = b""
+            if not bajti.startswith(b"\x89PNG") or len(bajti) > 2_000_000:
+                return 400, {"napaka": "Sličica ni PNG ali je prevelika", "koda": "png"}
+            return 200, oblak.shrani_slicico(podatki.get("pot", ""), bajti)
         if metoda == "POST" and pot == "/oblak/revizija":
             return 200, oblak.revizija(podatki.get("pot", ""), podatki.get("rev", ""),
                                        podatki.get("komentar"), podatki.get("stanje"))
