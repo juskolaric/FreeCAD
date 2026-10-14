@@ -544,6 +544,16 @@ FreeCAD je motor, vmesnik in grafika nastajata v brskalniku (plan, korak 8 napre
   pripne reviziji z enakim `content_hash` takoj ali počaka v `slicice/cakajoce/<hash>.png` (nit do 3 min, nato dogodek `oblak` vrste
   `razlicica`; `zgodovina` čakajoče pripenja tudi sama). Render odprte kopije (`POST /slicica`) gre prek `Oblak.slicica_kopije` k njeni
   reviziji (`_kopije` iz `prenesi`, dogodek `slicica`) — starejše različice dobijo sličico, ko jih enkrat odpreš.
+  **Različica dokumenta** (od 2026-10-14, želja uporabnika »vsak kos naj dobi verzijo, ki se ob spremembi poveča, kot v Oblikovanju«):
+  celo število v `Meta["Verzija"]` dokumenta (+ `VerzijaDatum`), ki ga `OpazovalecDokumenta.slotStartSaveDocument` poveča tik pred zapisom
+  vsakega shranjevanja dokumenta s spremembami (`Gui` `Modified`; dokument brez različice jo dobi ob prvem shranjevanju). Ne poveča se pri
+  kopiji (`saveCopy`: ime ni `FileName`), pri odprti kopiji različice iz oblaka in pri shranjevanju brez vsebinske spremembe (premik v bazo,
+  `STANJE.brez_verzije`). Neodvisna od revizij v oblaku (#N). Zapisana je v `Document.xml`, zato jo `_lastnosti_fcstd` prebere brez
+  odpiranja (`verzija` pri datotekah map projektov, knjižnici in `verzijaDatoteke` pri odprtih). Stran: čip `v7` (`cipVerzije`) v seznamu
+  odprtih in datotek, oranžno `v7 → v9`, ko je datoteka na disku novejša od odprtega dokumenta (shranila jo je druga seja); značka v kartici
+  Zgradbe in v knjižnici; `dokument v7` v glavi vrstice različic; vprašanje »Kaj si spremenil?« nosi novo različico (dogodek `shranjeno`,
+  polje `verzija`). MCP: `dokumenti` izpiše `v7`, `shrani` vrne novo različico. Vroča zamenjava ne preveže `slotStartSaveDocument`
+  (Python opazovalec slote veže ob registraciji) — po spremembi opazovalca ponovno zaženi strežnik ali dodaj nov opazovalec le s tem slotom.
 - Obrazci (od 2026-10-07): **vsa** okna FreeCAD-a gredo v brskalnik, okno FreeCAD-a se ne pokaže. Filter dogodkov na
   aplikaciji vsako novo okno (pogovor, sporočilo, izbira datoteke) ob prikazu naredi nevidno (prosojnost 0, zunaj zaslona,
   brez fokusa tipkovnice; skriti ga ne sme, ker `hide()` konča modalni pogovor). Vsakih 250 ms `_zajemi_obrazec` prebere

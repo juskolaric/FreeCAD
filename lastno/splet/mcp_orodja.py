@@ -808,9 +808,10 @@ def t_dokumenti(a):
         if filt and filt not in _normaliziraj_besedilo(d.Label + " " + d.Name + " " + (d.FileName or "")):
             continue
         vrsta = S._vrsta_iz_tipov(o.TypeId for o in d.Objects).get("vrsta", "")
-        vrstice.append("%s »%s« [%s] %s, objektov %d%s · %s" % (
+        verzija = S.verzija_dokumenta(d)
+        vrstice.append("%s »%s« [%s] %s%s, objektov %d%s · %s" % (
             "*" if aktivni is not None and d.Name == aktivni.Name else "-", d.Label, d.Name, vrsta or "?",
-            len(d.Objects), " · NESHRANJEN" if _spremenjen(d) else "", d.FileName or "ni shranjen"))
+            " v%d" % verzija if verzija else "", len(d.Objects), " · NESHRANJEN" if _spremenjen(d) else "", d.FileName or "ni shranjen"))
     return "Odprti dokumenti (%d; * = aktivni):\n%s" % (len(vrstice), "\n".join(vrstice) or "(ni jih)")
 
 
@@ -1928,7 +1929,8 @@ def t_shrani(a):
         except Exception:  # noqa: BLE001
             pass
     S.STANJE.zadnji_projekti = 0.0
-    izid = {"besedilo": "Shranjeno: %s" % izhod}
+    verzija = 0 if a.get("kopija") else S.verzija_dokumenta(doc)
+    izid = {"besedilo": "Shranjeno: %s%s" % (izhod, " (različica v%d)" % verzija if verzija else "")}
     if a.get("komentar") and not a.get("kopija"):
         komentar, datoteka = a["komentar"], izhod
 

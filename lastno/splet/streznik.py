@@ -569,6 +569,7 @@ def _videz_dejanje(podatki):
         shranjenih = 0
         if podatki.get("shrani"):
             STANJE.tiho_shranjevanje = True
+            STANJE.brez_verzije = True   # vsebina kosov se ni spremenila (le pot povezav): različica ostane
             try:
                 for d in spremenjeni:
                     if d.FileName:
@@ -578,6 +579,7 @@ def _videz_dejanje(podatki):
                             Gui.getDocument(d.Name).Modified = False
             finally:
                 STANJE.tiho_shranjevanje = False
+                STANJE.brez_verzije = False
         return {"ok": True, "kosi": sorted(o.Label for o in kosi.values()),
                 "sporocilo": "Videz pločevine: %d kosov v %d datotekah%s." % (
                     len(kosi), len(spremenjeni), ", shranjeno" if shranjenih else " (neshranjeno)")}
@@ -636,7 +638,7 @@ def _zgradba_dokumenta(doc, globina=0, pot=()):
     (App::Link) v sestavu, enaki (isti cilj) združeni s količino; sledi povezavam v druge datoteke."""
     asm = next((o for o in doc.Objects if o.TypeId == "Assembly::AssemblyObject"), None)
     koren = asm or next((o for o in doc.Objects if "Izvor" in o.PropertiesList and not o.Name.startswith("Razgrnitev")), None)
-    vozel = {"oznaka": doc.Label, "dokument": doc.Name, "pot": doc.FileName,
+    vozel = {"oznaka": doc.Label, "dokument": doc.Name, "pot": doc.FileName, "verzija": verzija_dokumenta(doc),
              "vrsta": _vrsta_objekta(koren) if koren is not None else ("sestav" if asm else "del"), "otroci": []}
     if asm is None or globina > 12 or doc.Name in pot:
         return vozel
@@ -2188,7 +2190,7 @@ def _lastnosti_fcstd(pot, st):
     kljuc = (os.path.normcase(pot), int(st.st_mtime), st.st_size)
     r = _LASTNOSTI_FCSTD.get(kljuc)
     if r is None:
-        r = {"vrsta": "", "teles": 0, "povezav": 0, "slicica": False}
+        r = {"vrsta": "", "teles": 0, "povezav": 0, "slicica": False, "verzija": 0}
         try:
             with zipfile.ZipFile(pot) as z:
                 imena = z.namelist()
@@ -2199,7 +2201,19 @@ def _lastnosti_fcstd(pot, st):
                     # tokovi; sicer jo proces drži odprto do pospravljanja smeti in FreeCAD zavrne naslednje
                     # shranjevanje (»file is marked as read-only«, FileInfo::isWritable odpre brez deljenja)
                     with z.open("Document.xml") as tok:
-                        for _, e in ET.iterparse(tok):
+                        v_meta = v_objektih = False   # Meta dokumenta je pred <ObjectData>; Item z istim ključem pri objektih ne šteje
+                        for dogodek, e in ET.iterparse(tok, events=("start", "end")):
+                            if dogodek == "start":
+                                if e.tag == "ObjectData":
+                                    v_objektih = True
+                                elif e.tag == "Property" and not v_objektih:
+                                    v_meta = e.get("name") == "Meta"
+                                elif e.tag == "Item" and v_meta and e.get("key") == KLJUC_VERZIJE:
+                                    try:
+                                        r["verzija"] = int(str(e.get("value", "0")).strip() or 0)
+                                    except ValueError:
+                                        pass
+                                continue
                             if e.tag == "Object" and e.get("type"):
                                 tipi.append(e.get("type"))
                             if e.tag in ("Object", "Property"):
@@ -2348,6 +2362,29 @@ def _spremenjen(doc):
         return False
 
 
+# Različica dokumenta (od 2026-10-14, želja uporabnika »vsak kos naj dobi verzijo, kot v Oblikovanju«): celo število v
+# Meta["Verzija"] dokumenta (zapisano v Document.xml, zato ga seznam datotek prebere brez odpiranja), ki ga opazovalec
+# poveča tik pred vsakim shranjevanjem dokumenta s spremembami (slotStartSaveDocument). Neodvisna od revizij v oblaku (#N).
+KLJUC_VERZIJE = "Verzija"
+
+
+def verzija_dokumenta(doc):
+    """Različica dokumenta iz Meta (0 = še brez)."""
+    try:
+        return int(str(doc.Meta.get(KLJUC_VERZIJE, "0") or "0").strip())
+    except Exception:  # noqa: BLE001
+        return 0
+
+
+def _povecaj_verzijo(doc):
+    meta = dict(doc.Meta)
+    v = verzija_dokumenta(doc) + 1
+    meta[KLJUC_VERZIJE] = str(v)
+    meta["VerzijaDatum"] = time.strftime("%Y-%m-%dT%H:%M:%S")
+    doc.Meta = meta
+    return v
+
+
 def zgradi_projekte():
     aktivni = App.ActiveDocument.Name if App.ActiveDocument is not None else ""
     odprti = []
@@ -2357,6 +2394,7 @@ def zgradi_projekte():
         o = {"ime": d.Name, "oznaka": d.Label, "pot": _pot(d.FileName) if d.FileName else "",
              "spremenjen": _spremenjen(d), "aktiven": d.Name == aktivni, "slicica": False, "spremenjeno": 0, "slicicaV": 0}
         o.update(_vrsta_iz_tipov(x.TypeId for x in d.Objects))
+        o["verzija"] = verzija_dokumenta(d)
         if d.FileName:
             try:
                 # PDM: zaklep datoteke (iz predpomnilnika; ob prvem odprtju se sproži samodejni zaklep v ozadju)
@@ -2367,7 +2405,9 @@ def zgradi_projekte():
                 st = os.stat(d.FileName)
                 render = _shranjena_slicica(d.FileName)
                 o["spremenjeno"] = int(st.st_mtime)
-                o["slicica"] = _lastnosti_fcstd(d.FileName, st)["slicica"] or render > 0
+                lastnosti = _lastnosti_fcstd(d.FileName, st)
+                o["slicica"] = lastnosti["slicica"] or render > 0
+                o["verzijaDatoteke"] = lastnosti.get("verzija", 0)   # višja od verzija = datoteko je shranila druga seja
                 o["slicicaV"] = max(render, int(st.st_mtime))
             except OSError:
                 pass
@@ -3407,6 +3447,22 @@ class OpazovalecDokumenta:
         except Exception as e:  # noqa: BLE001
             _log("oblak: odklep ob zaprtju: %r" % e)
 
+    def slotStartSaveDocument(self, doc, ime):
+        # Različica dokumenta: Meta["Verzija"] + 1 tik pred zapisom, da gre nova številka v datoteko. Ne poveča se pri
+        # kopiji (Save a Copy: ime ni FileName), pri odprti kopiji različice iz oblaka, pri shranjevanju brez vsebinske
+        # spremembe (premik v bazo, STANJE.brez_verzije) in pri nespremenjenem dokumentu, ki različico že ima.
+        try:
+            if getattr(STANJE, "brez_verzije", False) or not ime or not doc.FileName or not _ista_pot(ime, doc.FileName):
+                return
+            if OBLAK.je_razlicica(ime):
+                return
+            if IMA_OKNO and not _spremenjen(doc) and verzija_dokumenta(doc) > 0:
+                return
+            v = _povecaj_verzijo(doc)
+            _log("različica: »%s« -> v%d" % (doc.Label, v))
+        except Exception as e:  # noqa: BLE001
+            _log("različica ob shranjevanju: %r" % e)
+
     def slotFinishSaveDocument(self, doc, ime):
         # PDM (oblak.py): po shranjevanju datoteke iz mape oblaka brskalnik vpraša »Kaj si spremenil?«;
         # komentar se zapiše k reviziji, ki jo bo oblaku poslal odjemalec oblaka.
@@ -3415,7 +3471,7 @@ class OpazovalecDokumenta:
             return   # premik v bazo standardnih delov shrani več sestavov naenkrat; vsebina se ni spremenila
         try:
             if ime and OBLAK.prijavljen() and OBLAK.v_oblaku(ime) and not OBLAK.je_razlicica(ime):
-                STANJE.oddaj("oblak", {"vrsta": "shranjeno", "pot": ime, "ime": doc.Label})
+                STANJE.oddaj("oblak", {"vrsta": "shranjeno", "pot": ime, "ime": doc.Label, "verzija": verzija_dokumenta(doc)})
         except Exception as e:  # noqa: BLE001
             _log("oblak: dogodek shranjevanja: %r" % e)
 

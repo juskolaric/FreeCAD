@@ -694,6 +694,10 @@
   #obrazec .noga button { font-size: 11px; color: #555; border: none; background: none; padding: 2px 0; text-decoration: underline; }
   /* Različice iz oblaka (PDM): gumb ob datoteki, plošča z različicami, razdelek s prijavo, obvestilo */
   #stranski .vnos .cip.razlicica { background: #fff3cd; color: #7a5a00; }
+  /* Različica dokumenta (Meta »Verzija«, od 2026-10-14, kot revizije R01 … v Oblikovanju); oranžno, ko je datoteka na disku novejša */
+  #stranski .vnos .cip.verzija { background: #ede9fe; color: #5b21b6; font-variant-numeric: tabular-nums; }
+  #stranski .vnos .cip.verzija.zastarela { background: #fff4e5; color: #a85600; }
+  .shema .kartica .verzija, #knjiznica .kos .podatki .verzija { font-weight: 600; color: #5b21b6; font-variant-numeric: tabular-nums; }
   #stranski .oblak { padding: 4px 10px 6px; display: flex; flex-direction: column; gap: 4px; font-size: 12px; }
   #stranski .oblak input { border: 1px solid var(--crta); border-radius: 3px; padding: 3px 6px; font: inherit; font-size: 12px; }
   #stranski .oblak .gumbi { display: flex; gap: 6px; align-items: center; }
@@ -2017,6 +2021,19 @@ const IMENA_VRST = { sestav: 'Sestav', del: 'Del', '': 'Prazen' };
 function cipVnosa(razred, besedilo, ikona) {
   const c = el('span', 'cip ' + razred); if (ikona) c.append(svgIkona(ikona, 10)); c.append(besedilo); return c;
 }
+// Različica dokumenta (Meta »Verzija«, od 2026-10-14; kot revizije R01 … v Oblikovanju): strežnik jo poveča ob vsakem
+// shranjevanju s spremembami. Oranžno »v7 → v9«, kadar je datoteka na disku novejša od odprtega dokumenta (shranila jo je druga seja).
+function cipVerzije(o) {
+  const v = o.verzija || 0, naDisku = o.verzijaDatoteke || 0;
+  if (naDisku > v) {
+    const c = cipVnosa('verzija zastarela', 'v' + v + ' → v' + naDisku);
+    c.title = 'Odprt dokument je različica ' + v + ', datoteka na disku pa že ' + naDisku + ' (shranjena drugje). Znova odpri dokument.';
+    return c;
+  }
+  const c = cipVnosa('verzija', 'v' + v);
+  c.title = 'Različica ' + v + ' dokumenta; poveča se ob vsakem shranjevanju s spremembami' + (o.spremenjen ? ' (po shranjevanju v' + (v + 1) + ')' : '') + '.';
+  return c;
+}
 // čip Del / Sestav v glavi drevesa: vrsta aktivnega dokumenta iz seznama odprtih (sestav = Assembly, povezave na kose)
 function posodobiVrstoDrevesa() {
   const c = $('drevoVrsta'); if (!c) return;
@@ -2057,7 +2074,9 @@ function vnosDatoteke(d, odprti, vProjektu) {
   v.append(okvirVnosa(d, 'Std_Open'));
   const b = el('div', 'besedilo');
   b.append(imeVnosa(d.ime, ''));
-  const pod = el('div', 'podnapis'); pod.append(oznakaVrste(d), el('span', 'podatek', datumProjekta(d.spremenjeno)));
+  const pod = el('div', 'podnapis'); pod.append(oznakaVrste(d));
+  if (d.verzija) pod.append(cipVerzije(d));
+  pod.append(el('span', 'podatek', datumProjekta(d.spremenjeno)));
   if (odprt) pod.append(cipVnosa('odprt', odprt.spremenjen ? 'Odprt, neshranjeno' : 'Odprt'));
   else if (odpiram && odpiram.pot === d.pot) { v.classList.add('odpiram'); pod.append(cipVnosa('odpiram', 'Odpiram …')); }
   b.append(pod); v.append(b);
@@ -2163,6 +2182,7 @@ function vnosOdprtega(o, q) {
   const b = el('div', 'besedilo');
   b.append(imeVnosa(o.oznaka, q));
   const pod = el('div', 'podnapis'); pod.append(oznakaVrste(o));
+  if (o.verzija || o.verzijaDatoteke) pod.append(cipVerzije(o));
   if (o.spremenjen) pod.append(cipVnosa('neshranjeno', o.pot ? 'Neshranjeno' : 'Še ni shranjen'));
   if (jeRazlicica(o.pot)) { const z = cipVnosa('razlicica', 'Ogled različice', 'zgodovina'); z.title = 'Kopija starejše različice iz oblaka; shranjevanje ne spremeni datoteke v oblaku.'; pod.append(z); }
   if (o.zaklep) {   // PDM: kdo ima datoteko (check-out)
@@ -2398,7 +2418,7 @@ async function osveziTrakRazlicic(znova) {
 function narisiTrakRazlicic() {
   const z = trakRazlicic.zgodovina, o = aktivniOdprti();
   if (!z || !o || potNiz(o.pot) !== potNiz(trakRazlicic.pot)) return;
-  const podpis = JSON.stringify([o.pot, !!o.spremenjen, z.pdm, z.razlicice.map(r => [r.rev_id, r.current, r.stanje, r.oznaka, r.komentar, r.slicica])]);
+  const podpis = JSON.stringify([o.pot, !!o.spremenjen, o.verzija, z.pdm, z.razlicice.map(r => [r.rev_id, r.current, r.stanje, r.oznaka, r.komentar, r.slicica])]);
   if (podpis !== trakRazlicic.podpis) {
     trakRazlicic.podpis = podpis;
     trakRazlicicEl.innerHTML = '';
@@ -2406,9 +2426,9 @@ function narisiTrakRazlicic() {
     const IME_STANJA = { osnutek: 'osnutek', v_pregledu: 'v pregledu', izdano: 'izdano' };
     const glava = el('div', 'glavaTraku');
     const naslov = el('div', 'naslov', 'Različice'); naslov.append(el('span', 'stevilo', String(n)));
-    const opis = el('div', 'opis', (pdm.stanje === 'izdano' ? 'izdana revizija ' + (pdm.oznaka || '')
+    const opis = el('div', 'opis', (o.verzija ? 'dokument v' + o.verzija + ' · ' : '') + (pdm.stanje === 'izdano' ? 'izdana revizija ' + (pdm.oznaka || '')
       : (IME_STANJA[pdm.stanje] || 'osnutek') + (pdm.zadnja_izdana ? ' · zadnja izdana ' + pdm.zadnja_izdana.oznaka : '')) + (o.spremenjen ? ' · neshranjene spremembe' : ''));
-    opis.title = z.prostor + ' · ' + z.potVOblaku;
+    opis.title = z.prostor + ' · ' + z.potVOblaku + (o.verzija ? '\nRazličica dokumenta v' + o.verzija + ' (Meta »Verzija«; poveča se ob vsakem shranjevanju s spremembami)' : '');
     const gumbi = el('div', 'gumbi');
     const shrani = el('button', 'g' + (o.spremenjen ? ' glavni' : ''), 'Shrani različico'); shrani.type = 'button';
     shrani.title = 'Shrani dokument (kot Ctrl+S v FreeCAD-u); odjemalec oblaka pošlje novo različico, stran nato vpraša, kaj si spremenil';
@@ -3136,6 +3156,7 @@ function narisiKnjiznico() {
       if (d.slicica) { img.src = '/slicica?pot=' + encodeURIComponent(d.pot) + '&v=' + (d.slicicaV || 0); img.addEventListener('error', () => { img.src = IKONA_KOCKE(false); }, { once: true }); }
       else img.src = IKONA_KOCKE(false);
       const pd = el('div', 'podatki'); pd.append(el('span', 'znacka ' + (d.vrsta || ''), d.vrsta === 'sestav' ? 'sestav' : 'del'));
+      if (d.verzija) pd.append(el('span', 'verzija', 'v' + d.verzija));
       if (d.teles > 1) pd.append(el('span', '', d.teles + ' teles'));
       const odpri = el('button', 'odpri', '↗'); odpri.type = 'button'; odpri.title = 'Odpri datoteko kosa';
       odpri.addEventListener('click', e => { e.stopPropagation(); knjiznicaDejanje(kos, { dejanje: 'odpri', pot: d.pot }); zapriKnjiznico(); });
@@ -3713,6 +3734,7 @@ function karticaZgradbe(v, pot) {
   else img.src = IKONA_KOCKE(true);
   const b = el('div', 'besedilo'); b.append(el('span', 'ime', v.oznaka));
   const pd = el('div', 'podatki'); pd.append(el('span', 'znacka', NAPISI_VRST[v.vrsta] || v.vrsta));
+  if (v.verzija) { const z = el('span', 'verzija', 'v' + v.verzija); z.title = 'Različica dokumenta ' + v.verzija; pd.append(z); }
   if ((v.kolicina || 1) > 1) pd.append(el('span', 'kolicina', '×' + v.kolicina));
   if (v.otroci.length) pd.append(el('span', '', v.otroci.length + (v.otroci.length === 1 ? ' skupina' : ' skupin')));
   b.append(pd); k.append(img, b);
@@ -5572,7 +5594,7 @@ function vprasajKomentar(o) {
   vnos.addEventListener('keydown', ev => { ev.stopPropagation(); if (ev.key === 'Enter') poslji(); if (ev.key === 'Escape') zapri(); });
   const z = el('button', '', 'Zapiši'); z.type = 'button'; z.addEventListener('click', poslji);
   const p = el('button', '', 'Preskoči'); p.type = 'button'; p.addEventListener('click', zapri);
-  k.append(el('span', 'naslov', 'Shranjeno: ' + o.ime), vnos, z, p);
+  k.append(el('span', 'naslov', 'Shranjeno: ' + o.ime + (o.verzija ? ' · v' + o.verzija : '')), vnos, z, p);
   vnos.focus();
 }
 naloziOblak();
