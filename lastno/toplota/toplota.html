@@ -1,0 +1,285 @@
+<!doctype html>
+<html lang="sl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Toplota</title>
+<style>
+  :root { --poudarek: #2563eb; --poudarekTemen: #1d4ed8; --poudarekMehko: #e8efff; --crta: #e3e6eb; --crtaMocna: #cfd4dc; --besedilo: #1f2328;
+          --besedilo2: #57606a; --besedilo3: #8b949e; --plosca: #fff; --ozadje: #f3f5f8; --lebdenje: #eef1f5; --senca1: 0 1px 2px rgba(0,0,0,.06);
+          --senca2: 0 6px 24px rgba(0,0,0,.10); --opozorilo: #b45309; --opozoriloOzadje: #fff7ed; --slabo: #b91c1c; }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; font: 13px/1.45 "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif; color: var(--besedilo); background: var(--ozadje); }
+  #ogrodje { display: grid; grid-template-columns: 380px 1fr; height: 100%; }
+  #levo { background: var(--plosca); border-right: 1px solid var(--crta); overflow: auto; padding: 14px 16px 24px; }
+  #desno { overflow: auto; padding: 16px 20px 40px; }
+  h1 { font-size: 16px; margin: 0 0 2px; } h2 { font-size: 13px; margin: 18px 0 8px; color: var(--besedilo2); text-transform: uppercase; letter-spacing: .04em; }
+  h3 { font-size: 14px; margin: 18px 0 8px; }
+  .podnaslov { color: var(--besedilo2); margin-bottom: 10px; }
+  .polje { display: grid; grid-template-columns: 1fr 110px; align-items: center; gap: 6px; margin: 4px 0; }
+  .polje label { color: var(--besedilo2); }
+  input[type=number], input[type=text], select { height: 28px; border: 1px solid var(--crtaMocna); border-radius: 7px; padding: 0 8px; font: inherit; width: 100%; background: #fff; }
+  input:focus, select:focus { outline: 2px solid var(--poudarekMehko); border-color: var(--poudarek); }
+  .naprave .polje { grid-template-columns: 1fr 80px 26px; }
+  .naprave input[type=text] { height: 26px; }
+  button { height: 32px; padding: 0 14px; border: 1px solid var(--crtaMocna); background: #fff; border-radius: 8px; font: inherit; font-weight: 600; cursor: pointer; color: var(--besedilo); }
+  button:hover { background: var(--lebdenje); }
+  button.glavni { background: var(--poudarek); border-color: var(--poudarek); color: #fff; } button.glavni:hover { background: var(--poudarekTemen); }
+  button:disabled { opacity: .55; cursor: default; }
+  button.mali { height: 26px; padding: 0 8px; font-weight: 500; }
+  .gumbi { display: flex; flex-wrap: wrap; gap: 8px; margin: 10px 0; }
+  .stanje { font-size: 12px; color: var(--besedilo2); min-height: 18px; }
+  .opozorilo { background: var(--opozoriloOzadje); border: 1px solid #fcd98a; color: var(--opozorilo); border-radius: 10px; padding: 8px 12px; margin: 8px 0; }
+  .slabo { color: var(--slabo); }
+  .kartica { background: var(--plosca); border: 1px solid var(--crta); border-radius: 12px; padding: 14px 16px; margin-bottom: 14px; box-shadow: var(--senca1); }
+  table { border-collapse: collapse; width: 100%; font-size: 12.5px; }
+  th, td { border-bottom: 1px solid var(--crta); padding: 5px 7px; text-align: right; white-space: nowrap; }
+  th { color: var(--besedilo2); font-weight: 600; background: var(--lebdenje); position: sticky; top: 0; }
+  td:first-child, th:first-child, td.levo, th.levo { text-align: left; }
+  td.vroce { color: var(--slabo); font-weight: 600; }
+  .slike { display: grid; grid-template-columns: repeat(auto-fill, minmax(460px, 1fr)); gap: 12px; }
+  .slike img { width: 100%; border: 1px solid var(--crta); border-radius: 8px; background: #fff; }
+  .znacka { display: inline-block; padding: 1px 7px; border-radius: 999px; background: var(--poudarekMehko); color: var(--poudarek); font-size: 11px; font-weight: 600; margin-left: 6px; }
+  details summary { cursor: pointer; color: var(--besedilo2); }
+  .tabela { overflow: auto; max-height: 420px; }
+  .prazno { color: var(--besedilo3); padding: 20px; text-align: center; }
+  .vrstica { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  .barve .polje { grid-template-columns: 1fr 80px; }
+</style>
+</head>
+<body>
+<div id="ogrodje">
+  <aside id="levo">
+    <h1>Toplota</h1>
+    <div class="podnaslov" id="projekt">Projekt: —</div>
+    <div class="polje"><label>Projekt (mapa v Oblak/3D modeliranje)</label><select id="izbiraProjekta"><option value="">— iz aktivnega dokumenta —</option></select></div>
+    <div id="opozorilo" class="opozorilo" hidden></div>
+
+    <h2>Lokacija in box</h2>
+    <div class="polje"><label>Sprednja stena proti</label><select id="orientacija"><option>J</option><option>Z</option><option>V</option><option>S</option></select></div>
+    <div class="polje"><label>Širina × globina × višina (mm)</label><input id="box" type="text" title="zaprta vrata, brez podstavka"></div>
+    <div class="polje"><label>Okna spredaj (m²)</label><input id="steklo" type="number" step="0.01" min="0"></div>
+    <div class="polje"><label>Okno na strehi (m²)</label><input id="strehaOkno" type="number" step="0.01" min="0"></div>
+    <div class="polje"><label>Ventilacija (m³/h)</label><input id="ventilacija" type="number" step="10" min="0"></div>
+    <div class="polje"><label>Cilj: zrak v boxu največ (°C)</label><input id="cilj" type="number" step="1"></div>
+    <div class="polje"><label>Vgrajena klima (W hlajenja, 0 = brez)</label><input id="klima" type="number" step="50" min="0"></div>
+
+    <h2>Barve plašča (absorptivnost sonca)</h2>
+    <div id="barve" class="barve"></div>
+
+    <h2>Naprave v boxu (W toplote)</h2>
+    <div id="naprave" class="naprave"></div>
+    <div class="vrstica"><button class="mali" id="dodajNapravo">+ naprava</button><span class="stanje" id="vsotaNaprav"></span></div>
+
+    <h2>Lokacije</h2>
+    <div id="lokacije"></div>
+
+    <div class="gumbi" style="margin-top:16px">
+      <button id="shrani">Shrani nastavitve</button>
+    </div>
+    <div class="stanje" id="stanjeNastavitev"></div>
+  </aside>
+
+  <main id="desno">
+    <div class="kartica">
+      <div class="vrstica">
+        <h3 style="margin:0">1 · Bilančni model (pvlib + ht)</h3>
+        <span style="flex:1"></span>
+        <select id="obseg"><option value="teden">najhujši teden</option><option value="leto">celo leto (TMY, ~15 min)</option></select>
+        <button class="glavni" id="izracunaj">Izračunaj</button>
+      </div>
+      <div class="stanje" id="stanjeIzracuna"></div>
+      <div id="rezultatiBilance"><div class="prazno">Še ni izračuna. Nastavi vhode levo in klikni Izračunaj.</div></div>
+    </div>
+
+    <div class="kartica">
+      <div class="vrstica">
+        <h3 style="margin:0">2 · MKE v FreeCAD-u (CalculiX, stacionarno)</h3>
+        <span style="flex:1"></span>
+        <select id="sestav" title="odprt sestav projekta, iz katerega se zgradi model"></select>
+        <button id="zgradiModel" title="Iz odprtega sestava (aktivni dokument) zgradi poenostavljeno kopijo: plašč, okna, zrak, naprave kot bloki, klima; analiza FEM z robnimi pogoji">Zgradi model iz sestava</button>
+        <button id="odpriModel">Odpri model</button>
+        <button class="glavni" id="pozeniMke">Poženi MKE</button>
+      </div>
+      <div class="stanje" id="stanjeMke"></div>
+      <div id="scenarij"></div>
+      <div id="rezultatiMke"><div class="prazno">Modela še ni. Odpri sestav (npr. Slim A) v 2. stopnji in klikni Zgradi model iz sestava.</div></div>
+    </div>
+  </main>
+</div>
+<script>
+const $ = id => document.getElementById(id);
+const ZETON = (() => { try { return parent.toplotaZeton || ''; } catch (e) { return ''; } })();
+let stanje = null, nast = null, mapa = '', dokument = '';
+let rocniProjekt = (() => { try { return localStorage.getItem('toplotaProjekt') || ''; } catch (e) { return ''; } })();
+$('izbiraProjekta').addEventListener('change', () => { rocniProjekt = $('izbiraProjekta').value; try { localStorage.setItem('toplotaProjekt', rocniProjekt); } catch (e) {} nast = null; osvezi(); });
+function napolniProjekte(st) {
+  const sel = $('izbiraProjekta'); const trenutna = sel.value;
+  sel.innerHTML = '<option value="">— iz aktivnega dokumenta —</option>' + (st.projekti || []).map(p => `<option value="${p.replace(/"/g, '&quot;')}"${(st.s_toploto || []).includes(p) ? ' data-toplota="1"' : ''}>${p}${(st.s_toploto || []).includes(p) ? ' ·' : ''}</option>`).join('');
+  sel.value = rocniProjekt && (st.projekti || []).includes(rocniProjekt) ? rocniProjekt : (trenutna || '');
+}
+
+function dokumentStarsa() {
+  try { return parent.aktivniDokumentPot ? parent.aktivniDokumentPot() : ''; } catch (e) { return ''; }
+}
+async function get(url) { const r = await fetch(url, { cache: 'no-store' }); return r.json(); }
+async function post(url, telo) {
+  const r = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Zeton': ZETON }, body: JSON.stringify(telo || {}) });
+  if (r.status === 403) throw new Error('žeton (odpri stran prek spletnega FreeCAD-a)');
+  return r.json();
+}
+function f1(v) { return (Math.round(v * 10) / 10).toLocaleString('sl-SI'); }
+
+// --- nastavitve -----------------------------------------------------------------------------------------------
+function pokaziNastavitve() {
+  const n = nast;
+  $('orientacija').value = n.orientacija_spredaj || 'J';
+  $('box').value = `${n.box.sirina_mm} × ${n.box.globina_mm} × ${n.box.visina_mm}`;
+  $('steklo').value = n.steklo.povrsina_m2; $('strehaOkno').value = n.steklo.streha_okno_m2 || 0;
+  $('ventilacija').value = n.hlajenje.ventilacija_m3h; $('cilj').value = n.hlajenje.cilj_C; $('klima').value = n.hlajenje.klima_W || 0;
+  const b = $('barve'); b.innerHTML = '';
+  for (const [ime, a] of Object.entries(n.plasc.barve)) {
+    const d = document.createElement('div'); d.className = 'polje';
+    d.innerHTML = `<label>${ime}</label><input type="number" step="0.05" min="0" max="1" data-barva="${ime}" value="${a}">`;
+    b.appendChild(d);
+  }
+  const np = $('naprave'); np.innerHTML = '';
+  for (const [ime, w] of Object.entries(n.naprave_W)) if (!ime.startsWith('_')) dodajVrsticoNaprave(ime, w);
+  vsota();
+  const l = $('lokacije'); l.innerHTML = '';
+  for (const [ime, lok] of Object.entries(n.lokacije)) {
+    const d = document.createElement('div'); d.className = 'polje';
+    d.innerHTML = `<label><input type="checkbox" data-lok="${ime}" checked> ${ime}</label><span class="stanje">${lok.lat.toFixed(2)}, ${lok.lon.toFixed(2)}</span>`;
+    l.appendChild(d);
+  }
+}
+function dodajVrsticoNaprave(ime, w) {
+  const d = document.createElement('div'); d.className = 'polje';
+  d.innerHTML = `<input type="text" class="imeNaprave" value="${ime.replace(/"/g, '&quot;')}"><input type="number" class="wNaprave" step="5" min="0" value="${w}"><button class="mali" title="odstrani">×</button>`;
+  d.querySelector('button').addEventListener('click', () => { d.remove(); vsota(); });
+  d.querySelector('.wNaprave').addEventListener('input', vsota);
+  $('naprave').appendChild(d);
+}
+function vsota() {
+  let s = 0; document.querySelectorAll('.wNaprave').forEach(i => s += Number(i.value) || 0);
+  $('vsotaNaprav').textContent = `skupaj ${s} W`;
+}
+$('dodajNapravo').addEventListener('click', () => dodajVrsticoNaprave('nova naprava', 10));
+function preberiNastavitve() {
+  const [s, g, v] = $('box').value.split(/[×x]/).map(x => Number(x.trim()));
+  const naprave = {}; document.querySelectorAll('#naprave .polje').forEach(d => { naprave[d.querySelector('.imeNaprave').value.trim() || 'naprava'] = Number(d.querySelector('.wNaprave').value) || 0; });
+  const barve = {}; document.querySelectorAll('#barve input').forEach(i => barve[i.dataset.barva] = Number(i.value));
+  return { orientacija_spredaj: $('orientacija').value,
+    box: { sirina_mm: s || nast.box.sirina_mm, globina_mm: g || nast.box.globina_mm, visina_mm: v || nast.box.visina_mm },
+    steklo: { povrsina_m2: Number($('steklo').value), streha_okno_m2: Number($('strehaOkno').value) },
+    hlajenje: { ventilacija_m3h: Number($('ventilacija').value), cilj_C: Number($('cilj').value), klima_W: Number($('klima').value) },
+    plasc: { barve }, naprave_W: naprave };
+}
+async function shraniNastavitve() {
+  const d = await post('/toplota/nastavi', { mapa, nastavitve: preberiNastavitve() });
+  if (!d.ok) { $('stanjeNastavitev').textContent = d.sporocilo || 'napaka'; return false; }
+  nast = d.nastavitve; $('stanjeNastavitev').textContent = 'shranjeno ' + new Date().toLocaleTimeString('sl-SI'); return true;
+}
+$('shrani').addEventListener('click', shraniNastavitve);
+
+// --- bilanca ---------------------------------------------------------------------------------------------------
+function tabela(vrstice, vroceStolpec) {
+  if (!vrstice || !vrstice.length) return '<div class="prazno">ni podatkov</div>';
+  const st = Object.keys(vrstice[0]);
+  let h = '<div class="tabela"><table><tr>' + st.map(s => `<th${/lokacija|plašč|kdaj|proti|telo|skupina/.test(s) ? ' class="levo"' : ''}>${s}</th>`).join('') + '</tr>';
+  for (const v of vrstice) h += '<tr>' + st.map(s => { const x = v[s]; const vroce = vroceStolpec && s === vroceStolpec && typeof x === 'number' && x > (nast ? nast.hlajenje.cilj_C : 35);
+    return `<td class="${typeof x === 'number' ? '' : 'levo'}${vroce ? ' vroce' : ''}">${typeof x === 'number' ? x.toLocaleString('sl-SI') : x}</td>`; }).join('') + '</tr>';
+  return h + '</table></div>';
+}
+function pokaziBilanco(r) {
+  if (!r) { $('rezultatiBilance').innerHTML = '<div class="prazno">Še ni izračuna. Nastavi vhode levo in klikni Izračunaj.</div>'; return; }
+  let h = `<div class="stanje">${r.obseg === 'leto' ? 'celo leto (TMY)' : 'najhujši teden'} · ${r.cas} · naprave ${r.naprave_W} W · spredaj proti ${r.orientacija_spredaj} · cilj ${r.cilj_C} °C${r.klima_W ? ' · klima ' + r.klima_W + ' W' : ''} · ${r.trajanje_s} s</div>`;
+  h += tabela(r.tabela, 'T_zrak max °C');
+  if (r.orientacije && r.orientacije.length) h += '<h3>Vpliv orientacije sprednje stene (najhujši teden)</h3>' + tabela(r.orientacije, 'T_zrak max °C');
+  h += '<h3>Najhujši dnevi</h3><div class="slike">';
+  for (const [oznaka, s] of Object.entries(r.slike || {})) {
+    for (const k of ['prosto', 'hlajenje', 'klima']) if (s[k]) h += `<img loading="lazy" src="/toplota/slika?mapa=${encodeURIComponent(mapa)}&pot=${encodeURIComponent(s[k])}&v=${encodeURIComponent(r.cas)}" alt="${oznaka} ${k}">`;
+  }
+  $('rezultatiBilance').innerHTML = h + '</div>';
+}
+let cakalnik = null;
+async function izracunaj() {
+  try { if (!(await shraniNastavitve())) return; } catch (e) { $('stanjeIzracuna').innerHTML = `<span class="slabo">${e.message}</span>`; return; }
+  const lokacije = [...document.querySelectorAll('#lokacije input:checked')].map(i => i.dataset.lok);
+  const d = await post('/toplota/izracun', { mapa, obseg: $('obseg').value, lokacije });
+  if (!d.ok) { $('stanjeIzracuna').textContent = d.sporocilo; return; }
+  $('izracunaj').disabled = true;
+  cakalnik = setInterval(osvezi, 1500);
+}
+$('izracunaj').addEventListener('click', izracunaj);
+
+// --- MKE -------------------------------------------------------------------------------------------------------
+function pokaziMke(m) {
+  const model = m && m.model, rez = m && m.rezultati, st = m && m.stanje;
+  if (model) {
+    const sc = model.scenarij || {};
+    $('scenarij').innerHTML = `<div class="stanje">Model iz sestava <b>${model.sestav}</b>: box ${model.zunanji_mm.map(Math.round).join(', ')} mm, plašč ${model.debelina_mm} mm enakovredno, bloki: ${model.bloki.map(b => b.ime).join(', ')}.
+      Scenarij: zunaj ${sc.T_zunaj_C} °C, veter ${sc.veter_ms} m/s, sonce streha ${sc.G_streha} W/m², spredaj ${sc.G_spredaj} W/m², bok ${sc.G_bok} W/m²; α ${model.alpha}, h ${model.h} W/m²K, skozi steklo ${model.sonce_skozi_steklo_W} W.</div>`;
+  } else $('scenarij').innerHTML = '';
+  if (rez) {
+    let h = `<div class="stanje">${rez.cas} · ${rez.vozlisc} vozlišč, ${rez.elementov} elementov · ${rez.trajanje_s} s · T ${f1(rez.T_min_C)} … <b>${f1(rez.T_max_C)} °C</b></div>`;
+    h += tabela(rez.po_skupinah.map(g => ({ skupina: g.skupina, 'min °C': g.min, 'povp °C': g.povp, 'max °C': g.max })), 'max °C');
+    h += '<div class="slike">' + (rez.slike || []).map(s => `<img src="/toplota/slika?mapa=${encodeURIComponent(mapa)}&pot=mke/${encodeURIComponent(s)}&v=${encodeURIComponent(rez.cas)}">`).join('') + '</div>';
+    h += `<details><summary>po telesih</summary>${tabela(rez.po_telesih.map(t => ({ telo: t.telo, skupina: t.skupina, 'min °C': t.min, 'povp °C': t.povp, 'max °C': t.max })), 'max °C')}</details>`;
+    $('rezultatiMke').innerHTML = h;
+  } else if (model) $('rezultatiMke').innerHTML = '<div class="prazno">Model je zgrajen. Poženi MKE (mreža + CalculiX; nekaj minut, teče v ozadju).</div>';
+  else $('rezultatiMke').innerHTML = '<div class="prazno">Modela še ni. Odpri sestav (npr. Slim A) v 2. stopnji in klikni Zgradi model iz sestava.</div>';
+  const tece = stanje && stanje.mke_tece;
+  $('stanjeMke').innerHTML = tece ? `teče: ${st ? st.faza : 'zagon'} …` : (m && m.napaka ? `<span class="slabo">${m.napaka}</span>` : (st && st.faza === 'napaka' ? `<span class="slabo">${st.napaka}</span>` : ''));
+  $('pozeniMke').disabled = !!tece || !model; $('odpriModel').disabled = !model;
+}
+$('zgradiModel').addEventListener('click', async () => {
+  if (!(await shraniNastavitve())) return;
+  $('stanjeMke').textContent = 'gradim model iz sestava (FreeCAD) …'; $('zgradiModel').disabled = true;
+  try {
+    const d = await post('/toplota/model', { mapa, dokument: $('sestav').value || '' });
+    $('stanjeMke').innerHTML = d.ok ? `model zgrajen: ${d.dokument} (${d.teles} teles)` : `<span class="slabo">${d.sporocilo || 'napaka'}</span>`;
+  } catch (e) { $('stanjeMke').innerHTML = `<span class="slabo">${e.message}</span>`; }
+  $('zgradiModel').disabled = false; osvezi();
+});
+$('odpriModel').addEventListener('click', async () => { const d = await post('/toplota/odpri', { mapa }); $('stanjeMke').textContent = d.ok ? `odprt: ${d.dokument} (glej 2. stopnjo)` : d.sporocilo; });
+$('pozeniMke').addEventListener('click', async () => {
+  const d = await post('/toplota/mke', { mapa });
+  if (!d.ok) { $('stanjeMke').innerHTML = `<span class="slabo">${d.sporocilo}</span>`; return; }
+  $('pozeniMke').disabled = true; if (!cakalnik) cakalnik = setInterval(osvezi, 2000); osvezi();
+});
+
+// --- stanje ----------------------------------------------------------------------------------------------------
+async function osvezi() {
+  const pot = dokumentStarsa();
+  const q = (rocniProjekt && stanje && stanje.oblak ? 'mapa=' + encodeURIComponent(stanje.oblak + '/' + rocniProjekt + '/x') + '&' : '') + (pot ? 'pot=' + encodeURIComponent(pot) : '');
+  try { stanje = await get('/toplota/stanje?' + q); } catch (e) { $('opozorilo').hidden = false; $('opozorilo').textContent = 'Strežnik ne odgovarja: ' + e.message; return; }
+  napolniProjekte(stanje);
+  if (!stanje.projekt) {
+    $('projekt').textContent = 'Projekt: —'; $('opozorilo').hidden = false;
+    $('opozorilo').textContent = 'Aktivni dokument ni v projektu iz Oblak/3D modeliranje. Izberi projekt zgoraj ali odpri dokument projekta (npr. Slim A) v 2. stopnji.';
+    if (rocniProjekt && stanje.oblak) osvezi();   // prvi klic še ni poznal mape oblaka
+    return;
+  }
+  $('opozorilo').hidden = true;
+  const novaMapa = stanje.mapa !== mapa;
+  mapa = stanje.mapa; dokument = pot || stanje.dokument || '';
+  $('projekt').innerHTML = `Projekt: <b>${stanje.ime_projekta}</b> <span class="stanje">(${mapa})</span>`;
+  if (novaMapa || !nast) { nast = stanje.nastavitve; pokaziNastavitve(); }
+  const iz = stanje.izracun;
+  $('stanjeIzracuna').innerHTML = iz.tece ? `teče: ${iz.napredek} …` : (iz.napaka ? `<span class="slabo">${iz.napaka}</span>` : (iz.napredek ? iz.napredek : ''));
+  $('izracunaj').disabled = !!iz.tece;
+  if (novaMapa || !iz.tece) pokaziBilanco(stanje.rezultati);
+  const sel = $('sestav'), izbran = sel.value;
+  sel.innerHTML = (stanje.sestavi || []).map(x => `<option value="${x.pot.replace(/"/g, '&quot;')}">${x.oznaka}</option>`).join('') || '<option value="">(ni odprtega sestava)</option>';
+  if ([...sel.options].some(o => o.value === izbran)) sel.value = izbran;
+  $('zgradiModel').disabled = !(stanje.sestavi || []).length;
+  pokaziMke(stanje.mke);
+  if (cakalnik && !iz.tece && !stanje.mke_tece) { clearInterval(cakalnik); cakalnik = null; }
+}
+window.addEventListener('message', e => { if (e.data && e.data.dejanje === 'osvezi') osvezi(); });
+osvezi();
+setInterval(() => { if (!cakalnik) osvezi(); }, 15000);
+</script>
+</body>
+</html>

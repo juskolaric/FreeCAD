@@ -42,8 +42,17 @@ ko stoji na soncu (Biograd, Opatija, Zlatibor …), in kakšno hlajenje (W) je t
    vhod `Toplota/nastavitve.json`, rezultati `Toplota/POROCILO.md` (celo leto TMY za Biograd, Opatijo, Zlatibor; tri barve
    plašča; orientacije). Vse vrednosti so z ocenjenimi vhodi (barva, moči naprav, klima) — po potrditvi poženi znova.
 2. **EnergyPlus** z EPW za 3 lokacije: urni profil čez leto, ure nad mejo, velikost klime.
-3. **FreeCAD FEM** na poenostavljenem plašču Slim A: porazdelitev, vroče točke (zaslon, tiskalnik).
+3. **FreeCAD FEM** — **model narejen 14. 10. 2026**: 5. stopnja »Toplota« v spletnem FreeCAD-u (gumb »Zgradi model iz sestava« naredi
+   kopijo Slim A za simulacijo: plašč, okna, zrak, naprave kot bloki, klima; »Poženi MKE« = Netgen + CalculiX v ozadju). Prvi izračun (Biograd, najhujša ura,
+   bel plašč, 280 W): zrak v povprečju 56 °C, TV in PC do 80–85 °C, plašč do 77 °C na soncu, celoten MKE 15 s. Odprto: umeritev efektivne
+   prevodnosti zraka in naprav (čisto prevajanje brez gibanja zraka), prikaz rezultata na 3D modelu v brskalniku, blok »Elektro TV« manjka.
 4. Umeritev z meritvijo iz boxa; **OpenFOAM** šele, če vprašanje postane »kam z rešetko in ventilatorjem«.
+
+## Stanje 14. 10. 2026
+
+- Zavihek **5 Toplota** v spletnem FreeCAD-u: nastavitve (lokacija, barva, naprave, klima), bilančni izračun (najhujši teden ~30 s, leto
+  ~15 min) s tabelami in slikami, gradnja modela MKE iz sestava in zagon CalculiX-a v ozadju. Koda: `lastno/toplota/`, `lastno/splet/toplota.py`.
+- Zaprti box je 400 × 565 × 1911 mm (vrata v sestavu so odprta); prvi izračun z 701 × 770 je bil zato prevelik.
 
 ## Namestitev (ko se odločimo)
 

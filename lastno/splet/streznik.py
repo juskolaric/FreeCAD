@@ -91,6 +91,7 @@ import samodejno  # noqa: E402  (tiha obnova dokumentov, samodejno shranjevanje)
 from oblak import Oblak, obdelaj_zahtevo as oblak_zahteva, pot_slicice_revizije as oblak_slicica_revizije  # noqa: E402
 import mcp_orodja  # noqa: E402  (orodja za AI prek MCP: GET /mcp/orodja, POST /mcp/orodje; most lastno/mcp)
 import pomocnik  # noqa: E402  (pomočnik AI v stranski plošči strani: GET/POST /pomocnik, isti katalog orodij)
+import toplota as toplota_modul  # noqa: E402  (5. stopnja Toplota: GET /toplota, /toplota/stanje, /toplota/slika; POST /toplota/*)
 
 MAPA_OBLAK = os.path.join(os.path.expanduser("~"), "Oblak", "3D modeliranje")
 MAPE_PROJEKTOV = [os.path.normpath(MAPA_OBLAK)]
@@ -3327,6 +3328,11 @@ class Stanje:
             rezultat = _tiskaj_natisni(self, podatki)
             if odgovor is not None:
                 odgovor["rezultat"] = rezultat
+        elif ukaz == "toplota":
+            # Toplota: model za MKE iz sestava ali odprtje modela (toplota.py, glavna nit)
+            rezultat = toplota_modul.glavna(self, podatki)
+            if odgovor is not None:
+                odgovor["rezultat"] = rezultat
         elif ukaz == "meritev":
             # mere izbire za statusno vrstico brskalnika (mcp_orodja.meritev_izbire); brskalnik počaka
             if odgovor is not None:
@@ -3406,6 +3412,7 @@ class Stanje:
 STANJE = Stanje()
 OBLAK = Oblak(_log, STANJE.vrsta, STANJE.oddaj)   # različice datotek iz lastnega oblaka (PDM)
 mcp_orodja.povezi(sys.modules[__name__])          # orodja MCP: modul strežnika, dnevnik, zapis kataloga za most
+toplota_modul.povezi(sys.modules[__name__])       # Toplota: dnevnik, mapa Oblak/3D modeliranje
 
 
 # ---------------------------------------------------------------------------
@@ -3686,6 +3693,21 @@ class Zahteva(http.server.BaseHTTPRequestHandler):
             self._odgovor(json.dumps(oblikovanje_stanje(), ensure_ascii=False).encode("utf-8"))
         elif pot == "/grafika/stanje":
             self._odgovor(json.dumps(grafika_stanje(), ensure_ascii=False).encode("utf-8"))
+        elif pot == "/toplota":
+            # 5. stopnja Toplota: stran iz lastno/toplota (toplota.py); podatki projekta v Oblak/3D modeliranje/<Projekt>/Toplota
+            self._odgovor(toplota_modul.stran(), "text/html; charset=utf-8")
+        elif pot in ("/toplota/stanje", "/toplota/slika"):
+            import urllib.parse
+            q = urllib.parse.parse_qs(self.path.partition("?")[2])
+            if pot == "/toplota/stanje":
+                try:
+                    telo = toplota_modul.stanje(q)
+                except Exception as e:  # noqa: BLE001
+                    telo = {"ok": False, "sporocilo": str(e)}
+                self._odgovor(json.dumps(telo, ensure_ascii=False, default=str).encode("utf-8"))
+            else:
+                telo, vrsta, koda = toplota_modul.slika(q)
+                self._odgovor(telo, vrsta, koda)
         elif pot == "/oblikovanje/render-plosca.js":
             with open(os.path.join(MAPA_OBLIKOVANJA, "render-plosca.js"), "rb") as f:
                 self._odgovor(f.read(), "text/javascript; charset=utf-8")
@@ -3807,6 +3829,28 @@ class Zahteva(http.server.BaseHTTPRequestHandler):
         if pot == "/oblikovanje/zazeni":
             ok, sporocilo = oblikovanje_zazeni()
             self._odgovor(json.dumps({"ok": ok, "sporocilo": sporocilo}, ensure_ascii=False).encode("utf-8"))
+            return
+        if pot in ("/toplota/nastavi", "/toplota/izracun", "/toplota/mke"):
+            # Toplota (nit strežnika): nastavitve, bilančni izračun v niti, MKE v FreeCADCmd v ozadju
+            fn = {"/toplota/nastavi": toplota_modul.nastavi, "/toplota/izracun": toplota_modul.izracun, "/toplota/mke": toplota_modul.mke}[pot]
+            try:
+                telo = fn(podatki)
+            except Exception as e:  # noqa: BLE001
+                telo = {"ok": False, "sporocilo": str(e)}
+            self._odgovor(json.dumps(telo, ensure_ascii=False, default=str).encode("utf-8"))
+            return
+        if pot in ("/toplota/model", "/toplota/odpri"):
+            # Toplota (glavna nit): poenostavljena kopija sestava z analizo FEM ali odprtje modela; brskalnik počaka
+            odgovor = {"konec": threading.Event(), "izpis": "", "napaka": "", "rezultat": None}
+            podatki["dejanje"] = pot.rsplit("/", 1)[1]
+            STANJE.vrsta.put(("toplota", podatki, odgovor))
+            if not odgovor["konec"].wait(300):
+                telo = {"ok": False, "sporocilo": "FreeCAD še gradi model; poglej čez nekaj časa (gumb Odpri model)."}
+            elif odgovor["napaka"]:
+                telo = {"ok": False, "sporocilo": "Napaka v FreeCAD-u: " + odgovor["napaka"].strip().splitlines()[-1]}
+            else:
+                telo = odgovor["rezultat"]
+            self._odgovor(json.dumps(telo, ensure_ascii=False, default=str).encode("utf-8"))
             return
         if pot == "/grafika/zazeni":
             ok, sporocilo = grafika_zazeni()
