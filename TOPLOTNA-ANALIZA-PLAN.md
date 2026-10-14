@@ -38,8 +38,9 @@ ko stoji na soncu (Biograd, Opatija, Zlatibor …), in kakšno hlajenje (W) je t
 
 ## Predlagani koraki
 
-1. **Bilančni model** (pvlib + ht, skripta v `Oblak/3D modeliranje/Photobox Slim/Skripte/`): najhujši dan (julij,
-   Biograd), notranja temperatura brez hlajenja in potrebna moč hlajenja za cilj 35 °C; tri barve pločevine.
+1. **Bilančni model** — **narejeno 14. 10. 2026**: `Oblak/3D modeliranje/Photobox Slim/Skripte/toplota_bilanca.py`,
+   vhod `Toplota/nastavitve.json`, rezultati `Toplota/POROCILO.md` (celo leto TMY za Biograd, Opatijo, Zlatibor; tri barve
+   plašča; orientacije). Vse vrednosti so z ocenjenimi vhodi (barva, moči naprav, klima) — po potrditvi poženi znova.
 2. **EnergyPlus** z EPW za 3 lokacije: urni profil čez leto, ure nad mejo, velikost klime.
 3. **FreeCAD FEM** na poenostavljenem plašču Slim A: porazdelitev, vroče točke (zaslon, tiskalnik).
 4. Umeritev z meritvijo iz boxa; **OpenFOAM** šele, če vprašanje postane »kam z rešetko in ventilatorjem«.
