@@ -547,12 +547,16 @@
                            font-weight: 600; cursor: pointer; }
   #grafikaStanje button:hover { background: var(--poudarekTemen); }
   #grafikaStanje button:disabled { opacity: .55; cursor: default; }
+  /* Zavihek Toplota (5. stopnja, od 2026-10-14): toplotna simulacija boxa, stran lastno/toplota/toplota.html z istega strežnika (GET /toplota) */
+  #toplota { position: absolute; inset: 0; z-index: 8; background: #f3f5f8; display: flex; }
+  #toplotaOkvir { flex: 1 1 auto; width: 100%; height: 100%; border: 0; background: #f3f5f8; }
   #pasica { position: absolute; top: 14px; left: 50%; transform: translateX(-50%); z-index: 5; max-width: 80%;
             background: #fffbeb; border: 1px solid #fcd98a; border-radius: 12px; padding: 8px 8px 8px 14px; font-size: 13px; color: #78350f;
             display: flex; gap: 12px; align-items: center; box-shadow: var(--senca2); }
   #pasica button { border: 1px solid #f5c76a; background: #fff; border-radius: 8px; height: 28px; padding: 0 11px; cursor: pointer; white-space: nowrap; font-weight: 500; }
   #pasica button:hover { background: #fef3c7; }
   /* Plavajoči elementi pogleda: steklene ploščice (prosojno belo, zabrisano ozadje, mehka senca) */
+  #namig:empty { display: none; }   /* v običajnem pogledu ni trak s pomočjo (odločitev 14. 10. 2026) */
   #namig { position: absolute; left: 14px; bottom: 14px; max-width: calc(100% - 28px); box-sizing: border-box; font-size: 11.5px; line-height: 1.45;
            color: var(--besedilo2); background: var(--steklo); -webkit-backdrop-filter: blur(10px); backdrop-filter: blur(10px);
            border: 1px solid rgba(15,23,42,.06); padding: 5px 10px; border-radius: 10px; pointer-events: none; box-shadow: var(--senca1); }
@@ -817,9 +821,10 @@
 </script>
 </head>
 <body>
-<!-- Vrh strani je v vseh treh stopnjah enak (stopnje levo, orodja desno); spodaj se menja le vsebina stopnje -->
+<!-- Vrh strani je v vseh stopnjah enak (stopnje levo, Pomočnik in Izhod desno); spodaj se menja le vsebina stopnje.
+     Gumba 3D natisni v glavi ni več (odločitev uporabnika 2026-10-13): tisk je »Natisni« v drevesu in v vrstici Oblikovanja. -->
 <header id="vrh">
-    <!-- Štiri stopnje: 1 Oblikovanje (Blender) -> 2 Strojno risanje (FreeCAD, parametrično, pločevina) -> 3 Tiskanje -> 4 Grafika (Grafika Studio) -->
+    <!-- Pet stopenj: 1 Oblikovanje (Blender) -> 2 Strojno risanje (FreeCAD, parametrično, pločevina) -> 3 Tiskanje -> 4 Grafika (Grafika Studio) -> 5 Toplota (simulacija) -->
     <div id="stopnje" role="tablist" aria-label="Stopnje risanja">
       <button type="button" id="gumbOblikovanje" class="stopnja oblikovanje" title="1. stopnja: prosto oblikovanje v Blenderju (organske, gladke oblike, render); ko je oblika všeč, gre v strojno risanje"><span class="st">1</span>Oblikovanje</button>
       <span class="puscicaStopnje">&#8250;</span>
@@ -828,11 +833,13 @@
       <button type="button" id="gumbTiskanje" class="stopnja tiskanje" title="3. stopnja: nadzorna plošča tiskalnikov (Tiskaj): tiskalniki v živo, projekti, vhod STEP, čakalna vrsta"><span class="st">3</span>Tiskanje</button>
       <span class="puscicaStopnje">&#8250;</span>
       <button type="button" id="gumbGrafika" class="stopnja grafika" title="4. stopnja: grafika (Grafika Studio): nalepke, folije in tiskovine kot SVG, Inkscape v ozadju; AI jih ureja prek MCP, ti gledaš v živo"><span class="st">4</span>Grafika</button>
+      <span class="puscicaStopnje">&#8250;</span>
+      <button type="button" id="gumbToplota" class="stopnja toplota" title="5. stopnja: toplotna simulacija boxa na soncu (bilanca pvlib + ht, MKE CalculiX): koliko se segreje in kakšno hlajenje potrebuje"><span class="st">5</span>Toplota</button>
     </div>
     <div id="orodja">
-      <button id="gumbNatisni" type="button" title="Natisni izbrane kose (če ni izbire, cel aktivni dokument): STEP v vhod plošče Tiskaj in okno Pripravi">&#128424; Natisni</button>
-      <button id="gumbPomocnik" type="button" title="Pomočnik AI: povej, kaj naj naredi v modelu (Claude z orodji FreeCAD-a); spremembe potrdiš v plošči">&#10022; Pomočnik</button>
-      <button id="gumbOkno" type="button" title="Pokaže ali skrije okno namiznega FreeCAD-a">Pokaži FreeCAD</button>
+      <button type="button" class="gumbPomocnik" title="Pomočnik AI: povej, kaj naj naredi v modelu (Claude z orodji FreeCAD-a); spremembe potrdiš v plošči">&#10022; Pomočnik</button>
+      <button id="gumbOkno" type="button" title="Pokaže ali skrije okno namiznega FreeCAD-a" hidden>Pokaži FreeCAD</button><!-- skrit na željo uporabnika 2026-10-12; koda in pasica ostajata -->
+
       <button id="gumbIzhod" type="button" title="Zapre FreeCAD in spletni strežnik">Izhod</button>
     </div>
 </header>
@@ -942,6 +949,9 @@
       <p id="grafikaOpis"></p>
       <button type="button" id="grafikaZazeni">Zaženi Grafika Studio</button>
     </div></div>
+  </div>
+  <div id="toplota" class="skrit">
+    <iframe id="toplotaOkvir" title="Toplota (toplotna simulacija)" src="about:blank"></iframe>
   </div>
 </div>
 <aside id="pomocnik" class="skrit" aria-label="Pomočnik AI">
@@ -1164,7 +1174,7 @@ function narisiZavihkeOkolij() {
     z.className = 'zavihek' + (o.ime === stanje.zavihek ? ' aktiven' : '');
     z.dataset.ime = o.ime;
     z.textContent = o.naslov;
-    z.addEventListener('click', () => { zapriTiskanje(); zapriOblikovanje(); zapriGrafiko(); izberiZavihek(o.ime, true); });
+    z.addEventListener('click', () => { zapriTiskanje(); zapriOblikovanje(); zapriGrafiko(); zapriToploto(); izberiZavihek(o.ime, true); });
     zavihki.appendChild(z);
   }
   if (ostala.length) {
@@ -1191,7 +1201,7 @@ function odpriMeniOkolij(gumb, ostala) {
     if (o.ime === stanje.zavihek) s.style.fontWeight = '600';
     g.appendChild(s);
     if (!o.nalozeno) g.title = 'Okolje se naloži ob prvi izbiri';
-    g.addEventListener('click', () => { zapriMeni(); zapriTiskanje(); zapriOblikovanje(); zapriGrafiko(); izberiZavihek(o.ime, true); });
+    g.addEventListener('click', () => { zapriMeni(); zapriTiskanje(); zapriOblikovanje(); zapriGrafiko(); zapriToploto(); izberiZavihek(o.ime, true); });
     meni.appendChild(g);
   }
   const r = gumb.getBoundingClientRect();
@@ -3234,12 +3244,12 @@ function osveziPrikazTiskanja() {
 $('gumbTiskanje').addEventListener('click', () => odpriTiskanje());
 // Stopnje risanja: 2. stopnja (strojno risanje) je dejavna, kadar ni odprt noben okvir (Oblikovanje, Tiskanje, Grafika)
 function osveziStopnjo() {
-  const zunaj = tiskanje.odprto || oblikovanje.odprto || grafika.odprto;
+  const zunaj = tiskanje.odprto || oblikovanje.odprto || grafika.odprto || toplota.odprto;
   $('gumbStrojno').classList.toggle('aktiven', !zunaj);
   document.body.classList.toggle('stopnjaZunaj', zunaj);
-  try { localStorage.setItem('stopnja', tiskanje.odprto ? 'tiskanje' : oblikovanje.odprto ? 'oblikovanje' : grafika.odprto ? 'grafika' : 'strojno'); } catch (e) { /* zasebno okno */ }
+  try { localStorage.setItem('stopnja', tiskanje.odprto ? 'tiskanje' : oblikovanje.odprto ? 'oblikovanje' : grafika.odprto ? 'grafika' : toplota.odprto ? 'toplota' : 'strojno'); } catch (e) { /* zasebno okno */ }
 }
-$('gumbStrojno').addEventListener('click', () => { zapriTiskanje(); zapriOblikovanje(); zapriGrafiko(); });
+$('gumbStrojno').addEventListener('click', () => { zapriTiskanje(); zapriOblikovanje(); zapriGrafiko(); zapriToploto(); });
 // --- Risbe (strani TechDraw) --------------------------------------------------------------------------------
 // Stran risbe (TechDraw::DrawPage) se odpre čez 3D pogled kot SVG, ki ga izriše strežnik (GET /risba; glavna nit
 // odpre skrito okno strani in izvozi SVG). Zavihki preklapljajo med stranmi dokumenta, gumbi izvozijo list (POST /risba
@@ -3337,7 +3347,7 @@ document.addEventListener('keydown', e => {
 function odpriTiskanje() {
   if (tiskanje.odprto) return;
   tiskanje.odprto = true;
-  zapriOblikovanje(); zapriGrafiko();
+  zapriOblikovanje(); zapriGrafiko(); zapriToploto();
   tiskanjeEl.classList.remove('skrit');
   $('gumbTiskanje').classList.add('aktiven');
   osveziStopnjo();
@@ -3602,7 +3612,7 @@ async function zazeniOblikovanje() {
 }
 async function odpriOblikovanje() {
   if (oblikovanje.odprto) return;
-  zapriTiskanje(); zapriGrafiko();
+  zapriTiskanje(); zapriGrafiko(); zapriToploto();
   oblikovanje.odprto = true;
   oblikovanjeEl.classList.remove('skrit');
   $('gumbOblikovanje').classList.add('aktiven');
@@ -3674,7 +3684,7 @@ async function zazeniGrafiko() {
 }
 async function odpriGrafiko() {
   if (grafika.odprto) return;
-  zapriTiskanje(); zapriOblikovanje();
+  zapriTiskanje(); zapriOblikovanje(); zapriToploto();
   grafika.odprto = true;
   grafikaEl.classList.remove('skrit');
   $('gumbGrafika').classList.add('aktiven');
@@ -3691,6 +3701,38 @@ function zapriGrafiko() {
 }
 $('gumbGrafika').addEventListener('click', () => odpriGrafiko());
 $('grafikaZazeni').addEventListener('click', zazeniGrafiko);
+
+// --- Toplota: toplotna simulacija boxa v zavihku (od 2026-10-14, plan TOPLOTNA-ANALIZA-PLAN.md) ------------------------
+// Stran lastno/toplota/toplota.html streže isti strežnik (GET /toplota), okvir čez 3D pogled kot pri Grafiki. Stran bere pot
+// aktivnega dokumenta prek parent.aktivniDokumentPot() in iz nje določi projekt (Oblak/3D modeliranje/<Projekt>/Toplota).
+const toplota = { odprto: false, nalozen: false };
+const toplotaEl = $('toplota'), toplotaOkvir = $('toplotaOkvir');
+function aktivniDokumentPot() {
+  const odprti = (stanje.projekti && stanje.projekti.odprti) || [];
+  const d = odprti.find(o => o.oznaka === stanje.dokument) || odprti.find(o => o.aktiven);
+  return d ? (d.pot || '') : '';
+}
+function odpriToploto() {
+  if (toplota.odprto) return;
+  zapriTiskanje(); zapriOblikovanje(); zapriGrafiko();
+  toplota.odprto = true;
+  toplotaEl.classList.remove('skrit');
+  $('gumbToplota').classList.add('aktiven');
+  osveziStopnjo();
+  if (!toplota.nalozen) { toplota.nalozen = true; toplotaOkvir.src = '/toplota'; }
+  else { try { toplotaOkvir.contentWindow.postMessage({ dejanje: 'osvezi' }, '*'); } catch (e) { /* okvir še ni naložen */ } }
+}
+function zapriToploto() {
+  if (!toplota.odprto) return;
+  toplota.odprto = false;
+  toplotaEl.classList.add('skrit');
+  $('gumbToplota').classList.remove('aktiven');
+  osveziStopnjo();
+}
+$('gumbToplota').addEventListener('click', () => odpriToploto());
+// skripta strani je modul: okvir Toplote do žetona in poti aktivnega dokumenta pride le prek window
+window.aktivniDokumentPot = aktivniDokumentPot;
+window.toplotaZeton = ZETON;
 
 // --- Render trenutnega pogleda (Blender Cycles; okno iz lastno/oblikovanje/render-plosca.js) --------------------------
 async function odpriRenderModela() {
@@ -5621,6 +5663,11 @@ renderer.setAnimationLoop(() => {
 naloziUkaze().catch(pokaziNapako);
 naloziModel().catch(pokaziNapako);
 osveziProjekte();
+// ob osvežitvi strani ostani na stopnji, kjer si bil (Oblikovanje, Strojno risanje, Tiskanje, Grafika, Toplota)
+try {
+  const s = localStorage.getItem('stopnja');
+  if (s === 'oblikovanje') odpriOblikovanje(); else if (s === 'tiskanje') odpriTiskanje(); else if (s === 'grafika') odpriGrafiko(); else if (s === 'toplota') odpriToploto();
+} catch (e) { /* zasebno okno */ }
 </script>
 </body>
 </html>

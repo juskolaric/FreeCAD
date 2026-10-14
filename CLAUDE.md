@@ -199,6 +199,24 @@ FreeCAD je motor, vmesnik in grafika nastajata v brskalniku (plan, korak 8 napre
   dnevnik `FreeCAD-splet/grafika.log`; mapa ob repozitoriju ali `SPLET_GRAFIKA_MAPA`, vrata `SPLET_GRAFIKA_VRATA`) in pove, ali teče (`GET /grafika/stanje`,
   bere `/api/status` Studia). Stran: `grafika` (stanje), `odpriGrafiko`/`zapriGrafiko`/`osveziGrafiko`/`zazeniGrafiko`, okno `#grafikaStanje` z gumbom za zagon,
   zažene se sam ob prvem odprtju; v 4. stopnji velja `body.stopnjaZunaj` kot v 1. in 3. Studio teče naprej po Izhodu FreeCAD-a. Z okvirjem ni postMessage.
+- **Toplota (toplotna simulacija v zavihku)** (od 2026-10-14, plan `TOPLOTNA-ANALIZA-PLAN.md`): 5. stopnja »Toplota« (`#gumbToplota`) je okvir
+  na stran `lastno/toplota/toplota.html`, ki jo streže isti strežnik (`GET /toplota`; modul `lastno/splet/toplota.py`). Podatki projekta so v
+  `Oblak/3D modeliranje/<Projekt>/Toplota/` (`nastavitve.json`, `rezultati.json`, `POROCILO.md`, `urno/`, `slike/`, `vreme/`, `mke/`); projekt
+  se določi iz poti aktivnega dokumenta (`window.aktivniDokumentPot()` — skripta strani je modul, zato okvir do žetona in poti pride le prek
+  `window.toplotaZeton` in te funkcije) ali iz ročne izbire. (1) **Bilanca** `lastno/toplota/bilanca.py` (pvlib + ht + scipy, vozlišča: 5 ploskev
+  plašča, zrak, masa; PVGIS TMY predpomnjen v `vreme/`) teče v niti strežnika (`POST /toplota/izracun`, napredek v `GET /toplota/stanje`);
+  isto jedro kliče `Skripte/toplota_bilanca.py` projekta. (2) **MKE**: `POST /toplota/model` na glavni niti z `lastno/toplota/model_mke.py`
+  zgradi iz odprtega sestava kopijo »<sestav> toplota« (okvirji kosov po skupinah `SKUPINE`, vrata zasukana v zaprto lego okoli tečaja
+  `42-1-4349`; plašč 6 mm enakovredno s prevodnostjo 12,5, okna, zrak, bloki naprav, klima; Boolean Fragments; analiza CalculiX »pure heat
+  transfer« stacionarno z materiali, viri (W), konvekcijo + soncem (DFlux) + sevanjem po straneh, začetno temperaturo, stari Netgen) in jo shrani v
+  `Toplota/mke/`; `POST /toplota/mke` požene `lastno/toplota/mke_zagon.py` v **FreeCADCmd** v ozadju (mreža, ccx iz pixi, rezultati po telesih,
+  slike z matplotlib v `mke/`, `stanje.json` za napredek). **Pasti**: FreeCADCmd brez PYTHONHOME vzame site-packages sistemskega Pythona 3.11 (ni
+  PySide6 za `femtools.ccxtools`) — skripta doda `<pixi>/Lib/site-packages`; skripto izvede z `__name__ != "__main__"`; vsak argument, ki ni
+  skripta, poskusi odpreti kot datoteko (mapa gre prek `TOPLOTA_MKE_MAPA`); zapisovalnik FreeCAD-a (`femtools.ccxtools`) nabore elementov po telesih
+  išče prek vozlišč — pri tej mreži minute na material in nepopolno (ccx: »no material was assigned«), zato `mke_zagon.py` vhod `.inp` zapiše sam
+  (nabori po težiščih elementov iz okvirjev blokov, `writeABAQUS` za mrežo, `getccxVolumesByFace` za lica; enote mm, t, s, K, mW), objekti
+  analize v dokumentu ostajajo za ogled; ccx iz pixi okolja brez `libarpack.dll` iz lupine pade (koda 127), iz procesa FreeCAD-a dela; novi Netgen 1.1 požene zunanji Python z netgen vezavami (pixi jih nima),
+  zato `makeMeshNetgenLegacy`. Mere boxa: v sestavu Slim A so vrata odprta za 90°, zaprti box je 400 × 565 × 1911 mm (ne 701 × 770).
 - **Oblikovanje in render (Blender)** (od 2026-10-10, plan `OBLIKOVANJE-PLAN.md`, mapa `lastno/oblikovanje/`): Blender 5.2 (Program Files,
   `upodabljanje.najdi_blender` vzame najnovejšega; prepis `SPLET_BLENDER`) je drugi motor za proste, organske oblike. **Strežnik Oblikovanja**
   `streznik_blender.py` teče v Blenderju brez okna (`blender -b --factory-startup --python streznik_blender.py -- --vrata 3030`), enako pravilo niti
