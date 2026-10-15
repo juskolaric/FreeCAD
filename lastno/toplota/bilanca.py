@@ -144,7 +144,8 @@ class Model:
         self.alpha = np.full(5, absorptivnost)
         self.eps = nast["plasc"]["emisivnost"]
         self.A_neprosojna = self.A - self.A_steklo
-        self.C_pl = 7850 * b["plocevina_mm"] / 1e3 * 480 * self.A
+        mat = nast["plasc"].get("material", {"gostota": 7850, "cp": 480})   # jeklo privzeto; aluminij 2700 / 900
+        self.C_pl = float(mat["gostota"]) * b["plocevina_mm"] / 1e3 * float(mat["cp"]) * self.A
         self.V = W * D * H
         self.C_zrak = self.V * RHO_CP_ZRAK + 3000.0  # zrak + lahka vsebina
         m = nast["notranja_masa"]
@@ -347,7 +348,7 @@ def porocilo(mapa, nast, rez):
           f"box {b['sirina_mm']} × {b['globina_mm']} × {b['visina_mm']} mm (zaprta vrata), sprednja stena proti {rez['orientacija_spredaj']}, ",
           f"naprave skupaj **{rez['naprave_W']:.0f} W**, ventilacija {nast['hlajenje']['ventilacija_m3h']} m³/h, cilj hlajenja {rez['cilj_C']} °C"
           + (f", klima {rez['klima_W']:.0f} W." if rez["klima_W"] else "."), "",
-          "Vozlišča: plašč po ploskvah (jeklo 1,5 mm), notranji zrak, notranja masa (naprave, police). Sonce iz pvlib na vsako ",
+          f"Vozlišča: plašč po ploskvah ({nast['plasc'].get('material', {}).get('ime', 'jeklo')} {b['plocevina_mm']} mm), notranji zrak, notranja masa (naprave, police). Sonce iz pvlib na vsako ",
           "ploskev, konvekcija (ht: Churchill-Chu, McAdams) + veter, sevanje v nebo in tla, sevanje plašč–masa. Dno adiabatno.", "",
           "## Rezultati", "", md_tabela(rez["tabela"]), ""]
     if rez["orientacije"]:

@@ -5,7 +5,7 @@ Iz odprtega sestava (npr. Slim A) vzame kose po skupinah SKUPINE, vrata zasuče 
 nov dokument »<sestav> toplota«:
   - Plašč: obris zaprtega boxa iz prerezov pravih pločevinastih delov (konveksna ovojnica prerezov na treh višinah, zato
     so zaobljeni robovi in nos vrat v modelu), izvlečen po višini, enakovredna debelina (mke.debelina_plasca_mm);
-  - Steklo in okni LED spredaj (izrezana iz plašča, sledita njegovi obliki);
+  - steklo pred TV in dve okni kamer (v sredini LED obročev) spredaj, izrezana iz plašča;
   - naprave s **pravo obliko** (PC, napajalnik, tiskalnik, TV, LED obroča, POS, zvočnik, Mikrotik), kadar je kos veljavno
     telo z zmernim številom ploskev; sicer kot blok (elektro plošče, klima, kameri);
   - Zrak: notranjost brez naprav.
@@ -33,9 +33,21 @@ SKUPINE = [
     ("Steklo basi A", "Steklo"), ("ZVOČNIK", "Zvočnik"),
 ]
 MOC_KLJUC = {"PC": "PC + napajalnik", "TV": "TV", "Tiskalnik": "tiskalnik (povprečje)", "Mikrotik": "Mikrotik",
-             "LED": "LED obroči", "POS": "POS in ostalo"}
+             "LED": "LED obroči", "POS": "POS in ostalo", "Elektro TV": "elektronika TV"}
+
+
+def _moc(moci, kljuc):
+    """Moč iz naprave_W: ključ se lahko ujema po začetku (npr. »TV (FS185 ...)« za »TV«)."""
+    if not kljuc:
+        return 0.0
+    if kljuc in moci:
+        return float(moci[kljuc] or 0)
+    for k, v in moci.items():
+        if not k.startswith("_") and k.lower().startswith(kljuc.lower()):
+            return float(v or 0)
+    return 0.0
 # material po skupini: (prevodnost W/mK, gostota kg/m3, spec. toplota J/kgK)
-MATERIALI = {"Plašč": (12.5, 7850, 480), "Steklo": (0.19, 1190, 1470), "Okno LED": (0.19, 1190, 1470),
+MATERIALI = {"Plašč": (33.3, 2700, 900), "Steklo": (1.0, 2500, 840), "Okno kamere": (1.0, 2500, 840),
              "Zrak": (1.0, 1.15, 1005), "Klima": (50.0, 2700, 900), "naprava": (10.0, 1500, 1000)}
 # skupine, ki gredo v model s pravo obliko (če je kos veljaven in ne prevelik); ostale kot blok
 # Prave oblike naprav: tiskalnik (STEP Sinfonia ima prekrivajoče se ploskve), PC (tanki deli) in LED obroč Gmsh-u podrejo mrežo
@@ -144,7 +156,8 @@ def preberi_sestav(doc, log=print):
         for lab, pot, sh_k in kandidati:
             for zacetek, skupina in SKUPINE:
                 if lab.startswith(zacetek):
-                    kljuc = (skupina, oznaka)
+                    # LED obroča sta dva (okoli vsakega okna kamere): vsak svoj blok, ne združena v enega
+                    kljuc = (skupina, lab if skupina == "LED" else oznaka)
                     sh_z = zapri(sh_k, je_vrata)
                     if kljuc in kosi:
                         kosi[kljuc]["oblike"].append(sh_z)
@@ -205,7 +218,7 @@ def _notranji_obris(poligon, t):
     return [(v.X, v.Y) for v in notranji.OuterWire.OrderedVertexes]
 
 
-BARVE = {"Plašč": (0.82, 0.84, 0.87), "Steklo": (0.55, 0.75, 0.95), "Okno LED": (0.55, 0.75, 0.95), "PC": (0.85, 0.35, 0.3),
+BARVE = {"Plašč": (0.82, 0.84, 0.87), "Steklo": (0.55, 0.75, 0.95), "Okno kamere": (0.55, 0.75, 0.95), "PC": (0.85, 0.35, 0.3),
          "TV": (0.2, 0.25, 0.3), "Tiskalnik": (0.5, 0.5, 0.55), "Klima": (0.3, 0.6, 0.9), "Mikrotik": (0.9, 0.6, 0.2), "LED": (0.95, 0.85, 0.3),
          "POS": (0.3, 0.3, 0.35), "Kamera": (0.25, 0.25, 0.25), "Elektro levo": (0.4, 0.7, 0.4), "Elektro TV": (0.4, 0.7, 0.4), "Zvočnik": (0.45, 0.4, 0.4)}
 
@@ -270,7 +283,8 @@ def zgradi(doc_sestava, nast, mapa_mke, log=print):
             okna.append(("Steklo", "Steklo", [o[0], Z[1] - 5, o[2], o[3], Z[1] + t + 60, o[5]]))
         elif b["skupina"] == "LED":
             cx, cz = (o[0] + o[3]) / 2, (o[2] + o[5]) / 2
-            okna.append(("Okno LED", "Okno LED", [cx - 50, Z[1] - 5, cz - 50, cx + 50, Z[1] + t + 60, cz + 50]))
+            # okno kamere: steklo 100 × 100 v sredini LED obroča, skozenj gleda kamera
+            okna.append(("Okno kamere", "Okno kamere", [cx - 50, Z[1] - 5, cz - 50, cx + 50, Z[1] + t + 60, cz + 50]))
     stevci = {}
     for ime_okna, skupina, o in okna:
         sk = _skatla(o)
@@ -386,7 +400,7 @@ def zgradi(doc_sestava, nast, mapa_mke, log=print):
     A_steklo = sum((d[3]["okvir"][3] - d[3]["okvir"][0]) * (d[3]["okvir"][5] - d[3]["okvir"][2]) for d in deli if d[1] == "Steklo") / 1e6
     skozi_steklo = tau * A_steklo * float(sc.get("G_spredaj", 0))
     for b_ in bloki_opis:
-        P = float(moci.get(MOC_KLJUC.get(b_["skupina"], ""), 0) or 0)
+        P = _moc(moci, MOC_KLJUC.get(b_["skupina"], ""))
         if b_["skupina"] == "TV":
             P += skozi_steklo
         if b_["skupina"] == "Klima":
@@ -394,7 +408,7 @@ def zgradi(doc_sestava, nast, mapa_mke, log=print):
         V = sum(x["prostornina_l"] for x in bloki_opis if x["skupina"] == b_["skupina"]) or 1.0
         b_["W"] = round(P * b_["prostornina_l"] / V, 1)
         b_["objekt"] = imena_objektov[b_["ime"]]
-    okna_opis = [{"ime": d[0], "skupina": d[1], "okvir": d[3]["okvir"], "objekt": imena_objektov[d[0]]} for d in deli if d[1] in ("Steklo", "Okno LED")]
+    okna_opis = [{"ime": d[0], "skupina": d[1], "okvir": d[3]["okvir"], "objekt": imena_objektov[d[0]]} for d in deli if d[1] in ("Steklo", "Okno kamere")]
     skupina_obmocja = {b_["ime"]: b_["skupina"] for b_ in bloki_opis}
     skupina_obmocja.update({o_["ime"]: o_["skupina"] for o_ in okna_opis})
     skupina_obmocja.update({"Plašč": "Plašč", "Zrak": "Zrak"})
