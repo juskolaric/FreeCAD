@@ -41,8 +41,8 @@ MATERIALI = {"Plašč": (12.5, 7850, 480), "Steklo": (0.19, 1190, 1470), "Okno L
 # Prave oblike naprav: tiskalnik (STEP Sinfonia ima prekrivajoče se ploskve), PC (tanki deli) in LED obroč Gmsh-u podrejo mrežo
 # (»overlapping facets«), TV in zvočnik imata preveč ploskev; zanesljivo gre le POS. Ostale naprave so bloki (okvirji), plašč
 # pa ima pravi obris boxa (zaobljeni robovi, nos vrat).
-REALNE = {"POS"}
-NAJVEC_PLOSKEV = 250   # TV (656 ploskev) in zvočnik (551) kot blok: s pravo obliko Netgen ni dal prostorninske mreže (164k površinskih vozlišč, 0 teles)
+REALNE = {"POS"}   # Mikrotik s pravo obliko (nosilec + SXT, 258 ploskev) Gmsh-u prav tako podre mrežo
+NAJVEC_PLOSKEV = 300   # TV (656 ploskev) in zvočnik (551) kot blok: s pravo obliko Netgen ni dal prostorninske mreže (164k površinskih vozlišč, 0 teles)
 VRATA = "Slim spredaj A"
 TECAJ = "42-1-4349"
 OBRIS_DELI = ("Slim zadaj A", "Slim spredaj A", "Kapa A")
@@ -123,7 +123,8 @@ def preberi_sestav(doc, log=print):
         if otrok is None or sh.isNull() or sh.Volume < 1:
             continue
         oznaka = otrok.Label
-        je_vrata = oznaka.startswith(VRATA)
+        # na vratih so tudi elektronika TV in tiskanina osvetlitve (v sestavu Slim A niso pod podsestavom vrat, a se vrtijo z njimi)
+        je_vrata = oznaka.startswith(VRATA) or oznaka.startswith("Elektro TV - A") or oznaka.startswith("ELEKTRO - TV PCB")
         if any(oznaka.startswith(z) for z in OBRIS_DELI):
             obrisi.append(zapri(sh, je_vrata))
             if oznaka.startswith("Slim zadaj A"):
