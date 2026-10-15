@@ -284,6 +284,9 @@ def izracun(mapa, nast, obseg="teden", lokacije=None, barve=None, orientacije=Tr
             oznaka = f"{ime_lok}_{barva.replace(' ', '-')}"
             prosto.to_csv(os.path.join(mapa, "urno", f"{oznaka}_prosto.csv"), float_format="%.2f")
             hlaj.to_csv(os.path.join(mapa, "urno", f"{oznaka}_hlajenje.csv"), float_format="%.2f")
+            prosto = prosto.iloc[24:] if len(prosto) > 72 else prosto
+            if klima is not None and len(klima) > 72:
+                klima = klima.iloc[24:]
             dan = prosto["T_zrak"].idxmax()
             okno = slice(dan.normalize() - pd.Timedelta(days=1), dan.normalize() + pd.Timedelta(days=2))
             s_pr, s_hl = f"slike/{oznaka}_prosto.png", f"slike/{oznaka}_hlajenje.png"
@@ -294,6 +297,8 @@ def izracun(mapa, nast, obseg="teden", lokacije=None, barve=None, orientacije=Tr
                 s_kl = f"slike/{oznaka}_klima.png"
                 slika(klima.loc[okno], f"{ime_lok}, plašč {barva} — klima {klima_W:.0f} W", os.path.join(mapa, s_kl), cilj)
                 slike[oznaka]["klima"] = s_kl
+            # prvih 24 h je ogrevanje iz začetnega stanja (vse pri zunanji temperaturi): vrh in energijo oceni brez njih
+            hlaj = hlaj.iloc[24:] if len(hlaj) > 72 else hlaj
             vrh = hlaj["P_hlajenje_W"].idxmax()
             dan_hl = hlaj.loc[vrh.normalize():vrh.normalize() + pd.Timedelta(days=1)]
             v = {"lokacija": ime_lok, "plašč": barva, "α": alpha,
