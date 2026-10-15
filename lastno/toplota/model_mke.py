@@ -204,6 +204,36 @@ def _notranji_obris(poligon, t):
     return [(v.X, v.Y) for v in notranji.OuterWire.OrderedVertexes]
 
 
+BARVE = {"Plašč": (0.82, 0.84, 0.87), "Steklo": (0.55, 0.75, 0.95), "Okno LED": (0.55, 0.75, 0.95), "PC": (0.85, 0.35, 0.3),
+         "TV": (0.2, 0.25, 0.3), "Tiskalnik": (0.5, 0.5, 0.55), "Klima": (0.3, 0.6, 0.9), "Mikrotik": (0.9, 0.6, 0.2), "LED": (0.95, 0.85, 0.3),
+         "POS": (0.3, 0.3, 0.35), "Kamera": (0.25, 0.25, 0.25), "Elektro levo": (0.4, 0.7, 0.4), "Elektro TV": (0.4, 0.7, 0.4), "Zvočnik": (0.45, 0.4, 0.4)}
+
+
+def uredi_prikaz(doc, deli, Z):
+    """Prikaz modela v pogledu: naprave in okna obarvani po skupinah, zrak in pomožni objekti skriti, plašč za prikaz prerezan po
+    sredini (leva polovica), ker spletni pogled prosojnosti ne riše; pravi Plašč ostane skrit (uporablja ga mreža)."""
+    polovica = Part.makeBox(Z[3] - Z[0] + 20, Z[4] - Z[1] + 20, Z[5] - Z[2] + 20, Vector((Z[0] + Z[3]) / 2, Z[1] - 10, Z[2] - 10))
+    for o in doc.Objects:
+        if o.TypeId != "Part::Feature":
+            continue
+        lab = o.Label
+        skupina = next((k for k in sorted(BARVE, key=len, reverse=True) if lab.startswith(k)), None)
+        if lab == "Plašč":
+            o.Visibility = False
+            pr = doc.addObject("Part::Feature", "Prikaz_plasca")
+            pr.Label = "Plašč (prikaz, prerezan)"
+            pr.Shape = o.Shape.cut(polovica)
+            if pr.ViewObject is not None:
+                pr.ViewObject.ShapeColor = BARVE["Plašč"]
+            continue
+        if skupina is None or lab.startswith("Zrak") or lab.startswith("Notranjost"):
+            o.Visibility = False
+            continue
+        o.Visibility = True
+        if o.ViewObject is not None:
+            o.ViewObject.ShapeColor = BARVE[skupina]
+
+
 def _ascii(s):
     s = s.replace("š", "s").replace("č", "c").replace("ž", "z").replace("Š", "S").replace("Č", "C").replace("Ž", "Z")
     return re.sub(r"[^A-Za-z0-9_]", "_", s)
@@ -224,6 +254,7 @@ def zgradi(doc_sestava, nast, mapa_mke, log=print):
     notranjost = _prizma(obris_n, Z[2] + t, Z[5] - t)
     N = _okvir(notranjost)
     N2 = [N[0] + 2, N[1] + 2, N[2] + 2, N[3] - 2, N[4] - 2, N[5] - 2]
+    notranjost2 = _prizma(_notranji_obris(obris, t + 2), Z[2] + t + 2, Z[5] - t - 2)   # naprave segajo le do tu
     ime = pod["sestav"] + " toplota"
     doc = App.newDocument(ime.replace(" ", "_"))
     doc.Label = ime
@@ -260,7 +291,7 @@ def zgradi(doc_sestava, nast, mapa_mke, log=print):
         sh = None
         if b["realna"]:
             try:
-                sh = b["oblika"].common(_skatla(N2)).removeSplitter()
+                sh = b["oblika"].common(notranjost2).removeSplitter()
             except Exception:  # noqa: BLE001
                 sh = None
             if sh is None or sh.isNull() or sh.Volume < 1000:
@@ -269,7 +300,9 @@ def zgradi(doc_sestava, nast, mapa_mke, log=print):
             o = _presek(b["okvir"], N2)
             if not _veljaven(o, 8.0):
                 continue
-            sh = _skatla(o)
+            sh = _skatla(o).common(notranjost2)
+            if sh.isNull() or sh.Volume < 1000:
+                continue
         if zasedeno:
             try:
                 sh2 = sh.cut(Part.makeCompound(zasedeno))
@@ -286,7 +319,7 @@ def zgradi(doc_sestava, nast, mapa_mke, log=print):
             # zrak vidi škatlo okoli prave oblike; reža med škatlo in obliko je ločeno (majhno) telo zraka. Veliko telo zraka z
             # drobnimi ploskvami pravih oblik Netgen sicer ne zmreži (površina da, prostornine ne).
             ob = _okvir(sh)
-            H = _skatla(_presek([ob[0] - 3, ob[1] - 3, ob[2] - 3, ob[3] + 3, ob[4] + 3, ob[5] + 3], N2))
+            H = _skatla(_presek([ob[0] - 3, ob[1] - 3, ob[2] - 3, ob[3] + 3, ob[4] + 3, ob[5] + 3], N2)).common(notranjost2)
             if zasedeno:
                 H = H.cut(Part.makeCompound(zasedeno))
             reza = H.cut(sh)
@@ -384,6 +417,7 @@ def zgradi(doc_sestava, nast, mapa_mke, log=print):
             "A_steklo_m2": round(A_steklo, 3), "sonce_skozi_steklo_W": round(skozi_steklo, 1),
             "viri_W": [{"telo": b_["ime"], "W": b_["W"]} for b_ in bloki_opis if b_["W"]], "teles": len(sh.Solids), "ploskev": len(sh.Faces),
             "objekt_notranjost": o_not.Name, "cas_gradnje_s": round(time.time() - t_zac)}
+    uredi_prikaz(doc, deli, Z)
     pot = os.path.join(mapa_mke, ime + ".FCStd")
     doc.saveAs(pot)
     opis["pot"] = pot
