@@ -561,7 +561,12 @@ FreeCAD je motor, vmesnik in grafika nastajata v brskalniku (plan, korak 8 napre
   **Vrstica različic pod pogledom** (od 2026-10-13, želja uporabnika »kot pri Oblikovanju«; `#trakRazlicic` nad `#statusna`,
   `osveziTrakRazlicic`/`narisiTrakRazlicic`, v 1., 3. in 4. stopnji skrita): kartice različic aktivnega dokumenta iz oblaka (najnovejša
   levo; sličica, #N, značke trenutna/v pregledu/izdano, komentar ali datum), klik = Odpri kopijo za ogled, ↶ = Povrni, glava s
-  »Shrani različico« (`Std_Save`) in »Podrobnosti« (plošča). Vir je isti `GET /oblak/zgodovina` (zdaj z `slicica` po reviziji); zgodovina
+  stanjem in »Podrobnosti« (plošča). **Od 2026-10-15 brez gumba Shrani** (želja uporabnika: vsaka sprememba je nova različica):
+  samodejno shranjevanje (8 s / 90 s) poveča v in odjemalec oblaka pošlje revizijo, glava kaže »Shranjeno samodejno« ali utripajoče
+  »Shranjujem …«; gumb »Shrani različico« (`Std_Save`) ostane le pri dokumentu, ki se sam ne shranjuje (`/projekti` polje `samodejno`
+  = `samodejno.velja_za`: izklopljeno ali disk novejši od obnovljene kopije). Po samodejnem shranjevanju datoteke iz oblaka
+  `samodejno._javi_oblaku` odda `oblak` {vrsta: shranjeno, samodejno: true}: stran ne vpraša »Kaj si spremenil?« (komentar v
+  Podrobnostih), pošlje sličico, dogodek `razlicica` nato tiho (brez obvestila) osveži vrstico z novo kartico. Vir je isti `GET /oblak/zgodovina` (zdaj z `slicica` po reviziji); zgodovina
   se naloži ob drugi datoteki, ob dogodku `oblak` in prijavi/odjavi. Ogled kopije, neshranjen dokument, datoteka zunaj oblaka ali
   neprijavljen: vrstica to pove (s prijavo). **Sličice različic** so lokalne (oblak jih ne hrani): `%LOCALAPPDATA%/FreeCAD-splet/slicice/
   razlicice/<rev_id>.png`, `GET /oblak/slicica?rev=`. Stran pošlje render (`POST /oblak/slicica {pot, png}`) po shranjevanju (dogodek

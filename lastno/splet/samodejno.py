@@ -121,6 +121,18 @@ def _ovira(stanje, doc, gdoc):
     return None
 
 
+def _javi_oblaku(stanje, oblak, doc):
+    """Samodejno shranjena datoteka iz mape oblaka je nova različica: stran pošlje sličico (brez vprašanja »Kaj si
+    spremenil?«) in vrstico različic osveži, ko odjemalec oblaka revizijo pošlje (dogodek »razlicica«)."""
+    try:
+        if oblak is None or not oblak.prijavljen() or not oblak.v_oblaku(doc.FileName) or oblak.je_razlicica(doc.FileName):
+            return
+        stanje.oddaj("oblak", {"vrsta": "shranjeno", "samodejno": True, "pot": doc.FileName, "ime": doc.Label,
+                               "verzija": int(doc.Meta.get("Verzija", "0") or 0)})
+    except Exception as e:  # noqa: BLE001
+        _log("dogodek oblaka po shranjevanju: %r" % e)
+
+
 def korak(stanje, oblak=None):
     """En pregled; kliče ga glavna nit pogosto, dela pa največ enkrat na PREGLED sekund."""
     global _zadnji
@@ -187,6 +199,7 @@ def korak(stanje, oblak=None):
             gdoc.Modified = False
             s.update(prva=None, odtis=None, mtime=_mtime(doc.FileName))
             shranjeno.append(doc.Label)
+            _javi_oblaku(stanje, oblak, doc)
         except Exception as e:  # noqa: BLE001
             s["napaka_do"] = zdaj + PONOVI_PO
             _log("%s: shranjevanje ni uspelo (%s); poskusim znova čez %d s" % (doc.Label, e, PONOVI_PO))
@@ -197,6 +210,12 @@ def korak(stanje, oblak=None):
     if shranjeno:
         _log("shranjeno: %s" % ", ".join(shranjeno))
         stanje.zadnji_projekti = 0.0
+
+
+def velja_za(doc):
+    """Ali se dokument shranjuje sam (za seznam odprtih: vrstica različic namesto gumba Shrani pokaže stanje)."""
+    return bool(VKLOPLJENO and doc.FileName and doc.Name not in _brez
+                and "FreeCAD-splet" not in doc.FileName.replace("\\", "/").split("/"))
 
 
 def stanje_samodejnega():

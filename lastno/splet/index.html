@@ -80,7 +80,11 @@
   #trakRazlicic .glavaTraku .stevilo { font-size: 10.5px; font-weight: 600; background: var(--lebdenje); color: var(--besedilo2); border-radius: 999px;
                                        padding: 0 6px; line-height: 16px; }
   #trakRazlicic .glavaTraku .opis { font-size: 11px; color: var(--besedilo3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  #trakRazlicic .glavaTraku .gumbi { display: flex; gap: 5px; }
+  #trakRazlicic .glavaTraku .gumbi { display: flex; gap: 5px; align-items: center; }
+  #trakRazlicic .samodejno { font-size: 11px; color: var(--besedilo2); display: inline-flex; align-items: center; gap: 5px; white-space: nowrap; padding-right: 2px; }
+  #trakRazlicic .samodejno::before { content: ''; width: 7px; height: 7px; border-radius: 50%; background: #22a35a; flex: none; }
+  #trakRazlicic .samodejno.caka::before { background: #e0a100; animation: utripSamodejno 1.2s ease-in-out infinite; }
+  @keyframes utripSamodejno { 50% { opacity: .3; } }
   #trakRazlicic button.g { height: 24px; padding: 0 9px; border: 1px solid var(--crtaMocna); background: var(--plosca); border-radius: 7px; cursor: pointer;
                            font: inherit; font-size: 11.5px; white-space: nowrap; color: var(--besedilo); }
   #trakRazlicic button.g:hover { background: var(--lebdenje); }
@@ -2428,7 +2432,7 @@ async function osveziTrakRazlicic(znova) {
 function narisiTrakRazlicic() {
   const z = trakRazlicic.zgodovina, o = aktivniOdprti();
   if (!z || !o || potNiz(o.pot) !== potNiz(trakRazlicic.pot)) return;
-  const podpis = JSON.stringify([o.pot, !!o.spremenjen, o.verzija, z.pdm, z.razlicice.map(r => [r.rev_id, r.current, r.stanje, r.oznaka, r.komentar, r.slicica])]);
+  const podpis = JSON.stringify([o.pot, !!o.spremenjen, o.samodejno, o.verzija, z.pdm, z.razlicice.map(r => [r.rev_id, r.current, r.stanje, r.oznaka, r.komentar, r.slicica])]);
   if (podpis !== trakRazlicic.podpis) {
     trakRazlicic.podpis = podpis;
     trakRazlicicEl.innerHTML = '';
@@ -2437,16 +2441,27 @@ function narisiTrakRazlicic() {
     const glava = el('div', 'glavaTraku');
     const naslov = el('div', 'naslov', 'Različice'); naslov.append(el('span', 'stevilo', String(n)));
     const opis = el('div', 'opis', (o.verzija ? 'dokument v' + o.verzija + ' · ' : '') + (pdm.stanje === 'izdano' ? 'izdana revizija ' + (pdm.oznaka || '')
-      : (IME_STANJA[pdm.stanje] || 'osnutek') + (pdm.zadnja_izdana ? ' · zadnja izdana ' + pdm.zadnja_izdana.oznaka : '')) + (o.spremenjen ? ' · neshranjene spremembe' : ''));
+      : (IME_STANJA[pdm.stanje] || 'osnutek') + (pdm.zadnja_izdana ? ' · zadnja izdana ' + pdm.zadnja_izdana.oznaka : '')) + (o.spremenjen && !o.samodejno ? ' · neshranjene spremembe' : ''));
     opis.title = z.prostor + ' · ' + z.potVOblaku + (o.verzija ? '\nRazličica dokumenta v' + o.verzija + ' (Meta »Verzija«; poveča se ob vsakem shranjevanju s spremembami)' : '');
     const gumbi = el('div', 'gumbi');
-    const shrani = el('button', 'g' + (o.spremenjen ? ' glavni' : ''), 'Shrani različico'); shrani.type = 'button';
-    shrani.title = 'Shrani dokument (kot Ctrl+S v FreeCAD-u); odjemalec oblaka pošlje novo različico, stran nato vpraša, kaj si spremenil';
-    shrani.addEventListener('click', () => objavi('/ukaz', { ime: 'Std_Save' }).catch(pokaziNapako));
+    // Samodejno shranjevanje (samodejno.py): vsaka sprememba se shrani sama 8 s po zadnji spremembi (najkasneje 90 s) in
+    // postane nova različica (v+1, odjemalec oblaka pošlje revizijo), zato gumba Shrani ni. Gumb ostane le, kadar se
+    // dokument sam ne shranjuje (izklopljeno, datoteka na disku novejša od obnovljene kopije).
+    if (o.samodejno) {
+      const s = el('span', 'samodejno' + (o.spremenjen ? ' caka' : ''), o.spremenjen ? 'Shranjujem …' : 'Shranjeno samodejno');
+      s.title = 'Vsaka sprememba se shrani sama (8 s po zadnji spremembi, najkasneje v 90 s) in postane nova različica.';
+      gumbi.append(s);
+    } else {
+      const shrani = el('button', 'g' + (o.spremenjen ? ' glavni' : ''), 'Shrani različico'); shrani.type = 'button';
+      shrani.title = 'Ta dokument se ne shranjuje samodejno. Shrani ga (kot Ctrl+S v FreeCAD-u); odjemalec oblaka pošlje novo različico.';
+      shrani.addEventListener('click', () => objavi('/ukaz', { ime: 'Std_Save' }).catch(pokaziNapako));
+      gumbi.append(shrani);
+    }
     const vse = el('button', 'g', 'Podrobnosti'); vse.type = 'button'; vse.title = 'Plošča z različicami: zaklep, stanje revizije, komentarji, reference';
     vse.addEventListener('click', () => pokaziRazlicice(o.pot, o.oznaka || o.ime));
-    gumbi.append(shrani, vse); glava.append(naslov, opis, gumbi); trakRazlicicEl.append(glava);
-    if (!n) trakRazlicicEl.append(el('div', 'prazno', 'Dokument še nima različic v oblaku: shrani ga, odjemalec oblaka pošlje prvo.'));
+    gumbi.append(vse); glava.append(naslov, opis, gumbi); trakRazlicicEl.append(glava);
+    if (!n) trakRazlicicEl.append(el('div', 'prazno', o.samodejno ? 'Dokument še nima različic v oblaku: prva nastane ob prvi spremembi.'
+      : 'Dokument še nima različic v oblaku: shrani ga, odjemalec oblaka pošlje prvo.'));
     for (const r of z.razlicice) trakRazlicicEl.append(kartaRazlicice(o, r));   // najnovejša levo, kot v plošči
   }
   posljiSlicicoTrenutne();
@@ -5609,7 +5624,7 @@ dogodki.addEventListener('oblak', e => {
   try {
     const o = JSON.parse(e.data);
     if (o.vrsta === 'shranjeno') {
-      vprasajKomentar(o);
+      if (!o.samodejno) vprasajKomentar(o);   // samodejno shranjevanje (vsaka sprememba) ne sprašuje; komentar v Podrobnostih
       // sličica nove različice: render strani, a le če je shranjeni dokument tisti v pogledu (samodejno shranjevanje shrani tudi druge)
       if (potNiz(o.pot) === potNiz(potDokumenta())) { trakRazlicic.poslanaSlicica = ''; posljiSlicicoRazlicice(o.pot, o.pot + '|shranjeno'); }
       return;
@@ -5671,3 +5686,7 @@ try {
 </script>
 </body>
 </html>
+    if (o.vrsta === 'razlicica') {   // nova revizija v oblaku (ob vsaki samodejno shranjeni spremembi): kartica v vrstici, brez obvestila
+      if (stanje.razlicice) pokaziRazlicice(stanje.razlicice.pot, stanje.razlicice.ime);
+      osveziTrakRazlicic(true); return;
+    }

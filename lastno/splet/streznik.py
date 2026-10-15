@@ -2408,6 +2408,7 @@ def zgradi_projekte():
                 o["spremenjeno"] = int(st.st_mtime)
                 lastnosti = _lastnosti_fcstd(d.FileName, st)
                 o["slicica"] = lastnosti["slicica"] or render > 0
+        o["samodejno"] = samodejno.velja_za(d)   # vsaka sprememba se shrani sama -> nova različica (brez gumba Shrani)
                 o["verzijaDatoteke"] = lastnosti.get("verzija", 0)   # višja od verzija = datoteko je shranila druga seja
                 o["slicicaV"] = max(render, int(st.st_mtime))
             except OSError:
