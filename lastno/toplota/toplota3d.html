@@ -1,0 +1,237 @@
+<!doctype html>
+<html lang="sl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Toplota 3D</title>
+<style>
+  :root { --poudarek: #2563eb; --crta: #e3e6eb; --besedilo: #1f2328; --besedilo2: #57606a; --plosca: #fff; --ozadje: #f3f5f8; --slabo: #b91c1c; }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; font: 13px/1.4 "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif; color: var(--besedilo); background: var(--ozadje); overflow: hidden; }
+  #pogled { position: absolute; inset: 0; }
+  #plosca { position: absolute; top: 10px; left: 10px; width: 250px; background: rgba(255,255,255,.94); border: 1px solid var(--crta); border-radius: 12px; padding: 10px 12px; box-shadow: 0 6px 24px rgba(0,0,0,.08); max-height: calc(100% - 20px); overflow: auto; }
+  #plosca h3 { margin: 0 0 6px; font-size: 13px; } #plosca h4 { margin: 10px 0 4px; font-size: 11px; color: var(--besedilo2); text-transform: uppercase; letter-spacing: .04em; }
+  label.vr { display: flex; align-items: center; gap: 6px; margin: 2px 0; cursor: pointer; }
+  label.vr .t { margin-left: auto; color: var(--besedilo2); font-variant-numeric: tabular-nums; }
+  input[type=range] { width: 100%; }
+  select, button { font: inherit; height: 26px; border: 1px solid #cfd4dc; border-radius: 7px; background: #fff; padding: 0 8px; }
+  button { cursor: pointer; } button:hover { background: #eef1f5; }
+  #legenda { position: absolute; right: 14px; top: 14px; background: rgba(255,255,255,.94); border: 1px solid var(--crta); border-radius: 10px; padding: 8px 10px; width: 70px; text-align: center; }
+  #legenda canvas { width: 18px; height: 180px; display: block; margin: 4px auto; border-radius: 3px; }
+  #legenda .v { font-size: 11px; color: var(--besedilo2); font-variant-numeric: tabular-nums; }
+  #info { position: absolute; left: 50%; bottom: 12px; transform: translateX(-50%); background: rgba(255,255,255,.94); border: 1px solid var(--crta); border-radius: 999px; padding: 5px 14px; font-size: 12px; color: var(--besedilo2); white-space: nowrap; }
+  #info b { color: var(--besedilo); }
+  #nalaganje { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; color: var(--besedilo2); background: var(--ozadje); }
+  .slabo { color: var(--slabo); }
+  .mini { font-size: 11px; color: var(--besedilo2); }
+</style>
+<script type="importmap">
+{ "imports": {
+  "three": "https://cdn.jsdelivr.net/npm/three@0.186.1/build/three.module.js",
+  "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.186.1/examples/jsm/"
+} }
+</script>
+</head>
+<body>
+<div id="pogled"></div>
+<div id="nalaganje">Nalagam polje temperatur …</div>
+<div id="plosca">
+  <h3>Temperatura v boxu</h3>
+  <div class="mini" id="opis"></div>
+  <h4>Prerez</h4>
+  <div style="display:flex;gap:6px;align-items:center">
+    <select id="os"><option value="x">ravnina X (levo–desno)</option><option value="y" selected>ravnina Y (spredaj–zadaj)</option><option value="z">ravnina Z (višina)</option></select>
+  </div>
+  <input type="range" id="lega" min="0" max="1000" value="500">
+  <label class="vr"><input type="checkbox" id="odrezi" checked> odreži sprednjo polovico (pogled v notranjost)</label>
+  <label class="vr"><input type="checkbox" id="prerez" checked> prerez polja na ravnini</label>
+  <h4>Barvna lestvica</h4>
+  <div style="display:flex;gap:6px;align-items:center"><span class="mini">od</span><input type="number" id="tmin" step="1" style="width:60px"><span class="mini">do</span><input type="number" id="tmax" step="1" style="width:60px"><span class="mini">°C</span></div>
+  <h4>Območja</h4>
+  <div id="obmocja"></div>
+  <h4>Pogled</h4>
+  <div style="display:flex;gap:6px;flex-wrap:wrap">
+    <button data-pogled="izo">izo</button><button data-pogled="spredaj">spredaj</button><button data-pogled="desno">desno</button><button data-pogled="zgoraj">zgoraj</button>
+  </div>
+  <label class="vr" style="margin-top:6px"><input type="checkbox" id="prosojno" checked> plašč prosojen</label>
+</div>
+<div id="legenda"><div class="v" id="lmax"></div><canvas id="lcanvas" width="18" height="180"></canvas><div class="v" id="lmin"></div></div>
+<div id="info">Premakni miško čez model: temperatura v točki</div>
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
+const $ = id => document.getElementById(id);
+const q = new URLSearchParams(location.search);
+const mapa = q.get('mapa') || '';
+let polje = null, tmin = 30, tmax = 90;
+
+// barvna lestvica (podobna inferno): temno vijolična -> rdeča -> rumena
+const LESTVICA = [[0.05,0.03,0.2],[0.3,0.05,0.45],[0.6,0.1,0.5],[0.85,0.25,0.3],[0.98,0.55,0.1],[0.99,0.9,0.4]];
+function barva(t) {
+  let u = (t - tmin) / Math.max(1e-6, tmax - tmin); u = Math.min(1, Math.max(0, u));
+  const k = u * (LESTVICA.length - 1), i = Math.min(LESTVICA.length - 2, Math.floor(k)), f = k - i;
+  const a = LESTVICA[i], b = LESTVICA[i + 1];
+  return [a[0] + (b[0] - a[0]) * f, a[1] + (b[1] - a[1]) * f, a[2] + (b[2] - a[2]) * f];
+}
+function narisiLegendo() {
+  const c = $('lcanvas').getContext('2d');
+  for (let y = 0; y < 180; y++) { const [r, g, b] = barva(tmax - (tmax - tmin) * y / 179); c.fillStyle = `rgb(${r * 255},${g * 255},${b * 255})`; c.fillRect(0, y, 18, 1); }
+  $('lmax').textContent = tmax.toFixed(0) + ' °C'; $('lmin').textContent = tmin.toFixed(0) + ' °C';
+}
+
+// --- scena -----------------------------------------------------------------------------------------------------
+const el = $('pogled');
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setPixelRatio(Math.min(2, window.devicePixelRatio)); renderer.setSize(el.clientWidth, el.clientHeight);
+renderer.localClippingEnabled = true; renderer.setClearColor(0xf3f5f8);
+el.appendChild(renderer.domElement);
+const scene = new THREE.Scene();
+const camera = new THREE.PerspectiveCamera(40, el.clientWidth / el.clientHeight, 1, 50000);
+camera.up.set(0, 0, 1);
+const controls = new OrbitControls(camera, renderer.domElement);
+scene.add(new THREE.HemisphereLight(0xffffff, 0x888888, 1.1));
+const luc = new THREE.DirectionalLight(0xffffff, 0.8); luc.position.set(1, -2, 3); scene.add(luc);
+const skupina = new THREE.Group(); scene.add(skupina);
+const mesi = {};   // ime območja -> mesh
+let prerezMesh = null, sredisce = new THREE.Vector3(), Z = null;
+const ravnina = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
+
+function naloziObmocje(o) {
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.BufferAttribute(new Float32Array(polje.vozlisca), 3));
+  g.setIndex(o.trikotniki);
+  const b = new Float32Array(polje.vozlisca.length);
+  g.setAttribute('color', new THREE.BufferAttribute(b, 3));
+  g.computeVertexNormals();
+  const m = new THREE.MeshLambertMaterial({ vertexColors: true, side: THREE.DoubleSide, clippingPlanes: [ravnina], clipShadows: true });
+  const mesh = new THREE.Mesh(g, m); mesh.name = o.ime; mesh.userData = o;
+  skupina.add(mesh); mesi[o.ime] = mesh;
+}
+function pobarvaj() {
+  for (const mesh of Object.values(mesi)) {
+    const b = mesh.geometry.attributes.color.array;
+    for (let i = 0; i < polje.T.length; i++) { const [r, g, bl] = barva(polje.T[i]); b[3 * i] = r; b[3 * i + 1] = g; b[3 * i + 2] = bl; }
+    mesh.geometry.attributes.color.needsUpdate = true;
+  }
+  if (prerezMesh) prerez();
+  narisiLegendo();
+}
+// prerez: presek tetraedrov z ravnino (marching tetrahedra), temperatura interpolirana
+function prerez() {
+  if (prerezMesh) { skupina.remove(prerezMesh); prerezMesh.geometry.dispose(); prerezMesh = null; }
+  if (!$('prerez').checked) return;
+  const os = $('os').value, oi = { x: 0, y: 1, z: 2 }[os], lega = legaRavnine();
+  const V = polje.vozlisca, T = polje.T, pos = [], col = [];
+  const p = [0, 1, 2, 3], d = [0, 0, 0, 0], tocke = [];
+  for (const o of polje.obmocja) {
+    if (!mesi[o.ime].visible) continue;
+    const tet = o.tetre;
+    for (let k = 0; k < tet.length; k += 4) {
+      let poz = 0;
+      for (let j = 0; j < 4; j++) { p[j] = tet[k + j]; d[j] = V[3 * p[j] + oi] - lega; if (d[j] > 0) poz++; }
+      if (poz === 0 || poz === 4) continue;
+      tocke.length = 0;
+      for (let a = 0; a < 4; a++) for (let b = a + 1; b < 4; b++) {
+        if ((d[a] > 0) !== (d[b] > 0)) {
+          const f = d[a] / (d[a] - d[b]), ia = 3 * p[a], ib = 3 * p[b];
+          tocke.push([V[ia] + (V[ib] - V[ia]) * f, V[ia + 1] + (V[ib + 1] - V[ia + 1]) * f, V[ia + 2] + (V[ib + 2] - V[ia + 2]) * f, T[p[a]] + (T[p[b]] - T[p[a]]) * f]);
+        }
+      }
+      if (tocke.length === 4) { // štirikotnik: uredi po kotu okoli težišča
+        const cx = (tocke[0][0] + tocke[1][0] + tocke[2][0] + tocke[3][0]) / 4, cy = (tocke[0][1] + tocke[1][1] + tocke[2][1] + tocke[3][1]) / 4, cz = (tocke[0][2] + tocke[1][2] + tocke[2][2] + tocke[3][2]) / 4;
+        const u = oi === 0 ? [1, 2] : oi === 1 ? [0, 2] : [0, 1], c = [cx, cy, cz];
+        tocke.sort((a, b) => Math.atan2(a[u[1]] - c[u[1]], a[u[0]] - c[u[0]]) - Math.atan2(b[u[1]] - c[u[1]], b[u[0]] - c[u[0]]));
+      }
+      for (let t = 1; t + 1 < tocke.length; t++) for (const pt of [tocke[0], tocke[t], tocke[t + 1]]) { pos.push(pt[0], pt[1], pt[2]); const [r, g, b] = barva(pt[3]); col.push(r, g, b); }
+    }
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.BufferAttribute(new Float32Array(pos), 3));
+  g.setAttribute('color', new THREE.BufferAttribute(new Float32Array(col), 3));
+  prerezMesh = new THREE.Mesh(g, new THREE.MeshBasicMaterial({ vertexColors: true, side: THREE.DoubleSide, polygonOffset: true, polygonOffsetFactor: -1 }));
+  prerezMesh.name = 'prerez'; skupina.add(prerezMesh);
+}
+function legaRavnine() {
+  const os = $('os').value, oi = { x: 0, y: 1, z: 2 }[os];
+  return Z[oi] + (Z[oi + 3] - Z[oi]) * Number($('lega').value) / 1000;
+}
+function posodobiRavnino() {
+  const os = $('os').value, lega = legaRavnine();
+  const n = os === 'x' ? new THREE.Vector3(1, 0, 0) : os === 'y' ? new THREE.Vector3(0, 1, 0) : new THREE.Vector3(0, 0, 1);
+  if ($('odrezi').checked) { ravnina.normal.copy(n); ravnina.constant = -lega; }   // obdrži polovico z večjo koordinato
+  else { ravnina.normal.set(0, 0, 1); ravnina.constant = 1e9; }
+  prerez();
+}
+function pogled(kam) {
+  const r = Math.max(Z[3] - Z[0], Z[4] - Z[1], Z[5] - Z[2]) * 1.05;
+  const s = sredisce;
+  const poz = { izo: [s.x - r * 0.9, s.y - r * 1.0, s.z + r * 0.45], spredaj: [s.x, s.y - r * 1.35, s.z], desno: [s.x + r * 1.35, s.y, s.z], zgoraj: [s.x, s.y - 1, s.z + r * 1.4] }[kam];
+  camera.position.set(...poz); controls.target.copy(s); controls.update();
+}
+function narisiObmocja() {
+  const d = $('obmocja'); d.innerHTML = '';
+  const mx = {};
+  for (const o of polje.obmocja) { let m = -1e9; for (let i = 0; i < o.trikotniki.length; i++) m = Math.max(m, polje.T[o.trikotniki[i]]); mx[o.ime] = m; }
+  for (const o of [...polje.obmocja].sort((a, b) => mx[b.ime] - mx[a.ime])) {
+    const l = document.createElement('label'); l.className = 'vr';
+    l.innerHTML = `<input type="checkbox" checked data-ime="${o.ime}"> ${o.ime}${o.W ? ` <span class="mini">${o.W} W</span>` : ''}<span class="t">${mx[o.ime].toFixed(0)} °C</span>`;
+    l.querySelector('input').addEventListener('change', e => { mesi[o.ime].visible = e.target.checked; prerez(); });
+    d.appendChild(l);
+  }
+}
+// --- temperatura pod miško ----------------------------------------------------------------------------------------
+const ray = new THREE.Raycaster(), mis = new THREE.Vector2();
+renderer.domElement.addEventListener('pointermove', e => {
+  if (!polje) return;
+  const r = renderer.domElement.getBoundingClientRect();
+  mis.x = ((e.clientX - r.left) / r.width) * 2 - 1; mis.y = -((e.clientY - r.top) / r.height) * 2 + 1;
+  ray.setFromCamera(mis, camera);
+  const zadetki = ray.intersectObjects(Object.values(mesi).filter(m => m.visible).concat(prerezMesh ? [prerezMesh] : []), false);
+  const z = zadetki.find(h => !h.object.material.clippingPlanes || ravnina.distanceToPoint(h.point) >= -0.01);
+  if (!z) { $('info').textContent = 'Premakni miško čez model: temperatura v točki'; return; }
+  let t;
+  if (z.object === prerezMesh) { const c = z.object.geometry.attributes.color; const i = z.face.a; t = tmin + (tmax - tmin) * ((c.getX(i) - LESTVICA[0][0]) >= 0 ? barvaVTemp(c.getX(i), c.getY(i), c.getZ(i)) : 0); }
+  else { const f = z.face; t = (polje.T[f.a] + polje.T[f.b] + polje.T[f.c]) / 3; }
+  $('info').innerHTML = `<b>${t.toFixed(1)} °C</b> · ${z.object.name} · X ${z.point.x.toFixed(0)}, Y ${z.point.y.toFixed(0)}, Z ${z.point.z.toFixed(0)} mm`;
+});
+function barvaVTemp(r, g, b) { // najbližja barva v lestvici -> delež
+  let naj = 0, najd = 1e9;
+  for (let i = 0; i <= 100; i++) { const [cr, cg, cb] = barva(tmin + (tmax - tmin) * i / 100); const d = (cr - r) ** 2 + (cg - g) ** 2 + (cb - b) ** 2; if (d < najd) { najd = d; naj = i / 100; } }
+  return naj;
+}
+// --- nalaganje --------------------------------------------------------------------------------------------------
+async function nalozi() {
+  try {
+    const r = await fetch(`/toplota/datoteka?mapa=${encodeURIComponent(mapa)}&pot=mke/polje.json`, { cache: 'no-store' });
+    if (!r.ok) throw new Error('polje.json še ni izračunano (poženi MKE)');
+    polje = await r.json();
+  } catch (e) { $('nalaganje').innerHTML = `<span class="slabo">${e.message}</span>`; return; }
+  $('nalaganje').remove();
+  Z = polje.zunanji_mm;
+  sredisce.set((Z[0] + Z[3]) / 2, (Z[1] + Z[4]) / 2, (Z[2] + Z[5]) / 2);
+  const Ts = polje.T; let lo = Infinity, hi = -Infinity; for (const t of Ts) { if (t < lo) lo = t; if (t > hi) hi = t; }
+  tmin = Math.floor(lo); tmax = Math.ceil(hi); $('tmin').value = tmin; $('tmax').value = tmax;
+  for (const o of polje.obmocja) naloziObmocje(o);
+  if (mesi['Plašč']) { mesi['Plašč'].material.transparent = true; mesi['Plašč'].material.opacity = 0.35; mesi['Plašč'].material.depthWrite = false; mesi['Plašč'].renderOrder = 2; }
+  if (mesi['Zrak']) { mesi['Zrak'].visible = false; }
+  narisiObmocja();
+  if (mesi['Zrak']) document.querySelector('input[data-ime="Zrak"]').checked = false;
+  const sc = polje.scenarij || {};
+  $('opis').textContent = `Stacionarno, zunaj ${sc.T_zunaj_C} °C, sonce streha ${sc.G_streha} W/m², spredaj ${sc.G_spredaj} W/m² · ${polje.T.length} vozlišč · ${polje.cas}`;
+  pobarvaj(); posodobiRavnino(); pogled('izo');
+}
+$('lega').addEventListener('input', posodobiRavnino);
+$('os').addEventListener('change', posodobiRavnino);
+$('odrezi').addEventListener('change', posodobiRavnino);
+$('prerez').addEventListener('change', posodobiRavnino);
+$('tmin').addEventListener('change', () => { tmin = Number($('tmin').value); pobarvaj(); });
+$('tmax').addEventListener('change', () => { tmax = Number($('tmax').value); pobarvaj(); });
+$('prosojno').addEventListener('change', e => { const m = mesi['Plašč']; if (!m) return; m.material.transparent = e.target.checked; m.material.opacity = e.target.checked ? 0.35 : 1; m.material.depthWrite = !e.target.checked; m.material.needsUpdate = true; });
+document.querySelectorAll('[data-pogled]').forEach(b => b.addEventListener('click', () => pogled(b.dataset.pogled)));
+window.addEventListener('resize', () => { renderer.setSize(el.clientWidth, el.clientHeight); camera.aspect = el.clientWidth / el.clientHeight; camera.updateProjectionMatrix(); });
+renderer.setAnimationLoop(() => { controls.update(); renderer.render(scene, camera); });
+nalozi();
+</script>
+</body>
+</html>

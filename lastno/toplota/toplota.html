@@ -100,6 +100,7 @@
         <button id="zgradiModel" title="Iz odprtega sestava (aktivni dokument) zgradi poenostavljeno kopijo: plašč, okna, zrak, naprave kot bloki, klima; analiza FEM z robnimi pogoji">Zgradi model iz sestava</button>
         <button id="odpriModel">Odpri model</button>
         <button class="glavni" id="pozeniMke">Poženi MKE</button>
+        <button id="odpri3d" title="3D polje temperatur v novem zavihku">3D ↗</button>
       </div>
       <div class="stanje" id="stanjeMke"></div>
       <div id="scenarij"></div>
@@ -222,9 +223,14 @@ function pokaziMke(m) {
       Scenarij: zunaj ${sc.T_zunaj_C} °C, veter ${sc.veter_ms} m/s, sonce streha ${sc.G_streha} W/m², spredaj ${sc.G_spredaj} W/m², bok ${sc.G_bok} W/m²; α ${model.alpha}, h ${model.h} W/m²K, skozi steklo ${model.sonce_skozi_steklo_W} W.</div>`;
   } else $('scenarij').innerHTML = '';
   if (rez) {
+    if ($('rezultatiMke').dataset.cas === rez.cas) { /* isti rezultat: okvir 3D ostane */ }
+    else $('rezultatiMke').dataset.cas = rez.cas;
+    if ($('rezultatiMke').dataset.cas === rez.cas && $('okvir3d')) return;
     let h = `<div class="stanje">${rez.cas} · ${rez.vozlisc} vozlišč, ${rez.elementov} elementov · ${rez.trajanje_s} s · T ${f1(rez.T_min_C)} … <b>${f1(rez.T_max_C)} °C</b></div>`;
     h += tabela(rez.po_skupinah.map(g => ({ skupina: g.skupina, 'min °C': g.min, 'povp °C': g.povp, 'max °C': g.max })), 'max °C');
     h += '<div class="slike">' + (rez.slike || []).map(s => `<img src="/toplota/slika?mapa=${encodeURIComponent(mapa)}&pot=mke/${encodeURIComponent(s)}&v=${encodeURIComponent(rez.cas)}">`).join('') + '</div>';
+    h += `<h3>3D polje temperatur</h3><div class="stanje">Vrti z miško, kolešček povečava. Drsnik premika ravnino prereza; plašč je prosojen, zrak skrit (vklopi ga v seznamu območij).</div>
+      <iframe id="okvir3d" src="/toplota/3d?mapa=${encodeURIComponent(mapa)}&v=${encodeURIComponent(rez.cas)}" style="width:100%;height:640px;border:1px solid var(--crta);border-radius:10px;background:#f3f5f8"></iframe>`;
     h += `<details><summary>po telesih</summary>${tabela(rez.po_telesih.map(t => ({ telo: t.telo, skupina: t.skupina, 'min °C': t.min, 'povp °C': t.povp, 'max °C': t.max })), 'max °C')}</details>`;
     $('rezultatiMke').innerHTML = h;
   } else if (model) $('rezultatiMke').innerHTML = '<div class="prazno">Model je zgrajen. Poženi MKE (mreža + CalculiX; nekaj minut, teče v ozadju).</div>';
@@ -242,6 +248,7 @@ $('zgradiModel').addEventListener('click', async () => {
   } catch (e) { $('stanjeMke').innerHTML = `<span class="slabo">${e.message}</span>`; }
   $('zgradiModel').disabled = false; osvezi();
 });
+$('odpri3d').addEventListener('click', () => window.open(`/toplota/3d?mapa=${encodeURIComponent(mapa)}`, '_blank'));
 $('odpriModel').addEventListener('click', async () => { const d = await post('/toplota/odpri', { mapa }); $('stanjeMke').textContent = d.ok ? `odprt: ${d.dokument} (glej 2. stopnjo)` : d.sporocilo; });
 $('pozeniMke').addEventListener('click', async () => {
   const d = await post('/toplota/mke', { mapa });

@@ -216,7 +216,14 @@ FreeCAD je motor, vmesnik in grafika nastajata v brskalniku (plan, korak 8 napre
   išče prek vozlišč — pri tej mreži minute na material in nepopolno (ccx: »no material was assigned«), zato `mke_zagon.py` vhod `.inp` zapiše sam
   (nabori po težiščih elementov iz okvirjev blokov, `writeABAQUS` za mrežo, `getccxVolumesByFace` za lica; enote mm, t, s, K, mW), objekti
   analize v dokumentu ostajajo za ogled; ccx iz pixi okolja brez `libarpack.dll` iz lupine pade (koda 127), iz procesa FreeCAD-a dela; novi Netgen 1.1 požene zunanji Python z netgen vezavami (pixi jih nima),
-  zato `makeMeshNetgenLegacy`. Mere boxa: v sestavu Slim A so vrata odprta za 90°, zaprti box je 400 × 565 × 1911 mm (ne 701 × 770).
+  zato je bil najprej `makeMeshNetgenLegacy`; od 15. 10. mreži **Gmsh** (pip paket `gmsh` v pixi okolju, API iz FreeCADCmd; `deli.brep` iz Boolean
+  Fragments, HXT z rezervo Delaunay) — stari Netgen pri pravih oblikah naprav ne da prostorninske mreže (površino da, 0 teles). Prave oblike:
+  plašč ima pravi obris boxa (konveksna ovojnica prerezov pločevine: zaobljeni robovi, nos vrat), naprave pa so bloki, ker STEP-i (tiskalnik
+  Sinfonia, PC, LED obroč) Gmsh-u dajo »overlapping facets«; s pravo obliko gre le POS (`REALNE`). Naprave se ne smejo prekrivati (vsaka
+  nova odšteje prejšnje). Klima v MKE ni telesni ponor (blok pade pod ničlo), ampak izmenjevalnik: *FILM na mejnih licih bloka proti izpihu
+  (`mke.klima_izpih_C`, h = P/(A·30 K)). 3D polje: `mke/polje.json` (vozlišča, T, po območjih tetraedri in robni trikotniki) → stran
+  `lastno/toplota/toplota3d.html` (`GET /toplota/3d?mapa=`, three.js WebGL, prerez z ravnino = marching tetrahedra v JS, odrez polovice s
+  clippingPlanes), vdelana v kartico MKE in `GET /toplota/datoteka`. Mere boxa: v sestavu Slim A so vrata odprta za 90°, zaprti box je 400 × 565 × 1911 mm (ne 701 × 770).
 - **Oblikovanje in render (Blender)** (od 2026-10-10, plan `OBLIKOVANJE-PLAN.md`, mapa `lastno/oblikovanje/`): Blender 5.2 (Program Files,
   `upodabljanje.najdi_blender` vzame najnovejšega; prepis `SPLET_BLENDER`) je drugi motor za proste, organske oblike. **Strežnik Oblikovanja**
   `streznik_blender.py` teče v Blenderju brez okna (`blender -b --factory-startup --python streznik_blender.py -- --vrata 3030`), enako pravilo niti

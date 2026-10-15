@@ -3696,10 +3696,15 @@ class Zahteva(http.server.BaseHTTPRequestHandler):
         elif pot == "/toplota":
             # 5. stopnja Toplota: stran iz lastno/toplota (toplota.py); podatki projekta v Oblak/3D modeliranje/<Projekt>/Toplota
             self._odgovor(toplota_modul.stran(), "text/html; charset=utf-8")
-        elif pot in ("/toplota/stanje", "/toplota/slika"):
+        elif pot == "/toplota/3d":
+            self._odgovor(toplota_modul.stran_3d(), "text/html; charset=utf-8")
+        elif pot in ("/toplota/stanje", "/toplota/slika", "/toplota/datoteka"):
             import urllib.parse
             q = urllib.parse.parse_qs(self.path.partition("?")[2])
-            if pot == "/toplota/stanje":
+            if pot == "/toplota/datoteka":
+                telo, vrsta, koda = toplota_modul.datoteka(q)
+                self._odgovor(telo, vrsta, koda)
+            elif pot == "/toplota/stanje":
                 try:
                     telo = toplota_modul.stanje(q)
                 except Exception as e:  # noqa: BLE001

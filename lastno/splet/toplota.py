@@ -132,6 +132,27 @@ def stanje(q):
     return out
 
 
+def stran_3d():
+    with open(os.path.join(MAPA_TOPLOTA, "toplota3d.html"), "rb") as f:
+        return f.read()
+
+
+def datoteka(q):
+    """(telo, vrsta, koda) za JSON iz mape Toplota projekta (polje.json za 3D pregledovalnik)."""
+    mapa = (q.get("mapa") or [""])[0]
+    rel = (q.get("pot") or [""])[0].replace("\\", "/")
+    if not mapa or not rel or ".." in rel or not rel.lower().endswith(".json"):
+        return b"", "text/plain", 404
+    try:
+        pot = os.path.normpath(os.path.join(_mapa_toplote(mapa), rel))
+    except ValueError:
+        return b"", "text/plain", 404
+    if not os.path.isfile(pot):
+        return b"", "text/plain", 404
+    with open(pot, "rb") as f:
+        return f.read(), "application/json; charset=utf-8", 200
+
+
 def slika(q):
     """(telo, vrsta, koda) za PNG iz mape Toplota projekta."""
     mapa = (q.get("mapa") or [""])[0]
@@ -273,7 +294,7 @@ def glavna(stanje_streznika, podatki):
         if doc is not None and doc.Name in App.listDocuments():
             App.setActiveDocument(doc.Name)
         stanje_streznika.umazano = True
-        return {"ok": True, "opis": {k: v for k, v in opis.items() if k != "telesa"}, "teles": len(opis["telesa"]), "dokument": novi.Label}
+        return {"ok": True, "opis": {k: v for k, v in opis.items() if k != "telesa"}, "teles": opis.get("teles"), "dokument": novi.Label}
     if dejanje == "odpri":
         model = _json(os.path.join(mapa, "mke", "model.json"))
         if not model or not os.path.isfile(model.get("pot", "")):

@@ -4421,34 +4421,18 @@ renderer.domElement.addEventListener('pointerup', e => {
   const premik = Math.hypot(e.clientX - pritisk.x, e.clientY - pritisk.y); pritisk = null;
   if (premik > 4) return;
   if (meritve.vklop) { klikMetra(e); return; }
-  const { objekt, element } = zadetekPodKazalcem(e);
-  if (objekt) objavi('/select', { objekt, element, dodaj: e.ctrlKey }).catch(pokaziNapako);
-  else if (!e.ctrlKey) objavi('/select', { objekt: '', element: '', dodaj: false }).catch(pokaziNapako);
-});
-// Kos (in rob ali ploskev) pod kazalcem: najprej robovi, ker so tanki in bi jih ploskev zadaj sicer prekrila
-function zadetekPodKazalcem(e) {
   nastaviKazalec(e);
   raycaster.params.Line.threshold = razdaljaPogleda() * 0.004;
   const meshi = [], crte = [];
   for (const z of objekti.values()) { if (z.mesh) meshi.push(z.mesh); if (z.crte) crte.push(z.crte); }
   const zr = raycaster.intersectObjects(crte, false), zp = raycaster.intersectObjects(meshi, false);
-  if (zr.length && (!zp.length || zr[0].distance <= zp[0].distance + raycaster.params.Line.threshold * 2)) return { objekt: zr[0].object.userData.objekt, element: 'Edge' + (robOdseka(zr[0].object, Math.floor(zr[0].index / 2)) + 1) };
-  if (zp.length) return { objekt: zp[0].object.userData.objekt, element: 'Face' + (ploskevTrikotnika(zp[0].object, zp[0].faceIndex) + 1) };
-  return { objekt: null, element: '' };
-}
-// Desni klik na kos v 3D pogledu (od 2026-10-15): isti meni kot v drevesu (Odpri sestav/del, Skrij, Videz, Natisni ...).
-// Desni gumb tudi premika pogled, zato meni le, če se kazalec od pritiska ni premaknil; v praznem prostoru menija ni.
-renderer.domElement.addEventListener('contextmenu', e => {
-  e.preventDefault();
-  if (skica.posnetek) { prekiniRisanje(); return; }
-  if (meritve.vklop || !pritisk || pritisk.gumb !== 2 || Math.hypot(e.clientX - pritisk.x, e.clientY - pritisk.y) > 4) return;
-  pritisk = null;
-  const { objekt, element } = zadetekPodKazalcem(e);
-  if (!objekt || !stanje.drevo) return;
-  const v = stanje.drevo.vozli[objekt]; if (!v) return;
-  if (!stanje.izbira.some(s => s.objekt === objekt)) objavi('/select', { objekt, element, dodaj: false }).catch(pokaziNapako);
-  odpriMeniDrevesa(e.clientX, e.clientY, v);
+  let objekt = null, element = '';
+  if (zr.length && (!zp.length || zr[0].distance <= zp[0].distance + raycaster.params.Line.threshold * 2)) { objekt = zr[0].object.userData.objekt; element = 'Edge' + (robOdseka(zr[0].object, Math.floor(zr[0].index / 2)) + 1); }
+  else if (zp.length) { objekt = zp[0].object.userData.objekt; element = 'Face' + (ploskevTrikotnika(zp[0].object, zp[0].faceIndex) + 1); }
+  if (objekt) objavi('/select', { objekt, element, dodaj: e.ctrlKey }).catch(pokaziNapako);
+  else if (!e.ctrlKey) objavi('/select', { objekt: '', element: '', dodaj: false }).catch(pokaziNapako);
 });
+renderer.domElement.addEventListener('contextmenu', e => { e.preventDefault(); if (skica.posnetek) prekiniRisanje(); });
 // --- Meritve: statusna vrstica in meter (od 2026-10-13) ----------------------------------------------------
 // Statusna vrstica (kot Onshape, mere so vedno vidne): ob vsaki spremembi izbire strežnik izmeri izbrane elemente
 // (POST /meritev, FreeCAD na glavni niti: dolžina, polmer, površina, normala, okvir, prostornina; pri dveh elementih še

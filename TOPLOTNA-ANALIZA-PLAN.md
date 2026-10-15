@@ -54,6 +54,12 @@ ko stoji na soncu (Biograd, Opatija, Zlatibor …), in kakšno hlajenje (W) je t
   ~15 min) s tabelami in slikami, gradnja modela MKE iz sestava in zagon CalculiX-a v ozadju. Koda: `lastno/toplota/`, `lastno/splet/toplota.py`.
 - Zaprti box je 400 × 565 × 1911 mm (vrata v sestavu so odprta); prvi izračun z 701 × 770 je bil zato prevelik.
 
+- 15. 10.: 3D simulacija — model s pravim obrisom boxa (zaobljeni robovi, nos vrat), mreža Gmsh, klima kot izmenjevalnik (izpih 18 °C,
+  800 W), 3D pregledovalnik polja temperatur v zavihku (prerez, odrez, temperatura pod miško). Rezultat (Biograd, najhujša ura, bel plašč):
+  zrak povprečno 48 °C, ob klimi 26 °C, vroče točke TV in LED obroč do 81 °C, PC 78 °C, plašč na soncu do 75 °C. Prave oblike naprav iz STEP-ov
+  mrežo podrejo (prekrivajoče se ploskve), zato so naprave bloki; cilj 30 °C za zrak zahteva, da klima piha neposredno na naprave (zdaj je
+  izmenjevalnik v zadnjem zgornjem delu, zrak pa prevaja le s k_ef = 1 W/mK — brez gibanja zraka).
+
 ## Namestitev (ko se odločimo)
 
 ```powershell
