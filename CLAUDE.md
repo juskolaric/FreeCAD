@@ -158,6 +158,15 @@ FreeCAD je motor, vmesnik in grafika nastajata v brskalniku (plan, korak 8 napre
   v klonu dodatka, zapis in patch v `lastno/kabli/` (po posodobitvi dodatka uveljavi znova). Preizkušeno 2026-10-09:
   ravna, ukrivljena in lomljena pot, večžilni profil, premik kosov v sestavu, shrani in odpri. Brez ponovnega zagona: `sys.path` + `freecad.__path__` dopolni z mapo dodatka, `import freecad.cables.init_gui`.
   Urejanje točk (Cables_Edit) potrebuje 3D okno FreeCAD-a.
+- **Vijaki** (od 2026-10-15): dodatek Fasteners v0.5.67 (`FastenersWorkbench`, git klon `shaise/FreeCAD_FastenersWB` v
+  `%APPDATA%/FreeCAD/v1-1/Mod/fasteners`, GPL-2.0), 223 vrst (ISO/DIN/ASME vijaki, matice, podložke, PEM vložki, navojne palice),
+  zavihek »Vijaki« v meniju »Več«. Iz skripte (tudi FreeCADCmd): `o = doc.addObject("Part::FeaturePython", "Vijak")`,
+  `FastenersCmd.FSScrewObject(o, "ISO4762", None)`, `o.Diameter = "M5"`, **recompute**, šele nato `o.Length = "20"` (seznam
+  dolžin se napolni ob preračunu, prej je »'20' is not part of the enumeration«); v GUI še `FastenersCmd.FSViewProviderTree(o.ViewObject)`.
+  Brez ponovnega zagona: mapo dodatka v `sys.path`, `exec` njegovega `InitGui.py` brez `FreeCADGui.updateLocale()`.
+- **KiCad 3D modeli** (od 2026-10-15): izbor STEP iz `kicad/libraries/kicad-packages3D` (24 skupin, 1067 modelov, 360 MB) v
+  `Documents\KiCad 3D modeli` (redki git klon, zunaj Oblaka; navodila v `PREBERI.md` tam). Samo deli za tiskana vezja (vtičnice,
+  tipke, releji, sponke Phoenix, Raspberry Pi Pico); DIN modulov ni. Kos, ki ga uporabimo, se kopira v `Standardni deli`.
 - **Električni priključki kosov** (od 2026-10-09, `Oblak/3D modeliranje/Photobox Slim A/Skripte/prikljucki_kosov.py`): vsak
   elektronski kos nosi na glavnem objektu lastnost `Prikljucki` (vrstice `ime | vrsta | x y z | dx dy dz | oznaka | opis`,
   koordinate v okviru vsebnika) in pri App::Part še točke `Part::Vertex` `Prikljucek_<ime>` (konec kabla se pripne nanje, točka

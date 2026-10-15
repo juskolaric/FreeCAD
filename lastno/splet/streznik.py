@@ -447,6 +447,7 @@ DELOVNA_OKOLJA = [
     ("MaterialWorkbench", "Material"),
     ("RobotWorkbench", "Robot"),
     ("CablesWorkbench", "Kabli"),   # dodatek Cables (sargo-devel): žice in kabli, pripeti na sponke kosov
+    ("FastenersWorkbench", "Vijaki"),  # dodatek Fasteners (shaise): vijaki, matice, podložke, vložki ISO/DIN
 ]
 ZACETNA_OKOLJA = {"PartDesignWorkbench", "SketcherWorkbench", "PartWorkbench", "SMWorkbench"}
 # Zavihki, ki so vedno vidni; ostala okolja so v meniju »Več« (zavihek dobijo, ko so dejavna).
