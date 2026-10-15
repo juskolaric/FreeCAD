@@ -32,8 +32,8 @@ SKUPINE = [
     ("Elektro levo zgoraj A", "Elektro levo"), ("LED RING", "LED"), ("NEXGO", "POS"), ("Canon M50", "Kamera"),
     ("Steklo basi A", "Steklo"), ("ZVOČNIK", "Zvočnik"),
 ]
-MOC_KLJUC = {"PC": "PC + napajalnik", "TV": "TV", "Tiskalnik": "tiskalnik (povprečje)", "Mikrotik": "Mikrotik",
-             "LED": "LED obroči", "POS": "POS in ostalo", "Elektro TV": "elektronika TV"}
+MOC_KLJUC = {"PC": "PC", "TV": "TV", "Tiskalnik": "tiskalnik", "Mikrotik": "Mikrotik", "LED": "LED obroči", "POS": "POS",
+             "Elektro TV": "elektronika TV", "Elektro levo": "napajalniki"}   # ključ se ujema po začetku imena v naprave_W
 
 
 def _moc(moci, kljuc):
