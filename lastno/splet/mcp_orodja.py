@@ -798,8 +798,9 @@ def t_dokumenti(a):
         doc = _dokument(a.get("dokument"))
         if _spremenjen(doc):
             raise Napaka("»%s« ima neshranjene spremembe: najprej `shrani` (ali naj uporabnik odloči)." % doc.Label)
+        oznaka = doc.Label   # po zaprtju je objekt dokumenta izbrisan
         S._projekt_dejanje(S.STANJE, {"dejanje": "zapri", "ime": doc.Name})
-        return "Zaprt: »%s«." % doc.Label
+        return "Zaprt: »%s«." % oznaka
     aktivni = App.ActiveDocument
     vrstice = []
     for d in _dokumenti():
