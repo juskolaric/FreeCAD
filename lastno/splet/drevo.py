@@ -119,12 +119,44 @@ def drevo_dokumenta(doc, ikona_uri=None, kljuc_oblike=None):
                                            "sestav": cilj.TypeId in ("Assembly::AssemblyObject", "App::Part")}
             if cilj.TypeId != "Assembly::AssemblyObject":   # del: sestav ga lahko vstavi kot vrsto več kosov
                 vozli[obj.Name]["kosov"] = max(1, int(getattr(obj, "ElementCount", 0) or 0))
+            if je_napajalnik(obj, cilj):   # napajalnik v sestavu: kaj napaja (lastnost Napaja na povezavi)
+                vozli[obj.Name]["napajalnik"] = True
+                vozli[obj.Name]["napaja"] = list(getattr(obj, "Napaja", []) or [])
         if cilj is not None or obj in koreni_kosa:
             std = oznaka_vozla(obj)   # kos v svoji datoteki: standardni / v bazi (meni Standardni del)
             if std is not None:
                 vozli[obj.Name]["standardni"] = std
     koreni = [o.Name for o in doc.Objects if o.Name not in zahtevani]
     return {"koreni": koreni, "vozli": vozli, "telesa": _telesa(doc, koreni, kljuc_oblike)}
+
+
+def je_napajalnik(obj, cilj):
+    """Povezava v sestavu kaže na napajalnik: datoteka cilja je v mapi Napajalniki ali ime/oznaka vsebuje »napajalnik«
+    (kupljeni deli, npr. Canon AC-E60) ali se začne z »Mean Well«."""
+    try:
+        pot = (cilj.Document.FileName or "").replace("\\", "/").lower()
+        oznake = " ".join((obj.Label, cilj.Label, cilj.Document.Label)).lower()
+    except Exception:  # noqa: BLE001
+        return False
+    return "/napajalniki/" in pot or "napajalnik" in oznake or "mean well" in oznake
+
+
+def _nastavi_napaja(obj, porabniki):
+    """Lastnost Napaja (seznam nizov) na povezavi napajalnika v sestavu: imena objektov istega dokumenta (porabniki)
+    ali prosto besedilo. Zapisano v datoteko sestava, ne v standardni del."""
+    if "Napaja" not in obj.PropertiesList:
+        obj.addProperty("App::PropertyStringList", "Napaja", "Elektro",
+                        "Kaj ta napajalnik napaja (imena kosov sestava ali prosto besedilo)")
+    cist = []
+    for p in porabniki or []:
+        p = str(p).strip()
+        if p and p not in cist:
+            cist.append(p)
+    obj.Document.openTransaction("Napaja")
+    try:
+        obj.Napaja = cist
+    finally:
+        obj.Document.commitTransaction()
 
 
 def _deli_spoja(obj):
@@ -366,7 +398,7 @@ def _nastavi_kosov(stanje, obj, n):
 
 def drevo_dejanje(stanje, podatki):
     """POST /drevo: {dejanje: vidnost, ime, vidno} | {dejanje: lastnost, ime, lastnost, vrednost} | {dejanje: uredi, ime}
-    | {dejanje: kosov, ime, stevilo}."""
+    | {dejanje: kosov, ime, stevilo} | {dejanje: napaja, ime, porabniki: [imena ali besedilo]}."""
     doc = App.ActiveDocument
     if doc is None:
         return
@@ -391,4 +423,6 @@ def drevo_dejanje(stanje, podatki):
         _uredi(stanje, obj)
     elif dejanje == "kosov":
         _nastavi_kosov(stanje, obj, podatki.get("stevilo", 1))
+    elif dejanje == "napaja":
+        _nastavi_napaja(obj, podatki.get("porabniki", []))
     stanje.umazano = True

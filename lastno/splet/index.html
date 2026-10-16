@@ -181,6 +181,17 @@
   #dokumentiStolpec { flex: 0 0 var(--sirinaDokumentov, 50%); min-width: 0; display: flex; flex-direction: column; background: #f6f8fa; }
   #dokumentiGlava .naslov .stevilo { flex: none; font-size: 11px; font-weight: 600; color: #6b7685; background: #e6eaef; border-radius: 999px; padding: 0 7px;
     line-height: 18px; font-variant-numeric: tabular-nums; margin-right: auto; }
+  /* Izbirnik projekta (od 2026-10-15): seznam kaže le dokumente in datoteke enega projekta (privzeto projekta aktivnega dokumenta) */
+  /* od 2026-10-16 gumb namesto spustnega seznama: odpre okno projektov s karticami (#projektiOkno) */
+  #dokumentiProjekt { flex: 0 1 auto; min-width: 0; display: inline-flex; align-items: center; gap: 4px; font: inherit; font-weight: 600; color: var(--besedilo);
+    background: transparent; border: 1px solid var(--crta); border-radius: 6px; padding: 1px 4px 1px 7px; cursor: pointer; }
+  #dokumentiProjekt .ime { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  #dokumentiProjekt svg { flex: none; color: var(--besedilo2); }
+  #dokumentiProjekt:hover { background: var(--lebdenje); border-color: var(--crtaMocna); }
+  #dokumentiProjekt:focus-visible { outline: none; box-shadow: var(--obroc); }
+  #stranskiVsebina .vDrugih { display: block; margin: 4px 8px; padding: 5px 8px; width: calc(100% - 16px); text-align: left; font: inherit; font-size: 12px;
+    color: var(--poudarek); background: var(--poudarekMehko); border: none; border-radius: 8px; cursor: pointer; }
+  #stranskiVsebina .vDrugih:hover { text-decoration: underline; }
   #stranskiVsebina { flex: 1 1 auto; overflow-y: auto; min-width: 0; padding: 2px 0 10px; scrollbar-width: thin; }
   #stranski .razdelek { margin-bottom: 8px; }
   #stranski .naslovRazdelka { display: flex; align-items: center; gap: 6px; font-size: 11px; font-weight: 600; letter-spacing: .05em;
@@ -327,6 +338,10 @@
   /* konfiguracija: povezava na en kos, vstavljen kot vrsta več kosov (klik izbere število) */
   #drevoVsebina .kosov { flex: none; font-size: 11px; font-weight: 700; line-height: 16px; padding: 0 6px; border-radius: 999px;
     color: var(--poudarek); background: var(--poudarekMehko); cursor: pointer; }
+  /* napajalnik: kaj napaja (lastnost Napaja na povezavi v sestavu; klik odpre seznam porabnikov) */
+  #drevoVsebina .napaja { flex: none; max-width: 42%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 11px; line-height: 16px;
+    padding: 0 6px; border-radius: 999px; color: #7a4e00; background: #fff4d6; box-shadow: inset 0 0 0 1px #f3d48a; cursor: pointer; }
+  #drevoVsebina .napaja.prazno { color: #a0a9b6; background: transparent; box-shadow: inset 0 0 0 1px var(--crta); }
   #drevoVsebina .dejanja { flex: none; display: flex; align-items: center; gap: 1px; }
   #drevoVsebina .dejanje { width: 26px; height: 26px; display: inline-flex; align-items: center; justify-content: center; border: none; background: transparent;
     border-radius: 6px; color: #6b7685; cursor: pointer; padding: 0; opacity: 0; transition: opacity .1s; }
@@ -383,6 +398,45 @@
     padding: 2px 7px; font-size: 12px; cursor: pointer; opacity: 0; transition: opacity .12s; }
   #knjiznicaVsebina .kos:hover .odpri, #knjiznicaVsebina .kos:focus-within .odpri { opacity: 1; }
   #knjiznicaVsebina .kos .odpri:hover { background: #e6eaf0; }
+  /* Okno projektov (od 2026-10-16, klik na ime projekta v glavi seznama dokumentov): kartice s sličicami datotek projekta */
+  #projektiOkno { position: fixed; inset: 0; z-index: 60; background: rgba(15,23,42,.28); -webkit-backdrop-filter: blur(3px); backdrop-filter: blur(3px);
+    display: flex; align-items: center; justify-content: center; }
+  #projektiOkno.skrit { display: none; }
+  #projektiOkno .okno { background: #fff; border: 1px solid var(--crta); border-radius: 14px; box-shadow: var(--senca2); width: min(92vw, 1180px); height: min(86vh, 860px);
+    display: flex; flex-direction: column; overflow: hidden; }
+  #projektiOkno header { display: flex; align-items: center; gap: 10px; padding: 12px 16px; border-bottom: 1px solid var(--crta); background: var(--plosca); font-size: 14px; }
+  #projektiOkno header > span { font-weight: 600; font-size: 15px; }
+  #projektiOkno header small { color: var(--besedilo2); flex: 1 1 auto; }
+  #projektiOkno header .iskanje input { width: 220px; padding: 5px 9px; border: 1px solid var(--crta); border-radius: 8px; font: inherit; font-size: 13px; }
+  #projektiOkno header .iskanje input:focus { outline: none; border-color: var(--poudarek); box-shadow: var(--obroc); }
+  #projektiOkno header button { border: 1px solid var(--crta); background: #fff; border-radius: 6px; padding: 3px 9px; cursor: pointer; font: inherit; font-size: 13px; }
+  #projektiOkno header button:hover { background: #e6eaf0; }
+  #projektiOkno header button.izbran { border-color: var(--poudarek); background: var(--poudarekMehko); color: var(--poudarekTemen); font-weight: 600; }
+  #projektiOkno header .zapri { font-size: 16px; line-height: 1; padding: 2px 8px; }
+  #projektiOkno footer { padding: 6px 16px; border-top: 1px solid var(--crta); color: var(--besedilo3); font-size: 11px; }
+  #projektiVsebina { flex: 1 1 auto; overflow: auto; padding: 14px 20px 20px; background: #f7f9fc; }
+  #projektiVsebina .prazno { padding: 30px; text-align: center; color: var(--besedilo3); }
+  #projektiVsebina .razdelekProjektov { margin: 0 0 20px; }
+  #projektiVsebina .razdelekProjektov h4 { margin: 0 0 8px; font-size: 12px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; color: #7a8594; display: flex; gap: 8px; align-items: center; }
+  #projektiVsebina .razdelekProjektov h4 .stevilo { font-weight: 500; color: var(--besedilo3); text-transform: none; letter-spacing: 0; }
+  #projektiVsebina .mreza { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 12px; }
+  #projektiVsebina .projekt { position: relative; display: flex; flex-direction: column; gap: 7px; background: #fff; border: 1px solid #d3dbe6; border-radius: 12px;
+    padding: 8px 8px 10px; cursor: pointer; text-align: left; font: inherit; color: inherit; box-shadow: 0 1px 2px rgba(0,0,0,.05); min-width: 0; }
+  #projektiVsebina .projekt:hover { border-color: var(--poudarek); box-shadow: 0 4px 12px rgba(37,99,235,.15); }
+  #projektiVsebina .projekt:focus-visible { outline: none; border-color: var(--poudarek); box-shadow: var(--obroc); }
+  #projektiVsebina .projekt.izbran { border-color: var(--poudarek); box-shadow: 0 0 0 2px var(--poudarekMehko); }
+  #projektiVsebina .mozaik { display: grid; grid-template-columns: 1fr 1fr; grid-template-rows: 1fr 1fr; gap: 2px; height: 132px; border-radius: 8px; overflow: hidden;
+    background: linear-gradient(#fff, #eef1f5); }
+  #projektiVsebina .mozaik.ena img { grid-column: 1 / 3; grid-row: 1 / 3; }
+  #projektiVsebina .mozaik.dve img, #projektiVsebina .mozaik.tri img:first-child { grid-row: 1 / 3; }
+  #projektiVsebina .mozaik img { width: 100%; height: 100%; min-height: 0; object-fit: contain; background: linear-gradient(#fff, #eef1f5); }
+  #projektiVsebina .mozaik img.ikonaNamesto { padding: 18%; box-sizing: border-box; opacity: .8; }
+  #projektiVsebina .projekt .ime { padding: 0 3px; font-size: 13.5px; font-weight: 600; line-height: 1.25; overflow-wrap: anywhere; }
+  #projektiVsebina .projekt .podatki { padding: 0 3px; display: flex; flex-wrap: wrap; gap: 4px 6px; align-items: center; font-size: 11px; color: var(--besedilo3); }
+  #projektiVsebina .projekt .podatki .odprtih { border-radius: 999px; padding: 1px 7px; background: var(--poudarekMehko); color: var(--poudarekTemen); font-weight: 600; }
+  #projektiVsebina .projekt .prikazan { position: absolute; top: 12px; left: 12px; border-radius: 999px; padding: 1px 8px; font-size: 11px; font-weight: 600;
+    background: var(--poudarek); color: #fff; box-shadow: var(--senca1); }
+  #projektiVsebina .projekt mark { background: #fde68a; color: inherit; border-radius: 2px; }
   /* Okno z drevesno shemo sestava (gumb Zgradba) */
   #zgradba { position: fixed; inset: 0; z-index: 60; background: rgba(20, 30, 45, .35); display: flex; align-items: center; justify-content: center; }
   #zgradba.skrit { display: none; }
@@ -422,8 +476,6 @@
   .shema .kartica.ploscevina .znacka { background: #fbeed6; color: #8a5300; }
   .shema .kartica .kolicina { font-weight: 600; color: #1e5fb8; }
   .shema .kartica .preklop { margin-left: auto; border: none; background: transparent; cursor: pointer; color: #556; font-size: 12px; padding: 0 2px; }
-  #drevoVsebina .razdelek.telesa { border-top: 1px solid #e3e7ec; margin-top: 8px; }
-  #drevoVsebina .telo .stevilka { flex: none; width: 22px; text-align: center; color: #8a94a3; font-size: 11px; font-variant-numeric: tabular-nums; }
   /* Ločilnika: med odprtimi dokumenti in drevesom ter na desnem robu stranskega menija (vlečenje spremeni širino) */
   .locilnik { flex: none; width: 7px; margin: 0 -3px; position: relative; z-index: 3; cursor: col-resize; touch-action: none; }
   .locilnik::after { content: ''; position: absolute; top: 0; bottom: 0; left: 3px; width: 1px; background: var(--crta); transition: background .1s, box-shadow .1s; }
@@ -514,8 +566,8 @@
   #pomocnikPoslji { height: 34px; padding: 0 14px; border-radius: 8px; border: 1px solid var(--poudarek); background: var(--poudarek);
                     color: #fff; font-weight: 600; cursor: pointer; }
   #pomocnikPoslji.ustavi { background: #dc2626; border-color: #dc2626; }
-  #gumbPomocnik.aktiven { color: var(--poudarek); border-color: var(--poudarekObroba); background: var(--poudarekMehko); }
-  #gumbPomocnik.dela::after { content: ''; display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: #f59e0b;
+  .gumbPomocnik.aktiven { color: var(--poudarek); border-color: var(--poudarekObroba); background: var(--poudarekMehko); }
+  .gumbPomocnik.dela::after { content: ''; display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: #f59e0b;
                               margin-left: 6px; vertical-align: middle; }
   #tiskanjeOkvir { flex: 1 1 auto; width: 100%; height: 100%; border: 0; background: #fff; }
   #tiskanjeStanje { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; background: var(--plosca); }
@@ -560,6 +612,10 @@
   #pasica button { border: 1px solid #f5c76a; background: #fff; border-radius: 8px; height: 28px; padding: 0 11px; cursor: pointer; white-space: nowrap; font-weight: 500; }
   #pasica button:hover { background: #fef3c7; }
   /* Plavajoči elementi pogleda: steklene ploščice (prosojno belo, zabrisano ozadje, mehka senca) */
+  /* Trak ukazov FreeCAD-a (hitri dostop, zavihki okolij, plošče ukazov) je skrit (odločitev uporabnika 15. 10. 2026):
+     ukaze poganja Pomočnik oz. MCP. Vrnitev: localStorage.setItem('trakUkazov','1') in osveži. Vrstica skice ostane. */
+  body.brezTraku #vrstica1, body.brezTraku #trak { display: none !important; }
+  body.brezTraku #glava:not(:has(#skicaTrak:not(.skrit))) { border-bottom: 0; }
   #namig:empty { display: none; }   /* v običajnem pogledu ni trak s pomočjo (odločitev 14. 10. 2026) */
   #namig { position: absolute; left: 14px; bottom: 14px; max-width: calc(100% - 28px); box-sizing: border-box; font-size: 11.5px; line-height: 1.45;
            color: var(--besedilo2); background: var(--steklo); -webkit-backdrop-filter: blur(10px); backdrop-filter: blur(10px);
@@ -613,6 +669,11 @@
              padding: 2px 7px; font-size: 12px; color: #0f2a4f; white-space: nowrap; pointer-events: auto; font-variant-numeric: tabular-nums;
              box-shadow: 0 1px 3px rgba(15,23,42,.12); line-height: 1.25; text-align: center; }
   .meritev b { font-weight: 600; }
+  /* napis nad napajalnikom v 3D: kaj napaja (lastnost Napaja; klik odpre izbiro porabnikov) */
+  .napisNapaja { position: absolute; transform: translate(-50%, -100%); margin-top: -6px; background: #fff7e0; border: 1px solid #e3c577; border-radius: 6px;
+                 padding: 2px 8px; font-size: 12px; color: #6b4300; white-space: nowrap; pointer-events: auto; cursor: pointer;
+                 box-shadow: 0 1px 3px rgba(15,23,42,.14); line-height: 1.3; max-width: 260px; overflow: hidden; text-overflow: ellipsis; }
+  .napisNapaja:hover { background: #ffefc2; }
   .meritev small { display: block; font-size: 10.5px; color: var(--besedilo2); }
   .meritev button { border: none; background: none; color: var(--besedilo3); font-size: 13px; cursor: pointer; padding: 0 0 0 6px; line-height: 1; }
   .meritev button:hover { color: #b91c1c; }
@@ -857,7 +918,7 @@
     <div id="stranskiStolpca">
       <div id="dokumentiStolpec">
         <div id="dokumentiGlava">
-          <div class="naslov"><span class="napis">Dokumenti</span><span class="stevilo" id="dokumentiStevilo"></span></div>
+          <div class="naslov"><span class="napis">Dokumenti</span><button type="button" id="dokumentiProjekt" title="Projekt, katerega dokumenti so prikazani; klik odpre vse projekte"><span class="ime"></span><svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M3 4.5 6 7.5 9 4.5"/></svg></button><span class="stevilo" id="dokumentiStevilo"></span></div>
           <label class="iskanje"><span id="dokumentiLupa"></span><input id="dokumentiIskanje" type="search" placeholder="Išči med dokumenti …" autocomplete="off" spellcheck="false"><span class="stevec" id="dokumentiStevec"></span></label>
         </div>
         <div id="stranskiVsebina"><div class="prazno">Nalagam …</div></div>
@@ -916,7 +977,7 @@
   <div id="obvestilo"></div>
   <div id="legaTiska" class="skrit"></div>
   <div id="komentarVnos"></div>
-  <div id="namig">Srednji gumb: vrtenje (Ctrl premik, Shift povečava, Alt sukanje, klik na model: središče vrtenja) · kolešček: povečava · klik: izbira (Ctrl doda) · puščice · 1–8 ali gumbi zgoraj desno: pogledi (gumb Perspektiva preklopi projekcijo) · preslednica: meni pogledov · F: prilagodi · E: razstavi · M: meter</div>
+  <div id="namig"></div>  <!-- namig prazen = skrit; besedilo dobi samo v skici in pri metru -->
   <div id="tiskanje" class="skrit">
     <iframe id="tiskanjeOkvir" title="Nadzorna plošča Tiskaj"></iframe>
     <div id="tiskanjeStanje" class="skrit"><div class="okno">
@@ -1003,6 +1064,16 @@
     <footer id="knjiznicaNoga">Klik na kos ga vstavi v aktivni sestav (kot povezavo na datoteko v bazi) · ↗ odpre datoteko kosa</footer>
   </div>
 </div>
+<div id="projektiOkno" class="skrit">
+  <div class="okno">
+    <header><span>Projekti</span><small id="projektiPovzetek"></small>
+      <label class="iskanje"><input id="projektiIskanje" type="search" placeholder="Išči projekt …" autocomplete="off" spellcheck="false"></label>
+      <button type="button" id="projektiVsi" title="Seznam dokumentov pokaže dokumente vseh projektov">Vsi projekti</button>
+      <button type="button" class="zapri" id="projektiZapri" title="Zapri (Esc)">×</button></header>
+    <div id="projektiVsebina"></div>
+    <footer>Klik na projekt pokaže njegove odprte dokumente in datoteke v seznamu dokumentov · Enter izbere prvi zadetek · Esc zapre</footer>
+  </div>
+</div>
 <div id="dialogSkica" class="skrit">
   <div class="okno">
     <h3>Nova skica</h3>
@@ -1046,6 +1117,7 @@ import { positionWorld, normalLocal, modelWorldMatrix, dot, step, float } from '
 
 let ZETON = '__ZETON__';
 const $ = id => document.getElementById(id);
+try { document.body.classList.toggle('brezTraku', localStorage.getItem('trakUkazov') !== '1'); } catch (e) { document.body.classList.add('brezTraku'); }   // trak ukazov skrit, glej CSS
 const hud = $('hud'), trak = $('trak'), zavihki = $('zavihki'), hitri = $('hitri'), opis = $('opis'), meni = $('meni');
 const BARVA_ROBA = new THREE.Color(0x353a42);   // temno siva (ne črna) kot v Fusionu: gosti robovi drobnih kosov ne počrnijo
 const BARVA_IZBIRE = new THREE.Color(0x1e88e5);
@@ -1410,6 +1482,7 @@ function odpriMeniDrevesa(x, y, v) {
     if (s.standardni) dodaj('Ni standardni' + (s.vBazi ? ' (vrni iz baze v projekt)' : ''), () => odznaciStandardni(v));
   }
   if (v.kosov) dodaj('▦ Število kosov (' + v.kosov + ') …', () => odpriMeniKosov(x, y, v));
+  if (v.napajalnik) dodaj('⚡ Napaja ' + (v.napaja && v.napaja.length ? '(' + napisNapaja(v) + ')' : '…'), () => odpriMeniNapaja(x, y, v));
   if (!/^(Sketcher::|Assembly::Joint|App::Origin)/.test(v.tip || '')) dodaj('◐ Videz …', () => odpriMeniVideza(x, y, v));
   if (imenaZaIzris(v.ime).length) dodaj('🖨 Natisni …', () => natisniVozel(v));   // STEP v vhod plošče Tiskaj + okno Pripravi
   if (imenaZaIzris(v.ime).length) dodaj('⊥ Lega za tisk …', () => odpriLegoTiska(v));   // previsi in orientacija brez podpor
@@ -1440,6 +1513,77 @@ function odpriMeniKosov(x, y, v) {
   meni.classList.remove('skrit');
   meni.style.left = Math.max(8, Math.min(x, window.innerWidth - meni.offsetWidth - 8)) + 'px';
   meni.style.top = Math.max(8, Math.min(y, window.innerHeight - meni.offsetHeight - 8)) + 'px';
+}
+// Napajalnik: kaj napaja (od 2026-10-15). Lastnost Napaja (seznam) na povezavi napajalnika v sestavu, strežnik
+// drevo._nastavi_napaja (POST /drevo {dejanje: napaja, ime, porabniki}). Porabniki so drugi kosi istega sestava (ime
+// objekta, prikazana je oznaka) ali prosto besedilo; več jih je lahko hkrati, meni ostane odprt med kljukanjem.
+function oznakaPorabnika(p) { const d = stanje.drevo; return d && d.vozli[p] ? d.vozli[p].oznaka : p; }
+function napisNapaja(v) { return (v.napaja || []).map(oznakaPorabnika).join(', '); }
+function odpriMeniNapaja(x, y, v) {
+  meni.innerHTML = '';
+  const d = stanje.drevo; if (!d) return;
+  let izbrani = (v.napaja || []).slice();
+  const naslov = document.createElement('div'); naslov.className = 'naslovMenija'; naslov.textContent = '⚡ ' + v.oznaka + ' napaja'; meni.appendChild(naslov);
+  const shrani = () => { v.napaja = izbrani.slice(); drevoDejanje({ dejanje: 'napaja', ime: v.ime, porabniki: izbrani }); };
+  const dodaj = (napis, kljuc) => {
+    const g = document.createElement('div'); g.className = 'gumb';
+    const s = document.createElement('span'); s.style.whiteSpace = 'pre'; g.appendChild(s);
+    const narisi = () => { const je = izbrani.includes(kljuc); s.textContent = (je ? '✓ ' : '   ') + napis; s.style.fontWeight = je ? '600' : ''; };
+    narisi();
+    g.addEventListener('click', e => { e.stopPropagation(); izbrani = izbrani.includes(kljuc) ? izbrani.filter(k => k !== kljuc) : izbrani.concat(kljuc); narisi(); shrani(); });
+    meni.appendChild(g);
+  };
+  // kandidati: ostale povezave (kosi) tega sestava, brez samega sebe in brez nastavkov/vodnikov; po oznaki
+  const kandidati = Object.values(d.vozli)
+    .filter(k => k.ime !== v.ime && k.tip === 'App::Link' && !/^nastavek/i.test(k.oznaka))
+    .sort((a, b) => a.oznaka.localeCompare(b.oznaka, 'sl'));
+  for (const k of kandidati) dodaj(k.oznaka, k.ime);
+  for (const p of izbrani) if (!d.vozli[p]) dodaj(p, p);   // prosto besedilo ali kos, ki ga ni več
+  const drugo = document.createElement('div'); drugo.className = 'gumb';
+  const ds = document.createElement('span'); ds.textContent = '   Drugo (vpiši) …'; ds.style.whiteSpace = 'pre'; drugo.appendChild(ds);
+  drugo.addEventListener('click', e => {
+    e.stopPropagation();
+    const t = (prompt('Kaj še napaja (prosto besedilo):', '') || '').trim();
+    if (t && !izbrani.includes(t)) { izbrani.push(t); dodaj(t, t); meni.insertBefore(meni.lastChild, drugo); shrani(); }
+  });
+  meni.appendChild(drugo);
+  meni.classList.remove('skrit');
+  meni.style.left = Math.max(8, Math.min(x, window.innerWidth - meni.offsetWidth - 8)) + 'px';
+  meni.style.top = Math.max(8, Math.min(y, window.innerHeight - meni.offsetHeight - 8)) + 'px';
+}
+// Napisi nad napajalniki v 3D pogledu: za vsak napajalnik z označenimi porabniki HTML napis (#meritve), ki sledi vrhu
+// okvira kosa; klik nanj odpre isti meni. Zgradi se ob vsakem drevesu/modelu, položaj se osvežuje v izrisni zanki.
+const napisiNapajalnikov = new Map();
+function narisiNapiseNapajalnikov() {
+  const d = stanje.drevo, ostanejo = new Set();
+  if (d && !skica.posnetek) for (const v of Object.values(d.vozli)) {
+    if (!v.napajalnik || !(v.napaja && v.napaja.length) || !objekti.get(v.ime)) continue;
+    ostanejo.add(v.ime);
+    let el = napisiNapajalnikov.get(v.ime);
+    if (!el) {
+      el = document.createElement('div'); el.className = 'napisNapaja';
+      el.addEventListener('pointerdown', ev => ev.stopPropagation());
+      el.addEventListener('click', ev => { ev.stopPropagation(); const vz = stanje.drevo && stanje.drevo.vozli[v.ime]; if (vz) odpriMeniNapaja(ev.clientX, ev.clientY, vz); });
+      meritveEl.appendChild(el); napisiNapajalnikov.set(v.ime, el);
+    }
+    el.textContent = '⚡ ' + napisNapaja(v);
+    el.title = v.oznaka + ' napaja: ' + napisNapaja(v) + ' (klik: spremeni)';
+  }
+  for (const [ime, el] of napisiNapajalnikov) if (!ostanejo.has(ime)) { el.remove(); napisiNapajalnikov.delete(ime); }
+  posodobiNapiseNapajalnikov();
+}
+const _sidroNapisa = new THREE.Vector3();
+function posodobiNapiseNapajalnikov() {
+  if (!napisiNapajalnikov.size) return;
+  const r = renderer.domElement.getBoundingClientRect();
+  for (const [ime, el] of napisiNapajalnikov) {
+    const z = objekti.get(ime);
+    if (!z || !z.skupina.visible || skica.posnetek || tiskanje.odprto) { el.style.display = 'none'; continue; }
+    const o = okvirObjekta(z); if (o.isEmpty()) { el.style.display = 'none'; continue; }
+    o.getCenter(_sidroNapisa); _sidroNapisa.z = o.max.z; _sidroNapisa.applyMatrix4(z.skupina.matrixWorld);
+    const [x, y] = naZaslon(_sidroNapisa);
+    el.style.display = ''; el.style.left = (x - r.left) + 'px'; el.style.top = (y - r.top) + 'px';
+  }
 }
 // Videz kosa (strežnik: videz.py, POST /videz). Prednastavitev se zapiše na kos v njegovi datoteki (lastnost Videz +
 // FreeCAD-ov ShapeAppearance), zato velja v vseh sestavih, ki kos uporabljajo; datoteko kosa je treba shraniti.
@@ -1736,6 +1880,13 @@ function vozelDrevesa(d, ime, globina, pot, filter, q) {
     k.addEventListener('click', e => { e.stopPropagation(); const r = k.getBoundingClientRect(); odpriMeniKosov(r.left, r.bottom + 4, v); });
     vrstica.append(k);
   }
+  if (v.napajalnik) {
+    const prazno = !(v.napaja && v.napaja.length);
+    const n = el('span', 'napaja' + (prazno ? ' prazno' : ''), prazno ? '⚡ ?' : '⚡ ' + napisNapaja(v));
+    n.title = prazno ? 'Napajalnik: še ni označeno, kaj napaja (klik: izberi)' : 'Napaja: ' + napisNapaja(v) + ' (klik: spremeni)';
+    n.addEventListener('click', e => { e.stopPropagation(); const r = n.getBoundingClientRect(); odpriMeniNapaja(r.left, r.bottom + 4, v); });
+    vrstica.append(n);
+  }
   const dejanja = el('div', 'dejanja');
   if (!o.brezUrejanja) {
     const telo = v.tip === 'PartDesign::Body' || v.tip === 'App::Part';
@@ -1833,6 +1984,7 @@ function stZadetkov(n) {
 }
 function narisiDrevo(d) {
   stanje.drevo = d;
+  if (typeof narisiNapiseNapajalnikov === 'function') narisiNapiseNapajalnikov();   // napisi »napaja« v 3D sledijo drevesu
   const odmik = drevoVsebina.scrollTop;
   drevoVsebina.innerHTML = '';
   $('drevoNaslov').textContent = stanje.dokument || '';
@@ -1854,47 +2006,11 @@ function narisiDrevo(d) {
     const v = vozelDrevesa(d, k, 0, [], f ? f.vidni : null, q); if (v) r.append(v);
   }
   drevoVsebina.append(r);
-  narisiTelesa(d);
   drevoVsebina.scrollTop = odmik;
   nacrtujSliciceVozlov();   // tudi ob razprtju veje (novi vozli)
 }
-// Telesa dokumenta (kot »Solid Bodies« v SolidWorksu): pod drevesom, ko jih je več kot eno. Oštevilčena po vrstnem redu
-// v drevesu; ime je oznaka objekta (Label). Objekt z več ločenimi telesi pokaže njihovo število.
-function narisiTelesa(d) {
-  const telesa = d.telesa || [];
-  const skupaj = telesa.reduce((n, t) => n + t.solidov, 0);
-  if (skupaj < 2) return;
-  const r = el('div', 'razdelek telesa');
-  const naslov = el('div', 'naslovRazdelka', 'Telesa'); naslov.append(el('span', 'stevilo', String(skupaj))); r.append(naslov);
-  telesa.forEach((t, i) => {
-    const vrstica = el('div', 'vozel telo' + (t.viden ? '' : ' neviden') + (stanje.izbira.some(s => s.objekt === t.ime) ? ' izbran' : ''));
-    vrstica.dataset.ime = t.ime;
-    vrstica.title = t.oznaka + '\nKlik: izbere telo';
-    vrstica.append(el('span', 'stevilka', String(i + 1)));
-    if (objekti.has(t.ime)) {
-      const okvir = el('span', 'slika');
-      const s = el('img', 'slicicaVozla'); s.alt = ''; const url = slicicaVozla(t.ime);
-      if (url) s.src = url; else s.classList.add('prazna');
-      okvir.append(s); vrstica.append(okvir);
-      vrstica.addEventListener('mouseenter', () => osvetli(t.ime));
-      vrstica.addEventListener('mouseleave', () => osvetli(null));
-    } else vrstica.append(ploscicaVrste({}, { ikona: 'telo', barva: '#0f766e', ozadje: '#dcf2ee' }));
-    const besedilo = el('div', 'besedilo'); besedilo.append(el('div', 'ime', t.oznaka));
-    const podatki = [];
-    if (t.solidov > 1) { const m = t.solidov % 100; podatki.push(t.solidov + (m === 2 ? ' telesi' : m === 3 || m === 4 ? ' telesa' : m === 1 ? ' telo' : ' teles')); }
-    if (t.prostornina != null) podatki.push(t.prostornina.toLocaleString('sl-SI') + ' cm³');
-    if (podatki.length) { const pod = el('div', 'podnapis'); pod.append(el('span', 'vec', podatki.join(' · '))); besedilo.append(pod); }
-    vrstica.append(besedilo);
-    const dejanja = el('div', 'dejanja');
-    const oko = el('button', 'dejanje oko'); oko.type = 'button'; oko.append(svgIkona(t.viden ? 'oko' : 'okoZaprto', 15));
-    oko.title = t.viden ? 'Skrij telo' : 'Pokaži telo';
-    oko.addEventListener('click', e => { e.stopPropagation(); drevoDejanje({ dejanje: 'vidnost', ime: t.ime, vidno: !t.viden }); });
-    dejanja.append(oko); vrstica.append(dejanja);
-    vrstica.addEventListener('click', e => objavi('/select', { objekt: t.ime, element: '', dodaj: e.ctrlKey }).catch(pokaziNapako));
-    r.append(vrstica);
-  });
-  drevoVsebina.append(r);
-}
+// Razdelka »Telesa« (kot »Solid Bodies« v SolidWorksu) pod drevesom ni več (odločitev uporabnika 2026-10-13); podatek
+// d.telesa strežnik še daje (orodje MCP drevo, prostornine).
 function oznaciDrevo() {
   let prva = null;
   for (const v of drevoVsebina.querySelectorAll('.vozel')) {
@@ -2116,18 +2232,129 @@ function narisiProjekte(p) {
   posodobiVrstoDrevesa();
   osveziTrakRazlicic();   // pot in oznaka »neshranjeno« aktivnega dokumenta za vrstico različic
 }
+// Trenutni projekt (od 2026-10-15, želja uporabnika): levi stolpec kaže le odprte dokumente in datoteke enega projekta.
+// Projekt = prva mapa pod mapo modeliranja (Oblak/3D modeliranje/<Projekt>/...), za datoteko zunaj nje njena mapa.
+// Privzeto je to projekt aktivnega dokumenta; izbirnik v glavi stolpca pokaže drug projekt ali vse, dokler ne preklopiš na
+// dokument drugega projekta. Dokumenti brez poti (še neshranjeni) in kopije različic iz oblaka so vidni vedno.
+let izbraniProjekt = null, zadnjiProjekt = null;   // izbraniProjekt: null = projekt aktivnega dokumenta, '*' = vsi projekti
+function korenModeliranja() { const sk = ((stanje.projekti && stanje.projekti.skupine) || [])[0]; return sk && sk.mapa ? sk.mapa.replace(/\\/g, '/').replace(/\/+$/, '') : ''; }
+function projektPoti(pot) {   // null = dokument ne pripada nobenemu projektu (viden vedno)
+  if (!pot || jeRazlicica(pot)) return null;
+  const p = pot.replace(/\\/g, '/'), koren = korenModeliranja();
+  if (koren && p.toLowerCase().startsWith(koren.toLowerCase() + '/')) {
+    const deli = p.slice(koren.length + 1).split('/');
+    return deli.length > 1 ? deli[0] : '';   // '' = datoteka neposredno v mapi modeliranja
+  }
+  return p.slice(0, p.lastIndexOf('/'));
+}
+function imeProjekta(k) { return k === '' ? 'Brez projekta (koren mape)' : k.includes('/') ? k.slice(k.lastIndexOf('/') + 1) : k; }
+function prikazaniProjekt() {   // null ali '*' = vsi
+  const pot = aktivniDokumentPot(), akt = pot ? projektPoti(pot) : null;
+  if (akt !== null && akt !== zadnjiProjekt) { zadnjiProjekt = akt; izbraniProjekt = null; }   // preklop na dokument drugega projekta
+  return izbraniProjekt !== null ? izbraniProjekt : zadnjiProjekt;
+}
+// gumb v glavi stolpca: ime prikazanega projekta; klik odpre okno projektov
+function napisIzbirnikaProjekta(proj) {
+  const g = $('dokumentiProjekt'), vsi = proj === null || proj === '*';
+  g.querySelector('.ime').textContent = vsi ? 'Vsi projekti' : imeProjekta(proj);
+  g.title = (vsi ? 'Prikazani so dokumenti vseh projektov' : 'Prikazani so le dokumenti projekta »' + imeProjekta(proj) + '«') + '\nKlik: izberi projekt v oknu projektov';
+}
+// Okno projektov (od 2026-10-16, želja uporabnika: projekte videti grafično namesto v spustnem seznamu). Kartica projekta:
+// mozaik do štirih sličic datotek (najprej sestavi, nato najnovejše), ime, število sestavov in delov, odprti dokumenti in zadnja
+// sprememba. Klik izbere projekt za levi stolpec (kot prej izbira v seznamu), »Vsi projekti« v glavi okna pokaže vse.
+function sklon(n, ena, dve, tri, pet) { const m = n % 100; return n + ' ' + (m === 1 ? ena : m === 2 ? dve : m === 3 || m === 4 ? tri : pet); }
+function podatkiProjektov() {   // [{kljuc, datoteke, odprtih, zadnja}]: datoteke iz map projektov in odprti dokumenti z datoteko
+  const p = stanje.projekti || {}, projekti = new Map();
+  const vnos = k => { if (!projekti.has(k)) projekti.set(k, { kljuc: k, datoteke: new Map(), odprtih: 0, zadnja: 0 }); return projekti.get(k); };
+  for (const sk of p.skupine || []) for (const d of sk.datoteke || []) {
+    const k = projektPoti(d.pot); if (k === null) continue;
+    const v = vnos(k); v.datoteke.set(d.pot.toLowerCase(), d); v.zadnja = Math.max(v.zadnja, d.spremenjeno || 0);
+  }
+  for (const o of p.odprti || []) {
+    const k = projektPoti(o.pot); if (k === null) continue;
+    const v = vnos(k), kljuc = o.pot.toLowerCase(); v.odprtih++;
+    if (!v.datoteke.has(kljuc)) v.datoteke.set(kljuc, { ime: o.oznaka, pot: o.pot, vrsta: o.vrsta, slicica: o.slicica, slicicaV: o.slicicaV, spremenjeno: o.spremenjeno });
+    v.zadnja = Math.max(v.zadnja, o.spremenjeno || 0);
+  }
+  return [...projekti.values()].map(v => ({ ...v, datoteke: [...v.datoteke.values()] }));
+}
+function mozaikProjekta(datoteke) {
+  const izbor = datoteke.filter(d => d.slicica && d.pot)
+    .sort((a, b) => (b.vrsta === 'sestav') - (a.vrsta === 'sestav') || (b.spremenjeno || 0) - (a.spremenjeno || 0)).slice(0, 4);
+  const m = el('div', 'mozaik ' + ['ena', 'ena', 'dve', 'tri', 'stiri'][izbor.length]);
+  const nadomestna = i => { i.classList.add('ikonaNamesto'); i.src = IKONA_KOCKE(false); };
+  if (!izbor.length) { const i = el('img'); i.alt = ''; nadomestna(i); m.append(i); }
+  for (const d of izbor) {
+    const i = el('img'); i.loading = 'lazy'; i.alt = ''; i.title = d.ime;
+    i.src = '/slicica?pot=' + encodeURIComponent(d.pot) + '&v=' + (d.slicicaV || d.spremenjeno || 0);
+    i.addEventListener('error', () => nadomestna(i), { once: true });
+    m.append(i);
+  }
+  return m;
+}
+function karticaProjekta(v, izbran, q) {
+  const b = el('button', 'projekt' + (izbran ? ' izbran' : '')); b.type = 'button';
+  const mapa = v.kljuc.includes('/') ? v.kljuc : korenModeliranja() + (v.kljuc ? '/' + v.kljuc : '');
+  b.title = mapa + '\nKlik: pokaži dokumente tega projekta';
+  const sestavov = v.datoteke.filter(d => d.vrsta === 'sestav').length, delov = v.datoteke.length - sestavov;
+  const pd = el('div', 'podatki');
+  if (sestavov) pd.append(el('span', '', sklon(sestavov, 'sestav', 'sestava', 'sestavi', 'sestavov')));
+  if (delov) pd.append(el('span', '', sklon(delov, 'del', 'dela', 'deli', 'delov')));
+  if (!v.datoteke.length) pd.append(el('span', '', 'brez datotek'));
+  if (v.odprtih) pd.append(el('span', 'odprtih', sklon(v.odprtih, 'odprt', 'odprta', 'odprti', 'odprtih')));
+  if (v.zadnja) pd.append(el('span', '', datumProjekta(v.zadnja)));
+  b.append(mozaikProjekta(v.datoteke), imeVnosa(imeProjekta(v.kljuc), q), pd);
+  if (izbran) b.append(el('span', 'prikazan', 'Prikazan'));
+  b.addEventListener('click', () => izberiProjekt(v.kljuc));
+  return b;
+}
+let prviProjektOkna;   // ključ prve kartice (Enter v iskanju jo izbere); undefined = ni zadetkov
+function narisiOknoProjektov() {
+  const c = $('projektiVsebina'); c.innerHTML = '';
+  const proj = prikazaniProjekt(), vsi = proj === null || proj === '*';
+  const q = ($('projektiIskanje').value || '').trim().toLowerCase();
+  const projekti = podatkiProjektov();
+  if (!vsi && !projekti.some(v => v.kljuc === proj)) projekti.push({ kljuc: proj, datoteke: [], odprtih: 0, zadnja: 0 });
+  const zadetki = q ? projekti.filter(v => imeProjekta(v.kljuc).toLowerCase().includes(q)) : projekti;
+  const uredi = a => a.sort((x, y) => imeProjekta(x.kljuc).localeCompare(imeProjekta(y.kljuc), 'sl'));
+  prviProjektOkna = undefined;
+  for (const [napis, seznam] of [['Z odprtimi dokumenti', uredi(zadetki.filter(v => v.odprtih))], ['Ostali projekti', uredi(zadetki.filter(v => !v.odprtih))]]) {
+    if (!seznam.length) continue;
+    if (prviProjektOkna === undefined) prviProjektOkna = seznam[0].kljuc;
+    const sek = el('section', 'razdelekProjektov'), h = el('h4', '', napis); h.append(el('span', 'stevilo', String(seznam.length)));
+    const mreza = el('div', 'mreza');
+    for (const v of seznam) mreza.append(karticaProjekta(v, !vsi && v.kljuc === proj, q));
+    sek.append(h, mreza); c.append(sek);
+  }
+  if (!zadetki.length) c.append(el('div', 'prazno', q ? 'Ni projekta »' + q + '«.' : 'Ni projektov (mapa 3D modeliranje je prazna ali je strežnik še ni prebral).'));
+  $('projektiVsi').classList.toggle('izbran', vsi);
+  $('projektiPovzetek').textContent = sklon(projekti.length, 'projekt', 'projekta', 'projekti', 'projektov') + ' · prikazan: ' + (vsi ? 'vsi' : imeProjekta(proj));
+}
+function odpriOknoProjektov() { $('projektiIskanje').value = ''; $('projektiOkno').classList.remove('skrit'); narisiOknoProjektov(); $('projektiIskanje').focus(); }
+function zapriOknoProjektov() { $('projektiOkno').classList.add('skrit'); }
+function izberiProjekt(k) { izbraniProjekt = k; zapriOknoProjektov(); $('stranskiVsebina').scrollTop = 0; narisiOdprteDokumente(); }
+$('dokumentiProjekt').addEventListener('click', odpriOknoProjektov);
+$('projektiVsi').addEventListener('click', () => izberiProjekt('*'));
+$('projektiZapri').addEventListener('click', zapriOknoProjektov);
+$('projektiIskanje').addEventListener('input', narisiOknoProjektov);
+$('projektiIskanje').addEventListener('keydown', e => { e.stopPropagation(); if (e.key === 'Enter' && prviProjektOkna !== undefined) izberiProjekt(prviProjektOkna); });
+$('projektiOkno').addEventListener('click', e => { if (e.target.id === 'projektiOkno') zapriOknoProjektov(); });
+document.addEventListener('keydown', e => { if (e.key === 'Escape' && !$('projektiOkno').classList.contains('skrit')) { zapriOknoProjektov(); e.stopPropagation(); } }, true);
 // Levi stolpec: odprti dokumenti, zgoraj sestavi, spodaj deli; iskanje v glavi stolpca filtrira po imenu.
 let dokumentiIskanje = '', prviNajdeniDokument = null;
 function narisiOdprteDokumente() {
   const p = stanje.projekti; if (!p) return;
   const vsebina = $('stranskiVsebina'); vsebina.innerHTML = '';
-  const odprti = p.odprti || [], q = dokumentiIskanje.trim().toLowerCase();
+  const proj = prikazaniProjekt(), vsiProjekti = proj === null || proj === '*';
+  napisIzbirnikaProjekta(proj);
+  const vProjektu = pot => { if (vsiProjekti) return true; const k = projektPoti(pot); return k === null || k === proj; };
+  const vsiOdprti = p.odprti || [], odprti = vsiOdprti.filter(o => vProjektu(o.pot)), q = dokumentiIskanje.trim().toLowerCase();
   const vidni = q ? odprti.filter(o => String(o.oznaka || '').toLowerCase().includes(q)) : odprti;
   $('dokumentiStevilo').textContent = odprti.length ? String(odprti.length) : '';
   $('dokumentiStevec').textContent = q ? vidni.length + ' / ' + odprti.length : '';
 
   const r1 = el('div', 'razdelek');
-  if (!odprti.length) r1.append(el('div', 'prazno', 'Ni odprtih dokumentov.'));
+  if (!odprti.length) r1.append(el('div', 'prazno', vsiProjekti ? 'Ni odprtih dokumentov.' : 'V tem projektu ni odprtih dokumentov.'));
   else if (!vidni.length) r1.append(el('div', 'prazno', 'Ni zadetkov za »' + dokumentiIskanje.trim() + '«.'));
   // zgoraj sestavi, spodaj deli (vsaka skupina s svojim naslovom, ko so odprte obe vrste)
   const sestavi = vidni.filter(o => o.vrsta === 'sestav'), deli = vidni.filter(o => o.vrsta !== 'sestav');
@@ -2143,18 +2370,22 @@ function narisiOdprteDokumente() {
   let vseDatotek = 0, najdenih = 0;
   prvaNajdenaDatoteka = null;
   for (const sk of p.skupine || []) {
-    const zaprte = sk.datoteke || [];
+    const zaprte = (sk.datoteke || []).filter(d => vProjektu(d.pot));
     vseDatotek += zaprte.length;
     const vidne = q ? zaprte.filter(d => (d.ime + ' ' + (d.projekt || '')).toLowerCase().includes(q)) : zaprte;
     najdenih += vidne.length;
     if (!vidne.length) continue;
     const r = el('div', 'razdelek');
-    const n = el('div', 'naslovRazdelka', sk.naslov || 'Datoteke'); n.title = sk.mapa; n.append(el('span', 'stevilo', String(vidne.length))); r.append(n);
-    // drevo map: vsaka podmapa je zložljiva vrstica, datoteke mape so pod njenimi podmapami
+    const n = el('div', 'naslovRazdelka', vsiProjekti ? (sk.naslov || 'Datoteke') : 'Datoteke projekta');
+    n.title = vsiProjekti ? sk.mapa : sk.mapa + '/' + proj; n.append(el('span', 'stevilo', String(vidne.length))); r.append(n);
+    // drevo map: vsaka podmapa je zložljiva vrstica, datoteke mape so pod njenimi podmapami; pri enem projektu se drevo
+    // začne v mapi projekta (predpona gre v ključ razprtih map, da ostane enak kot pri vseh projektih)
+    const predpona = !vsiProjekti && proj ? proj + '/' : '';
     const koren = { mape: new Map(), datoteke: [] };
     for (const d of vidne) {
-      let m = koren;
-      for (const del of (d.projekt || '').split('/').filter(Boolean)) {
+      let m = koren, rel = d.projekt || '';
+      if (predpona && (rel + '/').startsWith(predpona)) rel = rel.slice(predpona.length);
+      for (const del of rel.split('/').filter(Boolean)) {
         if (!m.mape.has(del)) m.mape.set(del, { mape: new Map(), datoteke: [] });
         m = m.mape.get(del);
       }
@@ -2163,8 +2394,8 @@ function narisiOdprteDokumente() {
     const prestej = m => m.datoteke.length + [...m.mape.values()].reduce((v, x) => v + prestej(x), 0);
     const narisiMapo = (m, pot, globina) => {
       for (const [ime, pod] of [...m.mape].sort((x, y) => x[0].localeCompare(y[0], 'sl'))) {
-        const kljuc = sk.mapa + '/' + pot + ime, odprt = !!q || odprtiProjekti.has(kljuc);
-        const g = el('div', 'naslovProjekta zlozljiv' + (odprt ? ' odprt' : '')); g.title = pot + ime;
+        const kljuc = sk.mapa + '/' + predpona + pot + ime, odprt = !!q || odprtiProjekti.has(kljuc);
+        const g = el('div', 'naslovProjekta zlozljiv' + (odprt ? ' odprt' : '')); g.title = predpona + pot + ime;
         g.style.paddingLeft = (8 + 14 * globina) + 'px';
         const ii = imeVnosa(ime, q); ii.className = 'imeProjekta';
         g.append(el('span', 'puscica', '▸'), ii, el('span', 'stevilo', String(prestej(pod))));
@@ -2179,13 +2410,24 @@ function narisiOdprteDokumente() {
       }
       for (const d of m.datoteke) {
         if (!prvaNajdenaDatoteka) prvaNajdenaDatoteka = d;
-        const v = vnosDatoteke(d, odprti, globina > 0); if (globina > 0) v.style.paddingLeft = (6 + 14 * globina) + 'px'; r.append(v);
+        const v = vnosDatoteke(d, vsiOdprti, globina > 0); if (globina > 0) v.style.paddingLeft = (6 + 14 * globina) + 'px'; r.append(v);
       }
     };
     narisiMapo(koren, '', 0);
     vsebina.append(r);
   }
   $('dokumentiStevec').textContent = q ? (vidni.length + najdenih) + ' / ' + (odprti.length + vseDatotek) : '';
+  // iskanje v enem projektu: koliko zadetkov je v drugih projektih (klik pokaže vse projekte)
+  if (q && !vsiProjekti) {
+    const zadetek = (ime, pot) => String(ime || '').toLowerCase().includes(q) && !vProjektu(pot);
+    const drugje = vsiOdprti.filter(o => zadetek(o.oznaka, o.pot)).length
+      + (p.skupine || []).reduce((v, sk) => v + (sk.datoteke || []).filter(d => zadetek(d.ime + ' ' + (d.projekt || ''), d.pot)).length, 0);
+    if (drugje) {
+      const b = el('button', 'vDrugih', 'Zadetki v drugih projektih: ' + drugje + ' – pokaži vse projekte'); b.type = 'button';
+      b.addEventListener('click', () => { izbraniProjekt = '*'; narisiOdprteDokumente(); });
+      vsebina.append(b);
+    }
+  }
 }
 let prvaNajdenaDatoteka = null;
 const odprtiProjekti = new Set((() => { try { return JSON.parse(localStorage.getItem('odprtiProjekti') || '[]'); } catch (e) { return []; } })());
@@ -3021,12 +3263,15 @@ async function naloziModel() {
   pocisti();
   for (const o of model.objekti) { const z = zgradiObjekt(o); koren.add(z.skupina); objekti.set(o.ime, z); }
   // nov dokument ima lahko čisto drugačno velikost: pogled se mu prilagodi znova
-  if (model.dokument !== stanje.dokument) { prviNalozen = false; nastaviRazstavitev(0, false); }
+  const drugDokument = model.dokument !== stanje.dokument;
+  if (drugDokument) { prviNalozen = false; nastaviRazstavitev(0, false); }
   stanje.dokument = model.dokument; stanje.verzija = model.verzija;
+  if (drugDokument) narisiOdprteDokumente();   // seznam dokumentov kaže projekt aktivnega dokumenta
   if (meritve.dokument !== model.dokument) pocistiMeritve();
   meritve.dokument = model.dokument; meritve.tocke = null;
   osveziTrakRazlicic();   // vrstica različic sledi aktivnemu dokumentu (zgodovina se naloži le ob drugi datoteki)
   narisiDrevo(model.drevo);
+  narisiNapiseNapajalnikov();   // napisi »napaja« nad napajalniki sledijo novim skupinam objektov
   posodobiRisbe(model.drevo);   // strani TechDraw: gumb Risbe, odprt list se naloži znova
   uporabiRazstavitev();   // nove skupine objektov dobijo odmik trenutne razstavitve; nastavi tudi sferaModela
   if (legaTiska.odprta) { if (stanje.dokument !== legaTiska.dokument) zapriLegoTiska(); else uporabiPrikazLege(); }   // nove mreže kosov
@@ -3099,7 +3344,7 @@ async function izrisiVirZdaj(samo, zunanja, velikost, sestavi, smer) {
   for (const v of viri) { v.updateWorldMatrix(true, true); okvir.expandByObject(v); }
   if (okvir.isEmpty()) return null;
   const sredisce = okvir.getCenter(new THREE.Vector3()), r = Math.max(okvir.getSize(new THREE.Vector3()).length() / 2, 1e-3);
-  const v = smer || STANDARDNI_POGLEDI[6];
+  const v = smer || STANDARDNI_POGLEDI[POGLED_IZO];
   const kam = new THREE.OrthographicCamera(-1, 1, 1, -1, 0.1, r * 10);
   kam.up.set(...v.gor);
   kam.position.copy(sredisce).addScaledVector(new THREE.Vector3(...v.nazaj).normalize(), r * 4);
@@ -3855,15 +4100,8 @@ $('gumbZgradba').addEventListener('click', () => {
   const o = ((stanje.projekti && stanje.projekti.odprti) || []).find(o => o.aktiven);
   odpriZgradbo(o ? o.ime : '', o ? o.oznaka : '');
 });
-// Gumb Natisni (od 2026-10-10): izbrani kosi, sicer vsi koreni aktivnega dokumenta; isto kot Natisni iz drevesa.
-$('gumbNatisni').addEventListener('click', () => {
-  const d = stanje.drevo, izbrani = [...new Set(stanje.izbira.map(s => s.objekt))];
-  const viri = izbrani.length ? izbrani : (d && d.koreni) || [];
-  const imena = [...new Set(viri.flatMap(i => imenaZaIzris(i)))];
-  const o = ((stanje.projekti && stanje.projekti.odprti) || []).find(o => o.aktiven);
-  const oznaka = izbrani.length === 1 && d && d.vozli[izbrani[0]] ? d.vozli[izbrani[0]].oznaka : (o ? o.oznaka : stanje.dokument);
-  natisniVozel({ ime: izbrani.length === 1 ? izbrani[0] : '', oznaka }, null, imena);
-});
+// Gumba 3D natisni v glavi ni več (odločitev uporabnika 2026-10-13; bil je od 2026-10-10): tisk kosov je »Natisni« v drevesu
+// (natisniVozel) in v vrstici Oblikovanja (okvir sporoči STL, poslušalec spodaj).
 $('zgradbaZapri').addEventListener('click', zapriZgradbo);
 $('zgradba').addEventListener('click', e => { if (e.target.id === 'zgradba') zapriZgradbo(); });
 $('zgradbaRazpri').addEventListener('click', () => { zgradbaStrnjeno.clear(); narisiZgradbo(); });
@@ -3995,15 +4233,16 @@ const OBRNI_KOLESCEK = false;                          // true: kolešček napre
 const oznakaVrtenja = new THREE.Mesh(new THREE.SphereGeometry(1, 16, 12), new THREE.MeshBasicMaterial({ color: 0xd81b9c, depthTest: false }));
 oznakaVrtenja.renderOrder = 10; oznakaVrtenja.visible = false; scene.add(oznakaVrtenja);
 
-const STANDARDNI_POGLEDI = [   // FreeCAD: Z gor, spredaj gledamo v smeri +Y
+const STANDARDNI_POGLEDI = [   // FreeCAD: Z gor, spredaj gledamo v smeri +Y; tipka 1 = izometrično, nato 2–7 po vrsti
+  { ime: 'Izometrično', nazaj: [1, -1, 1], gor: [0, 0, 1] },
   { ime: 'Spredaj', nazaj: [0, -1, 0], gor: [0, 0, 1] },
   { ime: 'Zadaj', nazaj: [0, 1, 0], gor: [0, 0, 1] },
   { ime: 'Levo', nazaj: [-1, 0, 0], gor: [0, 0, 1] },
   { ime: 'Desno', nazaj: [1, 0, 0], gor: [0, 0, 1] },
   { ime: 'Zgoraj', nazaj: [0, 0, 1], gor: [0, 1, 0] },
   { ime: 'Spodaj', nazaj: [0, 0, -1], gor: [0, -1, 0] },
-  { ime: 'Izometrično', nazaj: [1, -1, 1], gor: [0, 0, 1] },
 ];
+const POGLED_IZO = 0;
 
 function razdaljaPogleda() { return camera.position.distanceTo(nadzor.cilj); }
 function osKamere(x, y, z) { return new THREE.Vector3(x, y, z).applyQuaternion(camera.quaternion); }
@@ -4338,7 +4577,7 @@ function prilagodiPogled(prvic = false) {
   if (!p) return;
   nastaviMrezo(p.okvir);
   nastaviSredisceVrtenja(null);
-  if (prvic) { const v = STANDARDNI_POGLEDI[6]; pojdiNaPogled(new THREE.Vector3(...v.nazaj), new THREE.Vector3(...v.gor), false); return; }
+  if (prvic) { const v = STANDARDNI_POGLEDI[POGLED_IZO]; pojdiNaPogled(new THREE.Vector3(...v.nazaj), new THREE.Vector3(...v.gor), false); return; }
   koncajAnimacijo();
   animirajNa(camera.quaternion.clone(), p.sredisce, p.razdalja, 250);
 }
@@ -4436,18 +4675,34 @@ renderer.domElement.addEventListener('pointerup', e => {
   const premik = Math.hypot(e.clientX - pritisk.x, e.clientY - pritisk.y); pritisk = null;
   if (premik > 4) return;
   if (meritve.vklop) { klikMetra(e); return; }
+  const { objekt, element } = zadetekPodKazalcem(e);
+  if (objekt) objavi('/select', { objekt, element, dodaj: e.ctrlKey }).catch(pokaziNapako);
+  else if (!e.ctrlKey) objavi('/select', { objekt: '', element: '', dodaj: false }).catch(pokaziNapako);
+});
+// Kos (in rob ali ploskev) pod kazalcem: najprej robovi, ker so tanki in bi jih ploskev zadaj sicer prekrila
+function zadetekPodKazalcem(e) {
   nastaviKazalec(e);
   raycaster.params.Line.threshold = razdaljaPogleda() * 0.004;
   const meshi = [], crte = [];
   for (const z of objekti.values()) { if (z.mesh) meshi.push(z.mesh); if (z.crte) crte.push(z.crte); }
   const zr = raycaster.intersectObjects(crte, false), zp = raycaster.intersectObjects(meshi, false);
-  let objekt = null, element = '';
-  if (zr.length && (!zp.length || zr[0].distance <= zp[0].distance + raycaster.params.Line.threshold * 2)) { objekt = zr[0].object.userData.objekt; element = 'Edge' + (robOdseka(zr[0].object, Math.floor(zr[0].index / 2)) + 1); }
-  else if (zp.length) { objekt = zp[0].object.userData.objekt; element = 'Face' + (ploskevTrikotnika(zp[0].object, zp[0].faceIndex) + 1); }
-  if (objekt) objavi('/select', { objekt, element, dodaj: e.ctrlKey }).catch(pokaziNapako);
-  else if (!e.ctrlKey) objavi('/select', { objekt: '', element: '', dodaj: false }).catch(pokaziNapako);
+  if (zr.length && (!zp.length || zr[0].distance <= zp[0].distance + raycaster.params.Line.threshold * 2)) return { objekt: zr[0].object.userData.objekt, element: 'Edge' + (robOdseka(zr[0].object, Math.floor(zr[0].index / 2)) + 1) };
+  if (zp.length) return { objekt: zp[0].object.userData.objekt, element: 'Face' + (ploskevTrikotnika(zp[0].object, zp[0].faceIndex) + 1) };
+  return { objekt: null, element: '' };
+}
+// Desni klik na kos v 3D pogledu (od 2026-10-15): isti meni kot v drevesu (Odpri sestav/del, Skrij, Videz, Natisni ...).
+// Desni gumb tudi premika pogled, zato meni le, če se kazalec od pritiska ni premaknil; v praznem prostoru menija ni.
+renderer.domElement.addEventListener('contextmenu', e => {
+  e.preventDefault();
+  if (skica.posnetek) { prekiniRisanje(); return; }
+  if (meritve.vklop || !pritisk || pritisk.gumb !== 2 || Math.hypot(e.clientX - pritisk.x, e.clientY - pritisk.y) > 4) return;
+  pritisk = null;
+  const { objekt, element } = zadetekPodKazalcem(e);
+  if (!objekt || !stanje.drevo) return;
+  const v = stanje.drevo.vozli[objekt]; if (!v) return;
+  if (!stanje.izbira.some(s => s.objekt === objekt)) objavi('/select', { objekt, element, dodaj: false }).catch(pokaziNapako);
+  odpriMeniDrevesa(e.clientX, e.clientY, v);
 });
-renderer.domElement.addEventListener('contextmenu', e => { e.preventDefault(); if (skica.posnetek) prekiniRisanje(); });
 // --- Meritve: statusna vrstica in meter (od 2026-10-13) ----------------------------------------------------
 // Statusna vrstica (kot Onshape, mere so vedno vidne): ob vsaki spremembi izbire strežnik izmeri izbrane elemente
 // (POST /meritev, FreeCAD na glavni niti: dolžina, polmer, površina, normala, okvir, prostornina; pri dveh elementih še
@@ -5092,7 +5347,7 @@ function zapriSkicoLokalno() {
   $('mere').innerHTML = ''; skica.oznake = [];
   trak.classList.remove('skrit'); $('skicaTrak').classList.add('skrit'); vrsticaPogledov.classList.remove('skrit');
   zgostiTrak();   // trak, narisan med skico (skrit), se šele zdaj lahko izmeri
-  $('namig').textContent = 'Srednji gumb: vrtenje (Ctrl premik, Shift povečava, Alt sukanje, klik na model: središče vrtenja) · kolešček: povečava · klik: izbira (Ctrl doda) · puščice · Ctrl+1–8 pogledi · preslednica: meni pogledov · F: prilagodi · E: razstavi · M: meter';
+  $('namig').textContent = '';
   skica.posnetek = null; skica.risba = null; skica.izbrano = null; skica.vlecenje = null;
   uporabiRazstavitev();
   osveziHud();
@@ -5484,16 +5739,18 @@ $('pomocnikNapor').value = pomocnikNastavitev('pomocnikNapor', 'obicajno');
 $('pomocnikDovoli').checked = pomocnikNastavitev('pomocnikDovoli', '0') === '1';
 $('pomocnikNapor').addEventListener('change', e => pomocnikShrani('pomocnikNapor', e.target.value));
 $('pomocnikDovoli').addEventListener('change', e => pomocnikShrani('pomocnikDovoli', e.target.checked ? '1' : '0'));
+// gumb Pomočnik (razred .gumbPomocnik, v glavi ob Izhodu); stanje (aktiven, dela) dobijo vsi gumbi s tem razredom
+function gumbiPomocnika(razred, vklop) { document.querySelectorAll('.gumbPomocnik').forEach(g => g.classList.toggle(razred, vklop)); }
 function odpriPomocnika() {
   pomocnik.odprto = true; $('pomocnik').classList.remove('skrit'); document.body.classList.add('pomocnikOdprt');
-  $('gumbPomocnik').classList.add('aktiven'); pomocnikShrani('pomocnikOdprt', '1');
+  gumbiPomocnika('aktiven', true); pomocnikShrani('pomocnikOdprt', '1');
   osveziPomocnika(true); setTimeout(() => $('pomocnikVnos').focus(), 50);
 }
 function zapriPomocnika() {
   pomocnik.odprto = false; $('pomocnik').classList.add('skrit'); document.body.classList.remove('pomocnikOdprt');
-  $('gumbPomocnik').classList.remove('aktiven'); pomocnikShrani('pomocnikOdprt', '0');
+  gumbiPomocnika('aktiven', false); pomocnikShrani('pomocnikOdprt', '0');
 }
-$('gumbPomocnik').addEventListener('click', () => { if (pomocnik.odprto) zapriPomocnika(); else odpriPomocnika(); });
+document.querySelectorAll('.gumbPomocnik').forEach(g => g.addEventListener('click', () => { if (pomocnik.odprto) zapriPomocnika(); else odpriPomocnika(); }));
 $('pomocnikZapri').addEventListener('click', zapriPomocnika);
 async function pomocnikPost(telo) {
   const r = await fetch('/pomocnik', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Zeton': ZETON }, body: JSON.stringify(telo) });
@@ -5514,7 +5771,7 @@ async function osveziPomocnika(vse) {
   pomocnik.koraki.splice(d.od, pomocnik.koraki.length - d.od, ...d.koraki);
   pomocnik.stanje = d.stanje; pomocnik.info = d;
   narisiPomocnika(vse ? 0 : d.od);
-  $('gumbPomocnik').classList.toggle('dela', d.stanje === 'dela');
+  gumbiPomocnika('dela', d.stanje === 'dela');
   if (d.stanje === 'dela') pomocnik.casovnik = setTimeout(() => osveziPomocnika(false), 450);
 }
 function pomocnikStanje(besedilo, slabo) { const s = $('pomocnikStanje'); s.textContent = besedilo || ''; s.classList.toggle('napaka', !!slabo); }
@@ -5616,7 +5873,7 @@ $('pomocnikNov').addEventListener('click', async () => {
 });
 dogodki.addEventListener('pomocnik', e => {
   let d = {}; try { d = JSON.parse(e.data); } catch (err) { /* prazno */ }
-  $('gumbPomocnik').classList.toggle('dela', d.stanje === 'dela');
+  gumbiPomocnika('dela', d.stanje === 'dela');
   if (pomocnik.odprto) osveziPomocnika(false);
 });
 if (pomocnikNastavitev('pomocnikOdprt', '0') === '1') odpriPomocnika();
@@ -5630,6 +5887,10 @@ dogodki.addEventListener('oblak', e => {
       return;
     }
     if (o.vrsta === 'slicica') { osveziTrakRazlicic(true); return; }   // render odprte kopije je pri reviziji: brez obvestila
+    if (o.vrsta === 'razlicica') {   // nova revizija v oblaku (ob vsaki samodejno shranjeni spremembi): kartica v vrstici, brez obvestila
+      if (stanje.razlicice) pokaziRazlicice(stanje.razlicice.pot, stanje.razlicice.ime);
+      osveziTrakRazlicic(true); return;
+    }
     obvesti(o.sporocilo, o.vrsta === 'neosvezeno' || o.vrsta === 'cakanje' || o.vrsta === 'napaka' || o.vrsta === 'zaklep-tuj');
     if (stanje.razlicice) pokaziRazlicice(stanje.razlicice.pot, stanje.razlicice.ime);
     osveziTrakRazlicic(true);
@@ -5672,6 +5933,7 @@ renderer.setAnimationLoop(() => {
   if (ortoControls) ortoControls.update(); else { korakAnimacije(); prilagodiRavnini(); posodobiOznakoVrtenja(); osveziVrsticoPogledov(); aktivnaKamera = kameraPogleda(); }
   if (skica.oznake.length) posodobiMere();
   if (meritve.seznam.length || meritve.zacasna || meritve.izbira3d || meritve.prva) posodobiMeritve();
+  if (napisiNapajalnikov.size) posodobiNapiseNapajalnikov();
   if (tiskanje.odprto) return;   // pod zavihkom Tiskanje pogled ni viden: brez izrisa (GPU za kamere plošče)
   if (renderer.domElement.clientWidth > 0 && renderer.domElement.clientHeight > 0) izrisiPogled(aktivnaKamera);
 });
@@ -5686,7 +5948,3 @@ try {
 </script>
 </body>
 </html>
-    if (o.vrsta === 'razlicica') {   // nova revizija v oblaku (ob vsaki samodejno shranjeni spremembi): kartica v vrstici, brez obvestila
-      if (stanje.razlicice) pokaziRazlicice(stanje.razlicice.pot, stanje.razlicice.ime);
-      osveziTrakRazlicic(true); return;
-    }

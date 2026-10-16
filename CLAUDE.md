@@ -73,7 +73,9 @@ FreeCAD je motor, vmesnik in grafika nastajata v brskalniku (plan, korak 8 napre
   ga kopiraj znova); isto besedilo vrne orodje `postopki`. V namizni aplikaciji Claude vpis v claude_desktop_config.json
   med njenim delovanjem ne obstane (prepiše ga iz pomnilnika): `lastno/mcp/vpisi_v_claude_desktop.py --cakaj` vpiše ob
   zaprtju aplikacije. Ob selitvi mape v »3D tisk« popravi še registracijo `claude mcp` in vpis v aplikaciji (pot do mostu).
-- **Pomočnik AI v brskalniku** (od 2026-10-10, `lastno/splet/pomocnik.py`, gumb ✦ Pomočnik v glavi, plošča `#pomocnik`
+- **Pomočnik AI v brskalniku** (od 2026-10-10, `lastno/splet/pomocnik.py`, gumb ✦ Pomočnik v glavi ob Izhodu (razred
+  `.gumbPomocnik`, stanje prek `gumbiPomocnika`), plošča `#pomocnik` desno od pogleda; gumb 🖨 3D natisni je iz glave odstranjen
+  2026-10-13 na željo uporabnika, tisk je »Natisni« v drevesu in v vrstici Oblikovanja)
   desno od pogleda): zanka Claude API teče v niti strežnika in kliče `mcp_orodja.izvedi_slovar` (isti katalog kot MCP).
   `GET /pomocnik?od=N` (koraki, zadnji se med pretakanjem dopolnjuje), `GET /pomocnik/slika?id=`, `POST /pomocnik
   {dejanje: poslji | potrdi | ustavi | nov}`, dogodek SSE `pomocnik`. Ključ: `ANTHROPIC_API_KEY` iz okolja, sicer
@@ -507,6 +509,13 @@ FreeCAD je motor, vmesnik in grafika nastajata v brskalniku (plan, korak 8 napre
   (deli sloge z `#drevoGlava`) s številom in iskanjem po imenu (Enter preklopi na prvi zadetek, Esc počisti), skupini Sestavi/Deli s
   števcem, vrstica `vnosOdprtega`: sličica z značko vrste (`okvirVnosa`), čipi (`cipVnosa`: vrsta, Neshranjeno namesto `*`, različica,
   zaklep), ikonski gumbi (`gumbVnosa`: različice, zgradba, zapri) plavajo čez desni rob le ob miški, da imenu ne jemljejo širine.
+  **Samo trenutni projekt** (od 2026-10-15, želja uporabnika): stolpec kaže le odprte dokumente in datoteke projekta aktivnega dokumenta
+  (`projektPoti`: prva mapa pod `3D modeliranje`, zunaj nje mapa datoteke; neshranjeni in kopije različic so vidni vedno), drevo datotek se
+  začne v mapi projekta. Gumb `#dokumentiProjekt` v glavi (ime projekta ▾) pokaže drug projekt ali »Vsi projekti« do preklopa na dokument drugega projekta
+  (`izbraniProjekt`, `prikazaniProjekt`); od 2026-10-16 (želja uporabnika »grafično vidim projekte«) namesto spustnega seznama odpre okno
+  `#projektiOkno` s karticami (`narisiOknoProjektov`, `podatkiProjektov`: mozaik do 4 sličic, najprej sestavi, število sestavov/delov, odprti,
+  zadnja sprememba; iskanje, Enter izbere prvi zadetek). Razreda `.skupina` ne uporabljaj za nove elemente (globalno je skupina traku z mrežo); iskanje išče v projektu in ponudi zadetke drugje (`.vDrugih`). Standardni deli, ki jih sestav
+  projekta uporablja, so v projektu »Standardni deli«.
 - **Sodobna podoba** (od 2026-10-09, CSS v `index.html`): barve, sence in zaobljenost so žetoni v `:root` (`--poudarek` #2563eb,
   `--poudarekMehko`, `--crta`, `--crtaMocna`, `--besedilo2/3`, `--lebdenje`, `--senca1/2`, `--obroc`, `--steklo`); novih barv ne piši v
   posamezna pravila. **Vse tri stopnje so ena stran** (od 2026-10-10): `oblikovanje.html` in plošča Tiskaj (`3D print/tiskaj/web/style.css`)
@@ -537,6 +546,9 @@ FreeCAD je motor, vmesnik in grafika nastajata v brskalniku (plan, korak 8 napre
   2026-10-09 na željo uporabnika odstranjen iz strani; strežnik lastnosti vozlov še pošilja (stran iz njih bere vrsto spoja)
   in `POST /drevo {dejanje: lastnost, ime, lastnost, vrednost}` še deluje. Posnetek `/model` nosi ključ `drevo`
   (koreni, vozli); brez njega stran javi, da je strežnik starejši. Razprti vozli so v `localStorage` po dokumentu. Urejanje iz drevesa (od 2026-10-08): gumb ✎ v vrstici (napis Uredi ob miški in na izbrani vrstici), dvojni klik, desni klik -> Uredi -> `POST /drevo {dejanje: uredi, ime}` (`drevo._uredi`): skica se odpre v urejevalniku skic v brskalniku, sicer `ViewObject.doubleClicked()` kot v FreeCAD-ovem drevesu (značilnost odpre opravilo -> obrazec desno, telo ali App::Part postane dejavno); med odprtim urejanjem strežnik drugo zavrne z dogodkom `obvestilo {sporocilo, slabo}`. Zajem seznamov v obrazcih: `QAbstractListModel.columnCount` je v PySide zaseben, šteje se kot en stolpec. Prikaz skice (od 2026-10-08): skica se riše nad modelom (materiali `NAD`: depthTest/depthWrite false, renderOrder), črte skice so debele (`LineSegments2` + `THREE.Line2NodeMaterial` iz addons/lines/webgpu, rezerva tanke črte), črna = v celoti določena, modra = ne (posnetek skice nosi `dolocena` = `sk.FullyConstrained`). Kote (`narisiMere`): DistanceX/Y zložene nad/pod oz. levo/desno od obsega skice s pomožnimi črtami in puščicami, Distance vzporedno, Radius/Diameter z vodilom; klik na koto odpre vnos na mestu (Enter ali klik drugam potrdi, Esc prekliče) -> `POST /skica {vrsta: nastaviMero, id, vrednost}` (`setDatum`, kot v °). Vlečenje kote (`zacniVlecenjeKote`, premik nad 4 px; brez premika je klik) jo premakne in shrani lego v omejitev kot FreeCAD (`POST /skica {vrsta: polozajMere, id, razmik, polozaj}` -> `setLabelDistance`/`setLabelPosition`, brez preračuna): razdalje: kotirna črta odmaknjena za LabelDistance po normali (-dir.y, dir.x) od druge točke, napis za LabelPosition vzdolž dir od sredine; polmer/premer: LabelPosition = kot vodila, LabelDistance = napis od kroga navzven. Privzeti vrednosti (10 in 0, pri polmeru 10 in 10) pomenita samodejno razporeditev okrog skice. `prilagodiPogledSkice` pusti prostor za kote. Skripte skic (npr. `nosilec_telo.py`) kotirajo obrise in odvečne omejitve pobrišejo po `RedundantConstraints`.
+- **Prostor »3D modeliranje« v oblaku obstaja šele od 2026-10-15** (skupni, brez skupine, lastnik jus.kolaric@gmail.com; ustvarjen prek
+  `POST /v1/nadzorna/prostori` lokalnega oblaka). Prej mapa ni bila prostor, odjemalec je ni sinhroniziral in različice so
+  javljale »ni prostora«. Različice delajo le, ko tečeta lokalni oblak (`predzagon zazeni oblak`, 8790) in odjemalec Oblak.
 - Različice iz oblaka (od 2026-10-07, PDM korak 2, `lastno/splet/oblak.py`, plan `PDM-PLAN.md`): ob odprtem dokumentu
   iz mape odjemalca oblaka (privzeto iz `%APPDATA%\Oblak\nastavitve.json`: `folder`, `api`; prepis `SPLET_OBLAK_MAPA`,
   `SPLET_OBLAK_API`) je gumb ⟲, ki odpre ploščo z različicami: prijava v oblak (strežnik se prijavi kot **lastna**

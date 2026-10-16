@@ -803,6 +803,18 @@ def _kljuc_oblike(obj, globina=0):
         povezan = obj
     if povezan is not None and povezan is not obj:
         return ("L", _kljuc_oblike(povezan, globina + 1), _lega_kljuc(obj.Placement) if hasattr(obj, "Placement") else None)
+    # vrsta kosov (App::Link z ElementCount > 0, »število kosov«): getLinkedObject vrne povezavo samo, njena oblika pa je
+    # ob vsakem branju nov compound z drugim hashCode — ključ zato iz povezanega kosa, števila kosov in leg elementov
+    # (sicer se vsak sestav s tako vrsto gradi ob vsakem posnetku znova, ~10 s na podsestav; ugotovljeno 2026-10-15)
+    if hasattr(obj, "LinkedObject") and int(getattr(obj, "ElementCount", 0) or 0) > 0:
+        cilj = obj.LinkedObject
+        if isinstance(cilj, tuple):   # (objekt, [podpoti])
+            cilj = cilj[0]
+        if cilj is not None and cilj is not obj:
+            lege = tuple(_lega_kljuc(p) for p in (getattr(obj, "PlacementList", None) or []))
+            korak = getattr(cilj, "Korak", None)
+            return ("A", _kljuc_oblike(cilj, globina + 1), _lega_kljuc(obj.Placement), int(obj.ElementCount), lege,
+                    float(korak) if korak is not None else None)
     if obj.isDerivedFrom("App::DocumentObjectGroup"):
         return ("G", tuple(_kljuc_oblike(o, globina + 1) for o in obj.Group))
     if obj.isDerivedFrom("App::Part"):   # tudi Assembly: oblika je sestav otrok, ob vsakem branju nova (hashCode ni stabilen)
