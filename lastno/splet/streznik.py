@@ -2427,7 +2427,40 @@ def zgradi_projekte():
             except OSError:
                 pass
         odprti.append(o)
-    return {"odprti": odprti, "skupine": _projekti_v_mapah()}
+    return {"odprti": odprti, "skupine": _projekti_v_mapah(), "skupineProjektov": _skupine_projektov()}
+
+
+# Skupine projektov (od 2026-10-16, želja uporabnika: sorodne projekte, npr. Photobox Slim, Slim A in Merilnik, v oknu projektov
+# videti skupaj). Le prikaz, mape ostanejo. Datoteka je v mapi modeliranja (Oblak), da velja na vseh računalnikih:
+# {"skupine": {"<ključ projekta>": "<ime skupine>"}}; ključ je kot v brskalniku (projektPoti): mapa pod 3D modeliranje ali polna pot.
+DATOTEKA_SKUPIN = os.path.join(MAPA_OBLAK, "_skupine projektov.json")
+_SKUPINE_PREDPOMNILNIK = {"mtime": None, "skupine": {}}
+
+
+def _skupine_projektov():
+    try:
+        mtime = os.stat(DATOTEKA_SKUPIN).st_mtime
+    except OSError:
+        return {}
+    if mtime != _SKUPINE_PREDPOMNILNIK["mtime"]:
+        try:
+            with open(DATOTEKA_SKUPIN, encoding="utf-8") as f:
+                podatki = json.load(f)
+            skupine = {str(k): str(v).strip() for k, v in (podatki.get("skupine") or {}).items() if str(v).strip()}
+        except Exception as e:  # noqa: BLE001
+            _log("skupine projektov: %r" % e)
+            skupine = {}
+        _SKUPINE_PREDPOMNILNIK.update(mtime=mtime, skupine=skupine)
+    return dict(_SKUPINE_PREDPOMNILNIK["skupine"])
+
+
+def _zapisi_skupine(skupine):
+    os.makedirs(os.path.dirname(DATOTEKA_SKUPIN), exist_ok=True)
+    zacasna = DATOTEKA_SKUPIN + ".delno"
+    with open(zacasna, "w", encoding="utf-8") as f:
+        json.dump({"skupine": dict(sorted(skupine.items()))}, f, ensure_ascii=False, indent=2)
+    os.replace(zacasna, DATOTEKA_SKUPIN)
+    _SKUPINE_PREDPOMNILNIK["mtime"] = None
 
 
 # ---------------------------------------------------------------- knjižnica standardnih delov (gumb Knjižnica)
@@ -2788,6 +2821,21 @@ def _projekt_dejanje(stanje, podatki):
             App.closeDocument(ime)
     elif dejanje == "osvezi-seznam":
         # Zaklep se je spremenil (oblak.py v ozadju): samo znova zgradi seznam odprtih dokumentov.
+        stanje.zadnji_projekti = 0.0
+        return
+    elif dejanje in ("skupina", "preimenuj-skupino"):
+        # Okno projektov: projekt v skupino ({projekt, skupina}; prazna skupina = brez) ali preimenovanje skupine ({staro, novo})
+        skupine = _skupine_projektov()
+        if dejanje == "skupina":
+            projekt, skupina = str(podatki.get("projekt", "")), str(podatki.get("skupina", "")).strip()
+            if skupina:
+                skupine[projekt] = skupina
+            else:
+                skupine.pop(projekt, None)
+        else:
+            staro, novo = str(podatki.get("staro", "")), str(podatki.get("novo", "")).strip()
+            skupine = {k: (novo if v == staro else v) for k, v in skupine.items() if novo or v != staro}
+        _zapisi_skupine(skupine)
         stanje.zadnji_projekti = 0.0
         return
     else:

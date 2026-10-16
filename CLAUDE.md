@@ -514,7 +514,10 @@ FreeCAD je motor, vmesnik in grafika nastajata v brskalniku (plan, korak 8 napre
   začne v mapi projekta. Gumb `#dokumentiProjekt` v glavi (ime projekta ▾) pokaže drug projekt ali »Vsi projekti« do preklopa na dokument drugega projekta
   (`izbraniProjekt`, `prikazaniProjekt`); od 2026-10-16 (želja uporabnika »grafično vidim projekte«) namesto spustnega seznama odpre okno
   `#projektiOkno` s karticami (`narisiOknoProjektov`, `podatkiProjektov`: mozaik do 4 sličic, najprej sestavi, število sestavov/delov, odprti,
-  zadnja sprememba; iskanje, Enter izbere prvi zadetek). Razreda `.skupina` ne uporabljaj za nove elemente (globalno je skupina traku z mrežo); iskanje išče v projektu in ponudi zadetke drugje (`.vDrugih`). Standardni deli, ki jih sestav
+  zadnja sprememba; iskanje, Enter izbere prvi zadetek). **Skupine projektov** (od 2026-10-16, le prikaz, mape ostanejo): sorodni projekti so v oknu
+  v svojem okvirju (prva skupina »Photobox«: Photobox Slim, Slim A, Merilnik temperature DIN, Zacasno); gumb »Skupina« na kartici (meni: obstoječe,
+  nova, brez), ✎ v naslovu preimenuje ali razpusti. Hrani jih strežnik v `3D modeliranje/_skupine projektov.json` (`{"skupine": {ključ projekta: ime}}`,
+  `_skupine_projektov`, polje `skupineProjektov` v `/projekti`, `POST /projekt {dejanje: skupina | preimenuj-skupino}`). Razreda `.skupina` ne uporabljaj za nove elemente (globalno je skupina traku z mrežo); iskanje išče v projektu in ponudi zadetke drugje (`.vDrugih`). Standardni deli, ki jih sestav
   projekta uporablja, so v projektu »Standardni deli«.
 - **Sodobna podoba** (od 2026-10-09, CSS v `index.html`): barve, sence in zaobljenost so žetoni v `:root` (`--poudarek` #2563eb,
   `--poudarekMehko`, `--crta`, `--crtaMocna`, `--besedilo2/3`, `--lebdenje`, `--senca1/2`, `--obroc`, `--steklo`); novih barv ne piši v

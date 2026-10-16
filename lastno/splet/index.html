@@ -437,6 +437,29 @@
   #projektiVsebina .projekt .prikazan { position: absolute; top: 12px; left: 12px; border-radius: 999px; padding: 1px 8px; font-size: 11px; font-weight: 600;
     background: var(--poudarek); color: #fff; box-shadow: var(--senca1); }
   #projektiVsebina .projekt mark { background: #fde68a; color: inherit; border-radius: 2px; }
+  /* skupine projektov (od 2026-10-16): sorodni projekti v svojem okvirju; gumb Skupina na kartici, ✎ preimenuje skupino */
+  #projektiOkno .okno { position: relative; }
+  #projektiVsebina .skupinaProjektov { background: #edf2fa; border: 1px solid #d6e0ee; border-radius: 14px; padding: 10px 12px 12px; }
+  #projektiVsebina .skupinaProjektov h4 { text-transform: none; letter-spacing: 0; font-size: 14px; color: var(--besedilo); }
+  #projektiVsebina .skupinaProjektov h4 svg { color: var(--poudarek); }
+  #projektiVsebina h4 .odprtih { font-size: 11px; font-weight: 600; border-radius: 999px; padding: 1px 7px; background: var(--poudarekMehko); color: var(--poudarekTemen); }
+  #projektiVsebina h4 .preimenuj { border: none; background: transparent; border-radius: 6px; padding: 1px 6px; cursor: pointer; color: var(--besedilo2);
+    font: inherit; font-size: 12px; opacity: 0; transition: opacity .12s; }
+  #projektiVsebina h4:hover .preimenuj { opacity: 1; }
+  #projektiVsebina h4 .preimenuj:hover { background: var(--lebdenje); color: var(--besedilo); }
+  #projektiVsebina .projekt .skupinaGumb { position: absolute; top: 12px; right: 12px; display: inline-flex; align-items: center; gap: 4px; border: 1px solid var(--crta);
+    background: rgba(255,255,255,.94); border-radius: 7px; padding: 2px 7px; font: inherit; font-size: 11.5px; color: var(--besedilo2); cursor: pointer;
+    opacity: 0; transition: opacity .12s; box-shadow: var(--senca1); }
+  #projektiVsebina .projekt:hover .skupinaGumb, #projektiVsebina .projekt:focus-within .skupinaGumb { opacity: 1; }
+  #projektiVsebina .projekt .skupinaGumb:hover { color: var(--besedilo); border-color: var(--crtaMocna); }
+  #projektiOkno .meniSkupine { position: absolute; z-index: 2; min-width: 210px; max-width: 280px; background: #fff; border: 1px solid var(--crta); border-radius: 10px;
+    box-shadow: var(--senca2); padding: 5px; display: flex; flex-direction: column; }
+  #projektiOkno .meniSkupine .naslovMenija { padding: 5px 8px 6px; font-size: 11px; color: var(--besedilo3); overflow-wrap: anywhere; }
+  #projektiOkno .meniSkupine button { text-align: left; border: none; background: transparent; border-radius: 6px; padding: 6px 8px; font: inherit; font-size: 13px; cursor: pointer; color: var(--besedilo); }
+  #projektiOkno .meniSkupine button:hover { background: var(--lebdenje); }
+  #projektiOkno .meniSkupine button.izbrana { color: var(--poudarekTemen); font-weight: 600; }
+  #projektiOkno .meniSkupine button.izbrana::before { content: '✓ '; }
+  #projektiOkno .meniSkupine .locilo { height: 1px; background: var(--crta); margin: 4px 2px; }
   /* Okno z drevesno shemo sestava (gumb Zgradba) */
   #zgradba { position: fixed; inset: 0; z-index: 60; background: rgba(20, 30, 45, .35); display: flex; align-items: center; justify-content: center; }
   #zgradba.skrit { display: none; }
@@ -2229,6 +2252,7 @@ function narisiProjekte(p) {
   setTimeout(() => izrisiSliciceDokumentov().catch(e => console.warn(e)), 2000);
   nacrtujSlicico();   // pot aktivnega dokumenta je zdaj znana (ob prvem nalaganju še ni bila)
   narisiOdprteDokumente();
+  if (!$('projektiOkno').classList.contains('skrit') && !meniSkupine) narisiOknoProjektov(true);
   posodobiVrstoDrevesa();
   osveziTrakRazlicic();   // pot in oznaka »neshranjeno« aktivnega dokumenta za vrstico različic
 }
@@ -2276,7 +2300,54 @@ function podatkiProjektov() {   // [{kljuc, datoteke, odprtih, zadnja}]: datotek
     if (!v.datoteke.has(kljuc)) v.datoteke.set(kljuc, { ime: o.oznaka, pot: o.pot, vrsta: o.vrsta, slicica: o.slicica, slicicaV: o.slicicaV, spremenjeno: o.spremenjeno });
     v.zadnja = Math.max(v.zadnja, o.spremenjeno || 0);
   }
-  return [...projekti.values()].map(v => ({ ...v, datoteke: [...v.datoteke.values()] }));
+  const skupine = skupineProjektov();
+  return [...projekti.values()].map(v => ({ ...v, datoteke: [...v.datoteke.values()], skupina: skupine[v.kljuc] || '' }));
+}
+// Skupine projektov (od 2026-10-16, želja uporabnika): sorodni projekti (npr. Photobox Slim, Slim A, Merilnik) so v oknu v svojem
+// okvirju. Le prikaz, mape ostanejo; strežnik jih hrani v »_skupine projektov.json« v mapi modeliranja (POST /projekt {dejanje: skupina}).
+function skupineProjektov() { return (stanje.projekti && stanje.projekti.skupineProjektov) || {}; }
+function ikonaMape(velikost) {
+  const t = document.createElement('template');
+  t.innerHTML = '<svg width="' + velikost + '" height="' + velikost + '" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round">'
+    + '<path d="M2 4.5A1.5 1.5 0 0 1 3.5 3h3l1.5 1.5h4.5A1.5 1.5 0 0 1 14 6v5.5a1.5 1.5 0 0 1-1.5 1.5h-9A1.5 1.5 0 0 1 2 11.5z"/></svg>';
+  return t.content.firstChild;
+}
+function spremeniSkupineLokalno(fn) {   // takoj v prikazu; strežnik zapiše datoteko in pošlje nov seznam (dogodek projekti)
+  if (!stanje.projekti) return;
+  const s = { ...skupineProjektov() }; fn(s); stanje.projekti.skupineProjektov = s;
+  narisiOknoProjektov();
+}
+function nastaviSkupino(kljuc, skupina) {
+  spremeniSkupineLokalno(s => { if (skupina) s[kljuc] = skupina; else delete s[kljuc]; });
+  projektDejanje({ dejanje: 'skupina', projekt: kljuc, skupina });
+}
+function preimenujSkupino(staro) {
+  const novo = prompt('Novo ime skupine »' + staro + '« (prazno = razpusti skupino, projekti ostanejo):', staro);
+  if (novo === null || novo.trim() === staro) return;
+  spremeniSkupineLokalno(s => { for (const k of Object.keys(s)) if (s[k] === staro) { if (novo.trim()) s[k] = novo.trim(); else delete s[k]; } });
+  projektDejanje({ dejanje: 'preimenuj-skupino', staro, novo: novo.trim() });
+}
+let meniSkupine = null;
+function zapriMeniSkupine() { if (meniSkupine) { meniSkupine.remove(); meniSkupine = null; } }
+function odpriMeniSkupine(v, gumb) {
+  zapriMeniSkupine();
+  const okno = $('projektiOkno').querySelector('.okno'), m = el('div', 'meniSkupine'); meniSkupine = m;
+  m.append(el('div', 'naslovMenija', 'Skupina projekta »' + imeProjekta(v.kljuc) + '«'));
+  const moznost = (besedilo, izbrana, ob) => {
+    const b = el('button', izbrana ? 'izbrana' : '', besedilo); b.type = 'button';
+    b.addEventListener('click', e => { e.stopPropagation(); zapriMeniSkupine(); ob(); });
+    m.append(b);
+  };
+  const imena = [...new Set(Object.values(skupineProjektov()))].sort((a, b) => a.localeCompare(b, 'sl'));
+  for (const s of imena) moznost(s, s === v.skupina, () => { if (s !== v.skupina) nastaviSkupino(v.kljuc, s); });
+  if (imena.length) m.append(el('div', 'locilo'));
+  moznost('+ Nova skupina …', false, () => { const s = (prompt('Ime nove skupine projektov:', '') || '').trim(); if (s) nastaviSkupino(v.kljuc, s); });
+  if (v.skupina) moznost('Brez skupine', false, () => nastaviSkupino(v.kljuc, ''));
+  okno.append(m);
+  const r = gumb.getBoundingClientRect(), ro = okno.getBoundingClientRect();
+  m.style.left = Math.max(8, Math.min(r.right - ro.left - m.offsetWidth, ro.width - m.offsetWidth - 8)) + 'px';
+  const spodaj = r.bottom - ro.top + 4;
+  m.style.top = (spodaj + m.offsetHeight > ro.height - 8 ? Math.max(8, r.top - ro.top - m.offsetHeight - 4) : spodaj) + 'px';
 }
 function mozaikProjekta(datoteke) {
   const izbor = datoteke.filter(d => d.slicica && d.pot)
@@ -2305,41 +2376,75 @@ function karticaProjekta(v, izbran, q) {
   if (v.zadnja) pd.append(el('span', '', datumProjekta(v.zadnja)));
   b.append(mozaikProjekta(v.datoteke), imeVnosa(imeProjekta(v.kljuc), q), pd);
   if (izbran) b.append(el('span', 'prikazan', 'Prikazan'));
+  const g = el('button', 'skupinaGumb'); g.type = 'button'; g.title = 'Skupina projekta: ' + (v.skupina || 'brez') + '\nKlik: premakni v skupino, nova skupina ali brez skupine';
+  g.append(ikonaMape(12), 'Skupina');
+  g.addEventListener('click', e => { e.stopPropagation(); if (meniSkupine && meniSkupine.dataset.kljuc === v.kljuc) zapriMeniSkupine(); else { odpriMeniSkupine(v, g); meniSkupine.dataset.kljuc = v.kljuc; } });
+  b.append(g);
   b.addEventListener('click', () => izberiProjekt(v.kljuc));
   return b;
 }
-let prviProjektOkna;   // ključ prve kartice (Enter v iskanju jo izbere); undefined = ni zadetkov
-function narisiOknoProjektov() {
-  const c = $('projektiVsebina'); c.innerHTML = '';
+let prviProjektOkna, kljucOknaProjektov = '';   // ključ prve kartice (Enter v iskanju jo izbere; undefined = ni zadetkov), ključ izrisa
+// samoObSpremembi: klic ob dogodku projekti (okno je odprto) nariše znova le, če se je prikazano spremenilo
+function narisiOknoProjektov(samoObSpremembi) {
+  const c = $('projektiVsebina');
   const proj = prikazaniProjekt(), vsi = proj === null || proj === '*';
   const q = ($('projektiIskanje').value || '').trim().toLowerCase();
   const projekti = podatkiProjektov();
-  if (!vsi && !projekti.some(v => v.kljuc === proj)) projekti.push({ kljuc: proj, datoteke: [], odprtih: 0, zadnja: 0 });
-  const zadetki = q ? projekti.filter(v => imeProjekta(v.kljuc).toLowerCase().includes(q)) : projekti;
+  if (!vsi && !projekti.some(v => v.kljuc === proj)) projekti.push({ kljuc: proj, datoteke: [], odprtih: 0, zadnja: 0, skupina: skupineProjektov()[proj] || '' });
+  const kljuc = JSON.stringify([proj, q, projekti.map(v => [v.kljuc, v.skupina, v.odprtih, v.zadnja, v.datoteke.length])]);
+  if (samoObSpremembi === true && kljuc === kljucOknaProjektov) return;
+  kljucOknaProjektov = kljuc;
+  const odmik = c.scrollTop; c.innerHTML = ''; zapriMeniSkupine();
+  const zadetki = q ? projekti.filter(v => (imeProjekta(v.kljuc) + ' ' + v.skupina).toLowerCase().includes(q)) : projekti;
   const uredi = a => a.sort((x, y) => imeProjekta(x.kljuc).localeCompare(imeProjekta(y.kljuc), 'sl'));
+  // najprej skupine (vsaka v svojem okvirju), nato projekti brez skupine: z odprtimi dokumenti, ostali
+  const poSkupinah = new Map();
+  for (const v of zadetki) if (v.skupina) { if (!poSkupinah.has(v.skupina)) poSkupinah.set(v.skupina, []); poSkupinah.get(v.skupina).push(v); }
+  const brez = zadetki.filter(v => !v.skupina);
+  const razdelki = [...poSkupinah.keys()].sort((a, b) => a.localeCompare(b, 'sl')).map(s => [s, uredi(poSkupinah.get(s)), true]);
+  razdelki.push(['Z odprtimi dokumenti', uredi(brez.filter(v => v.odprtih)), false], ['Ostali projekti', uredi(brez.filter(v => !v.odprtih)), false]);
   prviProjektOkna = undefined;
-  for (const [napis, seznam] of [['Z odprtimi dokumenti', uredi(zadetki.filter(v => v.odprtih))], ['Ostali projekti', uredi(zadetki.filter(v => !v.odprtih))]]) {
+  for (const [napis, seznam, jeSkupina] of razdelki) {
     if (!seznam.length) continue;
     if (prviProjektOkna === undefined) prviProjektOkna = seznam[0].kljuc;
-    const sek = el('section', 'razdelekProjektov'), h = el('h4', '', napis); h.append(el('span', 'stevilo', String(seznam.length)));
+    const sek = el('section', 'razdelekProjektov' + (jeSkupina ? ' skupinaProjektov' : '')), h = el('h4');
+    if (jeSkupina) h.append(ikonaMape(15));
+    h.append(napis, el('span', 'stevilo', String(seznam.length)));
+    if (jeSkupina) {
+      const odprtih = seznam.reduce((n, v) => n + v.odprtih, 0);
+      if (odprtih) h.append(el('span', 'odprtih', sklon(odprtih, 'odprt', 'odprta', 'odprti', 'odprtih')));
+      const p = el('button', 'preimenuj', '✎ Preimenuj'); p.type = 'button'; p.title = 'Preimenuj ali razpusti skupino';
+      p.addEventListener('click', e => { e.stopPropagation(); preimenujSkupino(napis); });
+      h.append(p);
+    }
     const mreza = el('div', 'mreza');
     for (const v of seznam) mreza.append(karticaProjekta(v, !vsi && v.kljuc === proj, q));
     sek.append(h, mreza); c.append(sek);
   }
   if (!zadetki.length) c.append(el('div', 'prazno', q ? 'Ni projekta »' + q + '«.' : 'Ni projektov (mapa 3D modeliranje je prazna ali je strežnik še ni prebral).'));
+  c.scrollTop = odmik;
   $('projektiVsi').classList.toggle('izbran', vsi);
   $('projektiPovzetek').textContent = sklon(projekti.length, 'projekt', 'projekta', 'projekti', 'projektov') + ' · prikazan: ' + (vsi ? 'vsi' : imeProjekta(proj));
 }
-function odpriOknoProjektov() { $('projektiIskanje').value = ''; $('projektiOkno').classList.remove('skrit'); narisiOknoProjektov(); $('projektiIskanje').focus(); }
-function zapriOknoProjektov() { $('projektiOkno').classList.add('skrit'); }
+function odpriOknoProjektov() { $('projektiIskanje').value = ''; $('projektiOkno').classList.remove('skrit'); $('projektiVsebina').scrollTop = 0; narisiOknoProjektov(); $('projektiIskanje').focus(); }
+function zapriOknoProjektov() { zapriMeniSkupine(); $('projektiOkno').classList.add('skrit'); }
 function izberiProjekt(k) { izbraniProjekt = k; zapriOknoProjektov(); $('stranskiVsebina').scrollTop = 0; narisiOdprteDokumente(); }
 $('dokumentiProjekt').addEventListener('click', odpriOknoProjektov);
 $('projektiVsi').addEventListener('click', () => izberiProjekt('*'));
 $('projektiZapri').addEventListener('click', zapriOknoProjektov);
-$('projektiIskanje').addEventListener('input', narisiOknoProjektov);
+$('projektiIskanje').addEventListener('input', () => narisiOknoProjektov());
 $('projektiIskanje').addEventListener('keydown', e => { e.stopPropagation(); if (e.key === 'Enter' && prviProjektOkna !== undefined) izberiProjekt(prviProjektOkna); });
+$('projektiVsebina').addEventListener('scroll', zapriMeniSkupine);
+// odprt meni skupine: klik kamorkoli drugam ga le zapre (ne izbere projekta)
+$('projektiOkno').addEventListener('click', e => {
+  if (meniSkupine && !meniSkupine.contains(e.target) && !e.target.closest('.skupinaGumb')) { zapriMeniSkupine(); e.stopPropagation(); e.preventDefault(); }
+}, true);
 $('projektiOkno').addEventListener('click', e => { if (e.target.id === 'projektiOkno') zapriOknoProjektov(); });
-document.addEventListener('keydown', e => { if (e.key === 'Escape' && !$('projektiOkno').classList.contains('skrit')) { zapriOknoProjektov(); e.stopPropagation(); } }, true);
+document.addEventListener('keydown', e => {
+  if (e.key !== 'Escape' || $('projektiOkno').classList.contains('skrit')) return;
+  if (meniSkupine) zapriMeniSkupine(); else zapriOknoProjektov();
+  e.stopPropagation();
+}, true);
 // Levi stolpec: odprti dokumenti, zgoraj sestavi, spodaj deli; iskanje v glavi stolpca filtrira po imenu.
 let dokumentiIskanje = '', prviNajdeniDokument = null;
 function narisiOdprteDokumente() {
