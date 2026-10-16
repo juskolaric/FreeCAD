@@ -2397,6 +2397,7 @@ def zgradi_projekte():
              "spremenjen": _spremenjen(d), "aktiven": d.Name == aktivni, "slicica": False, "spremenjeno": 0, "slicicaV": 0}
         o.update(_vrsta_iz_tipov(x.TypeId for x in d.Objects))
         o["verzija"] = verzija_dokumenta(d)
+        o["samodejno"] = samodejno.velja_za(d)   # vsaka sprememba se shrani sama -> nova različica (brez gumba Shrani)
         if d.FileName:
             try:
                 # PDM: zaklep datoteke (iz predpomnilnika; ob prvem odprtju se sproži samodejni zaklep v ozadju)
@@ -2409,7 +2410,6 @@ def zgradi_projekte():
                 o["spremenjeno"] = int(st.st_mtime)
                 lastnosti = _lastnosti_fcstd(d.FileName, st)
                 o["slicica"] = lastnosti["slicica"] or render > 0
-        o["samodejno"] = samodejno.velja_za(d)   # vsaka sprememba se shrani sama -> nova različica (brez gumba Shrani)
                 o["verzijaDatoteke"] = lastnosti.get("verzija", 0)   # višja od verzija = datoteko je shranila druga seja
                 o["slicicaV"] = max(render, int(st.st_mtime))
             except OSError:
