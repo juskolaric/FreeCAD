@@ -154,6 +154,23 @@ in podrobnosti vsakega področja: `CLAUDE.md`.
 
 ## 9. Stanje in odprte naloge (11. 10. 2026)
 
+**Dopolnitev 17. 10. 2026 (predaja vseh projektov delovnega prostora, seja »Zaključek in predaja projektov«; v tej seji brez sprememb v tem repu):**
+
+- Veja `moje-spremembe` @ `8aad4f8d92` »docs(CLAUDE): Blender v ozadju po nedejavnosti ugasne sam« (17. 10. 10:11); **3 commiti pred
+  `origin/moje-spremembe`**, nepushani: `6521d14e6a` fix(splet): delno naložen dokument se ne shrani več tiho brez zapisa (strežnik ob zagonu
+  `NoPartialLoading = True`, `shrani` delnega zavrne, `nalozi_v_celoti`), `6bb227aa76` feat(splet,oblikovanje): Blender v ozadju po nedejavnosti
+  ugasne (privzeto 30 min, `SPLET_OBLIKOVANJE_NEDEJAVNOST_MIN`), `8aad4f8d92` docs. Danes pushan: `8bb839d83b` (podvojen zagon se konča,
+  zaposlen strežnik ni ugasnjen; gradnja z 12 jedri). **Naslednji korak:** `git push origin moje-spremembe` (fork je javen — brez ključev).
+- **Necommitano (tuje seje skupine FreeCAD, 16.–17. 10.; 9 M + 2 nova, +497 vrstic):** `lastno/splet/videz.py` (+189), `render.py` (+93),
+  `index.html` (+80), `streznik.py` (+80), `oblak.py`, `mcp_orodja.py`, `CLAUDE.md` (+38: razdelek **Ploščice — PBR teksture v merilu**,
+  ambientCG, `Standardni deli/<kat>/_Ploscice/`, lastnosti `Ploscica*` na kosu), `lastno/mcp/skill/freecad/SKILL.md`, nova `lastno/splet/ploscice.py`
+  in `pomnilnik.py` (ovoj `App.listDocuments`, ki v C++ pušča — TODO t344), `src/App/ApplicationPy.cpp` (+3, C++ popravek puščanja, **ni preveden**).
+  Več sej dela v isti delovni kopiji — commit samo svojih hunkov prek začasnega indeksa (`../../Predaja/05-pasti-in-lekcije.md`, prenos spomina 17. 10.).
+- **Odprto (TODO FreeCAD, 16.–17. 10.):** C++ popravek `listDocuments` prevesti; prostor »3D modeliranje« je od 17. 10. 09:01 v produkcijskem
+  oblaku oblak.masterhub.si — FreeCAD odjavljen iz lokalnega oblaka, **prijava v prod oblak čaka uporabnika**; sirote strežnika (`zazeni` ob
+  zaposlenem strežniku zažene še eno kopijo); `distToShape` čez sestave nikoli v `python` (17. 10. >10 min, strežnik znova zagnan, neshranjeno izgubljeno).
+- Različica: lastna gradnja FreeCAD 1.1 (`releases/FreeCAD-1-1`); naslednja izdaja ni opredeljena (ni paketa, teče iz gradnje). Odprtih PR ni.
+
 Vse delo do 11. 10. je commitano in potisnjeno na `moje-spremembe`. Glavne odprte točke (popoln seznam v
 `Apps/TODO.md` → FreeCAD):
 
