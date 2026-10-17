@@ -458,6 +458,9 @@ class Stanje:
         self.ima_obliko = False
         self.verzija_ideje = 0
         self.zunanje = None          # {"pot", "mtime", "izhaja"}: različica, odprta v oknu Blenderja
+        # Zadnja zahteva, ki ni polling (GET /stanje brez ?vidno=1, /render/stanje, /render/seznam, /ai/stanje): po njej
+        # strežnik FreeCAD-a šteje nedejavnost in proces po pragu ugasne (streznik.py, oblikovanje_preveri_nedejavnost).
+        self.zadnja_zahteva = time.time()
 
     def stanje(self):
         return {"verzija": self.verzija, "datoteka": self.datoteka,
@@ -466,6 +469,7 @@ class Stanje:
                 "napaka": self.napaka, "verzijaIdeje": self.verzija_ideje,
                 "ideja": os.path.basename(IDEJE.mapa) if IDEJE.mapa else "", "razlicica": IDEJE.razlicica,
                 "projekt": PROJEKTI.ime, "vBlenderju": bool(self.zunanje), "ai": AI.stanje,
+                "nedejavnost": round(time.time() - self.zadnja_zahteva), "zaseden": zaseden(),
                 "pid": os.getpid()}   # stran ob drugem pid-u (nov zagon, nov žeton) sama osveži
 
 
@@ -939,6 +943,43 @@ SLICICE = Slicice(ob_koncu=lambda: setattr(STANJE, "verzija_ideje", STANJE.verzi
 
 
 # ---------------------------------------------------------------------------------------------------------------
+# Ugasnitev po nedejavnosti (od 2026-10-17): strežnik FreeCAD-a (streznik.py) vsakih 30 s bere /stanje (nedejavnost, zaseden)
+# in po pragu pokliče POST /ugasni. Blender se ne ugasne, dokler je ideja odprta v oknu Blenderja, teče render, izris
+# sličic ali Claude; neshranjene spremembe odprte ideje gredo pred izhodom v novo različico (vir »samodejno«).
+
+def zaseden():
+    """Razlogi, zakaj Oblikovanja zdaj ne gre ugasniti (prazen seznam = prosto)."""
+    razlogi = []
+    if STANJE.zunanje:
+        razlogi.append("okno Blenderja")
+    if UPODABLJANJE.tekoca is not None or UPODABLJANJE.vrsta:
+        razlogi.append("render")
+    if SLICICE.tece:
+        razlogi.append("sličice")
+    if AI.stanje == "dela":
+        razlogi.append("AI")
+    return razlogi
+
+
+def _pred_ugasnitvijo():
+    """Na glavni niti tik pred izhodom: neshranjene spremembe shrani (ideja -> nova različica, sicer kopija v delovno mapo),
+    da ob ugasnitvi nič ne izgine. Vrne oznako shranjenega ali ''."""
+    if not (STANJE.spremenjeno and bpy.data.is_dirty):
+        return ""
+    if IDEJE.mapa:
+        rid = IDEJE.shrani_razlicico("Samodejno shranjeno ob ugasnitvi po nedejavnosti", "samodejno")
+        _po_ideji()
+        STANJE.spremenjeno = False
+        _log("ugasnitev: neshranjene spremembe ideje »%s« so različica %s" % (os.path.basename(IDEJE.mapa), rid))
+        return rid
+    os.makedirs(DELOVNA, exist_ok=True)
+    pot = os.path.join(DELOVNA, "neshranjeno-%s.blend" % time.strftime("%Y%m%d-%H%M%S"))
+    bpy.ops.wm.save_as_mainfile(filepath=pot, copy=True, compress=True)
+    _log("ugasnitev: scena brez ideje z neshranjenimi spremembami je v %s" % pot)
+    return pot
+
+
+# ---------------------------------------------------------------------------------------------------------------
 # HTTP
 
 class Streznik(http.server.ThreadingHTTPServer):
@@ -977,6 +1018,8 @@ class Zahteva(http.server.BaseHTTPRequestHandler):
     def do_GET(self):
         pot, _, poizvedba = self.path.partition("?")
         q = {k: v[0] for k, v in urllib.parse.parse_qs(poizvedba).items()}
+        if pot not in POLLING or (pot == "/stanje" and q.get("vidno")):   # vidna stran šteje kot delo, skrita ne
+            STANJE.zadnja_zahteva = time.time()
         if pot == "/":
             with open(os.path.join(MAPA, "oblikovanje.html"), "rb") as f:
                 self._odgovor(f.read().replace(b"__ZETON__", ZETON.encode("ascii")), "text/html; charset=utf-8")
@@ -1049,6 +1092,8 @@ class Zahteva(http.server.BaseHTTPRequestHandler):
             self._odgovor({"napaka": "json"}, koda=400)
             return
         pot = self.path.split("?")[0]
+        if pot not in ("/ugasni", "/izhod"):
+            STANJE.zadnja_zahteva = time.time()
         if pot == "/python":
             koncano, o = _cakaj("python", podatki, float(podatki.get("cakaj", 120) or 120))
             self._odgovor({"ok": koncano and not o["napaka"], "koncano": koncano, "izpis": o["izpis"],
@@ -1093,8 +1138,28 @@ class Zahteva(http.server.BaseHTTPRequestHandler):
         elif pot == "/izhod":
             STANJE.konec = True
             self._odgovor({"ok": True})
+        elif pot == "/ugasni":
+            # Ugasnitev po nedejavnosti (streznik.py): zavrne, če je zaseden; neshranjeno prej shrani (_pred_ugasnitvijo).
+            razlogi = zaseden()
+            if razlogi:
+                self._odgovor({"ok": False, "zaseden": razlogi})
+                return
+            koncano, o = _cakaj("klic", _pred_ugasnitvijo, 60)
+            if not koncano:
+                self._odgovor({"ok": False, "sporocilo": "Blender ne odgovarja", "napaka": "ne-odgovarja"})
+                return
+            if o["napaka"]:   # shranjevanje ni uspelo: raje ostane živ, kot da izgubi delo
+                _log("ugasnitev: shranjevanje pred izhodom ni uspelo: " + o["napaka"])
+                self._odgovor({"ok": False, "sporocilo": o["napaka"].strip().splitlines()[-1], "napaka": "shranjevanje"})
+                return
+            self._odgovor({"ok": True, "shranjeno": o["rezultat"] or ""})
+            _log("ugasnitev po nedejavnosti (%d s brez zahtev)" % (time.time() - STANJE.zadnja_zahteva))
+            STANJE.konec = True
         else:
             self._odgovor(b"ni", "text/plain", 404)
+
+
+POLLING = ("/stanje", "/render/stanje", "/render/seznam", "/ai/stanje")   # GET, ki ne šteje kot delo (zadnja_zahteva)
 
 
 def zapisi_povezavo():

@@ -3961,7 +3961,8 @@ async function osveziOblikovanje() {
   $('oblikovanjeOpis').textContent = !s ? 'Strežnik FreeCAD-a ne pozna Oblikovanja (starejši strežnik; ponovno zaženi FreeCAD).'
     : !s.blender ? 'Blender ni nameščen (pričakovan v Program Files/Blender Foundation).'
     : oblikovanje.zaganjam ? 'Zaganjam Blender v ozadju (brez okna) …'
-    : 'Oblikovanje teče v Blenderju v ozadju. Zaženi ga tukaj; teče naprej tudi po izhodu iz FreeCAD-a.';
+    : 'Oblikovanje teče v Blenderju v ozadju. Zaženi ga tukaj; teče naprej tudi po izhodu iz FreeCAD-a.'
+      + (s.nedejavnostPragMin ? ' Po ' + s.nedejavnostPragMin + ' min brez dela ugasne; ob naslednjem odprtju se zažene sam.' : '');
   $('oblikovanjeZazeni').disabled = oblikovanje.zaganjam || !(s && s.blender);
   return tece;
 }
@@ -3995,11 +3996,23 @@ function zapriOblikovanje() {
   oblikovanjeSporoci({ dejanje: 'skrit' });
 }
 $('gumbOblikovanje').addEventListener('click', () => odpriOblikovanje());
+// Blender ne odgovarja (strežnik FreeCAD-a ga je ugasnil po nedejavnosti ali je padel): odprt in viden zavihek pokaže »zaganjam«
+// in ga zažene znova; v skritem zavihku brskalnika okvir le izprazni in počaka, da stran spet postane vidna (sicer bi ga
+// ugasnitev v ozadju takoj zagnala nazaj).
+async function obnoviOblikovanje(vsiljeno) {
+  if (!oblikovanje.odprto || oblikovanje.zaganjam) return;
+  if (!vsiljeno && Date.now() - (oblikovanje.zadnjaObnova || 0) < 5000) return;
+  oblikovanje.zadnjaObnova = Date.now();
+  const tece = await osveziOblikovanje();
+  if (!tece && document.visibilityState === 'visible' && oblikovanje.stanje && oblikovanje.stanje.blender && !oblikovanje.zaganjam) zazeniOblikovanje();
+}
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') obnoviOblikovanje(true); });
 // 3D natisni iz Oblikovanja: okvir pošlje pot STL (FreeCAD-splet/tisk); strežnik ga prestavi v vhod plošče Tiskaj in označi
 // za ročno pripravo, nato se odpre zavihek Tiskanje z oknom Pripravi (enako kot Natisni iz drevesa).
 window.addEventListener('message', async e => {
   if (!oblikovanjeOkvir.contentWindow || e.source !== oblikovanjeOkvir.contentWindow) return;
   const m = e.data || {};
+  if (m.vir === 'oblikovanje' && m.dejanje === 'ne-odgovarja') { obnoviOblikovanje(); return; }
   if (m.vir !== 'oblikovanje' || m.dejanje !== 'natisni' || !m.pot) return;
   let d;
   try {

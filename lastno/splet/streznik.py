@@ -291,12 +291,41 @@ if MAPA_OBLIKOVANJA not in sys.path:
     sys.path.insert(0, MAPA_OBLIKOVANJA)
 from upodabljanje import UPODABLJANJE, najdi_blender, _cisto_okolje  # noqa: E402
 OBLIKOVANJE_VRATA = int(os.environ.get("SPLET_OBLIKOVANJE_VRATA", "3030"))
+# Ugasnitev po nedejavnosti (od 2026-10-17): Blender v ozadju je 14.–17. 10. tri dni brez ene zahteve držal 4 GB zavezanega
+# pomnilnika. Nit »oblikovanje-nadzor« vsakih 30 s vpraša /stanje; po SPLET_OBLIKOVANJE_NEDEJAVNOST_MIN minutah (privzeto 30,
+# 0 = nikoli) brez zahtev ga ugasne (oblikovanje_ugasni: POST /ugasni shrani neshranjene spremembe ideje kot različico in konča
+# zanko, po 5 s TerminateProcess), razen če je zaseden (ideja v oknu Blenderja, render, sličice, AI). Nedejavnost šteje Blender
+# sam (vse zahteve razen polling-a; vidna stran šteje kot delo) in ta strežnik (zazeni, stanje iz brskalnika, orodja MCP); velja
+# krajša. Naslednja zahteva ga zažene znova po isti poti (brskalnik pokaže »zaganjam«). Prag med tekom: POST /oblikovanje/nedejavnost.
+_OBLIKOVANJE = {"prag_min": float(os.environ.get("SPLET_OBLIKOVANJE_NEDEJAVNOST_MIN", "30") or 0),
+                "zadnja": 0.0,       # zadnja zahteva proti Oblikovanju, ki jo je videl ta strežnik (0 = Blenderja še nismo videli)
+                "pid": 0,            # pid Blenderja, ki ga nadzorujemo (drug pid = nov primerek, nedejavnost šteje od začetka)
+                "ugasam": False, "zaseden": "", "ugasnjen": 0.0, "razlog": ""}
+_OBLIKOVANJE_KLJUC = threading.Lock()
+
+
+def _oblikovanje_dejavnost():
+    """Zabeleži zahtevo proti Oblikovanju, ki gre skozi ta strežnik (zazeni, stanje iz brskalnika, orodja MCP)."""
+    _OBLIKOVANJE["zadnja"] = time.time()
+
+
+def _oblikovanje_povezava():
+    """Vsebina oblikovanje.json (vrata, žeton, pid), ki jo zapiše streznik_blender.py; None, če je ni."""
+    pot = os.path.join(os.environ.get("LOCALAPPDATA") or os.path.expanduser("~"), "FreeCAD-splet", "oblikovanje.json")
+    try:
+        with open(pot, encoding="utf-8") as f:
+            return json.load(f)
+    except (OSError, ValueError):
+        return None
 
 
 def oblikovanje_stanje():
-    """Ali Oblikovanje (Blender v ozadju) teče; nit strežnika."""
+    """Ali Oblikovanje (Blender v ozadju) teče; nit strežnika. Z nedejavnostjo (min) in pragom ugasnitve; med ugašanjem
+    poroča »ne teče«, da brskalnik pokaže »zaganjam« in ne nalaga strani, ki izginja."""
     import http.client
-    stanje = {"tece": False, "vrata": OBLIKOVANJE_VRATA, "blender": najdi_blender() or ""}
+    o = _OBLIKOVANJE
+    stanje = {"tece": False, "vrata": OBLIKOVANJE_VRATA, "blender": najdi_blender() or "",
+              "nedejavnostPragMin": o["prag_min"], "ugasam": o["ugasam"]}
     try:
         c = http.client.HTTPConnection("127.0.0.1", OBLIKOVANJE_VRATA, timeout=1.0)
         c.request("GET", "/stanje")
@@ -306,12 +335,53 @@ def oblikovanje_stanje():
         c.close()
     except (OSError, ValueError):
         pass
+    if stanje["tece"]:
+        pid = int(stanje.get("pid") or 0)
+        if pid != o["pid"] or not o["zadnja"]:   # nov primerek ali prvič viden: nedejavnost šteje od zdaj
+            o["pid"], o["zadnja"] = pid, time.time()
+        stanje["nedejavnostMin"] = round(oblikovanje_nedejavnost(stanje) / 60, 1)
+        if o["ugasam"]:
+            stanje["tece"] = False
+    elif not o["ugasam"]:
+        o["pid"] = 0
     return stanje
+
+
+def oblikovanje_nedejavnost(stanje):
+    """Sekunde od zadnje zahteve proti Oblikovanju: krajša od Blenderjeve (`nedejavnost` v /stanje; starejši Blender je nima)
+    in naše (_oblikovanje_dejavnost)."""
+    lokalno = time.time() - _OBLIKOVANJE["zadnja"] if _OBLIKOVANJE["zadnja"] else 0.0
+    blender = stanje.get("nedejavnost")
+    return min(lokalno, float(blender)) if isinstance(blender, (int, float)) else lokalno
+
+
+def oblikovanje_povzetek(stanje=None):
+    """Ena vrstica za orodje `stanje`: ali Blender teče, koliko minut miruje, kdaj ugasne."""
+    s = stanje if stanje is not None else oblikovanje_stanje()
+    o = _OBLIKOVANJE
+    prag = ("ugasne po %g min brez zahtev" % o["prag_min"]) if o["prag_min"] > 0 else "sam ne ugasne"
+    if o["ugasam"]:
+        return "Oblikovanje (Blender) se ravnokar ugaša po nedejavnosti; naslednja zahteva ga zažene znova."
+    if not s.get("tece"):
+        v = "Oblikovanje (Blender) ne teče; zažene se ob prvi uporabi (%s)." % prag
+        if o["ugasnjen"]:
+            v += " Ugasnjen ob %s: %s." % (time.strftime("%H:%M", time.localtime(o["ugasnjen"])), o["razlog"])
+        return v
+    v = "Oblikovanje (Blender %s) teče, miruje %g min (%s)" % (s.get("blender") or "?", s.get("nedejavnostMin", 0), prag)
+    if s.get("zaseden"):
+        v += " · zaseden: " + ", ".join(s["zaseden"])
+    if s.get("ideja"):
+        v += " · ideja »%s« %s%s" % (s["ideja"], s.get("razlicica", ""), " (neshranjene spremembe)" if s.get("spremenjeno") else "")
+    return v + "."
 
 
 def oblikovanje_zazeni():
     """Zažene Oblikovanje kot samostojen proces Blenderja brez okna (preživi Izhod FreeCAD-a). Vrne (ok, sporočilo)."""
     import subprocess
+    konec = time.time() + 15
+    while _OBLIKOVANJE["ugasam"] and time.time() < konec:   # ravno se ugaša: počakaj, da sprosti vrata, nato zaženi znova
+        time.sleep(0.25)
+    _oblikovanje_dejavnost()
     if oblikovanje_stanje()["tece"]:
         return True, "Oblikovanje že teče."
     blender = najdi_blender()
@@ -320,14 +390,147 @@ def oblikovanje_zazeni():
     zastavice = (getattr(subprocess, "DETACHED_PROCESS", 0) | getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
                  | getattr(subprocess, "CREATE_NO_WINDOW", 0))
     try:
-        subprocess.Popen([blender, "-b", "--factory-startup", "--python", os.path.join(MAPA_OBLIKOVANJA, "streznik_blender.py"),
-                          "--", "--vrata", str(OBLIKOVANJE_VRATA)], cwd=MAPA_OBLIKOVANJA, env=_cisto_okolje(),
-                         stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, close_fds=True,
-                         creationflags=zastavice)
+        proces = subprocess.Popen([blender, "-b", "--factory-startup", "--python", os.path.join(MAPA_OBLIKOVANJA, "streznik_blender.py"),
+                                   "--", "--vrata", str(OBLIKOVANJE_VRATA)], cwd=MAPA_OBLIKOVANJA, env=_cisto_okolje(),
+                                  stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, close_fds=True,
+                                  creationflags=zastavice)
     except OSError as e:
         return False, "Zagon Blenderja ni uspel: %s" % e
-    _log("oblikovanje: zaganjam Blender (%s)" % blender)
+    _OBLIKOVANJE["pid"], _OBLIKOVANJE["zadnja"] = proces.pid, time.time()
+    _log("oblikovanje: zaganjam Blender (%s, pid %d)" % (blender, proces.pid))
     return True, "Oblikovanje se zaganja."
+
+
+def _oblikovanje_proces_ziv(pid):
+    """Ali proces s tem pid-om še teče in je blender.exe (Windows API brez psutil; pid se po izhodu lahko ponovno dodeli)."""
+    if not pid:
+        return False
+    if os.name != "nt":
+        try:
+            os.kill(pid, 0)
+            return True
+        except OSError:
+            return False
+    import ctypes
+    from ctypes import wintypes
+    k32 = ctypes.WinDLL("kernel32", use_last_error=True)   # lasten primerek: argtypes ne vplivajo na druge module
+    k32.OpenProcess.restype, k32.OpenProcess.argtypes = wintypes.HANDLE, [wintypes.DWORD, wintypes.BOOL, wintypes.DWORD]
+    k32.GetExitCodeProcess.argtypes = [wintypes.HANDLE, ctypes.POINTER(wintypes.DWORD)]
+    k32.QueryFullProcessImageNameW.argtypes = [wintypes.HANDLE, wintypes.DWORD, wintypes.LPWSTR, ctypes.POINTER(wintypes.DWORD)]
+    k32.CloseHandle.argtypes = [wintypes.HANDLE]
+    h = k32.OpenProcess(0x1000 | 0x100000, False, int(pid))   # PROCESS_QUERY_LIMITED_INFORMATION | SYNCHRONIZE
+    if not h:
+        return False
+    try:
+        koda = wintypes.DWORD()
+        if not k32.GetExitCodeProcess(h, ctypes.byref(koda)) or koda.value != 259:   # STILL_ACTIVE
+            return False
+        ime = ctypes.create_unicode_buffer(1024)
+        n = wintypes.DWORD(1024)
+        if k32.QueryFullProcessImageNameW(h, 0, ime, ctypes.byref(n)):
+            return os.path.basename(ime.value).lower() == "blender.exe"
+        return True
+    finally:
+        k32.CloseHandle(h)
+
+
+def oblikovanje_ugasni(razlog, pid=0):
+    """Ugasne Blender v ozadju: POST /ugasni (zavrne, če je zaseden; shrani neshranjeno; konča zanko), starejši Blender brez te
+    poti POST /izhod; če proces po 5 s še živi, TerminateProcess (os.kill). Vrne (ok, sporočilo). Nit nadzora ali POST
+    /oblikovanje/nedejavnost {ugasni}."""
+    import http.client
+    import signal
+    o = _OBLIKOVANJE
+    with _OBLIKOVANJE_KLJUC:
+        if o["ugasam"]:
+            return False, "Oblikovanje se že ugaša."
+        o["ugasam"] = True
+    try:
+        povezava = _oblikovanje_povezava() or {}
+        pid = int(pid or povezava.get("pid") or o["pid"] or 0)
+        nacin = ""
+        for pot in ("/ugasni", "/izhod"):
+            try:
+                c = http.client.HTTPConnection("127.0.0.1", OBLIKOVANJE_VRATA, timeout=75)
+                c.request("POST", pot, body=b"{}", headers={"X-Zeton": povezava.get("zeton", ""), "Content-Type": "application/json"})
+                r = c.getresponse()
+                telo = r.read()
+                c.close()
+            except (OSError, ValueError) as e:
+                nacin = "%s ni odgovoril (%s)" % (pot, e)
+                break
+            if r.status == 404:
+                continue    # starejši Blender (zagnan pred 17. 10.) pozna le /izhod
+            try:
+                odg = json.loads(telo.decode("utf-8"))
+            except ValueError:
+                odg = {}
+            if r.status == 200 and odg.get("ok"):
+                nacin = pot + (" (shranjeno: %s)" % odg["shranjeno"] if odg.get("shranjeno") else "")
+                break
+            if odg.get("zaseden"):
+                return False, "zaseden: " + ", ".join(odg["zaseden"])
+            if odg.get("napaka") == "shranjevanje":
+                _log("oblikovanje: ne ugasnem, shranjevanje pred izhodom ni uspelo: %s" % odg.get("sporocilo"))
+                return False, "shranjevanje ni uspelo: %s" % odg.get("sporocilo")
+            nacin = "%s: %s" % (pot, odg.get("sporocilo") or r.status)
+            break
+        konec = time.time() + 5
+        while time.time() < konec and _oblikovanje_proces_ziv(pid):
+            time.sleep(0.25)
+        if _oblikovanje_proces_ziv(pid):
+            try:
+                os.kill(pid, signal.SIGTERM)   # Windows: TerminateProcess
+                nacin += "; po 5 s končan na silo"
+            except OSError as e:
+                nacin += "; končanje na silo ni uspelo (%s)" % e
+            konec = time.time() + 5
+            while time.time() < konec and _oblikovanje_proces_ziv(pid):
+                time.sleep(0.25)
+        if _oblikovanje_proces_ziv(pid):
+            _log("oblikovanje: Blender (pid %d) se ni končal: %s" % (pid, nacin))
+            return False, "Blender se ni končal (%s)." % nacin
+        try:   # po končanju na silo ostane oblikovanje.json s starim pid-om
+            p = _oblikovanje_povezava()
+            if p and int(p.get("pid") or 0) == pid:
+                os.remove(os.path.join(os.environ.get("LOCALAPPDATA") or os.path.expanduser("~"), "FreeCAD-splet", "oblikovanje.json"))
+        except (OSError, ValueError):
+            pass
+        o.update(pid=0, zadnja=0.0, zaseden="", ugasnjen=time.time(), razlog=razlog)
+        _log("oblikovanje: Blender (pid %d) ugasnjen, %s; %s" % (pid, razlog, nacin))
+        return True, "Blender ugasnjen (%s)." % nacin
+    finally:
+        o["ugasam"] = False
+
+
+def oblikovanje_preveri_nedejavnost():
+    """Iz niti oblikovanje-nadzor vsakih 30 s: Blender, ki čez prag ne dobi zahtev in ni zaseden, ugasne."""
+    o = _OBLIKOVANJE
+    if o["prag_min"] <= 0 or o["ugasam"]:
+        return
+    s = oblikovanje_stanje()
+    if not s["tece"]:
+        return
+    nedejavnost = oblikovanje_nedejavnost(s)
+    if nedejavnost < o["prag_min"] * 60:
+        o["zaseden"] = ""
+        return
+    zaseden = ", ".join(s.get("zaseden") or [])
+    if zaseden:
+        if zaseden != o["zaseden"]:   # zapis le ob spremembi razloga, ne vsakih 30 s
+            o["zaseden"] = zaseden
+            _log("oblikovanje: %d min brez zahtev, a zaseden (%s); ne ugašam" % (nedejavnost / 60, zaseden))
+        return
+    oblikovanje_ugasni("%d min brez zahtev (prag %g min)" % (nedejavnost / 60, o["prag_min"]), int(s.get("pid") or 0))
+
+
+def _oblikovanje_nadzor():
+    while True:
+        time.sleep(30)
+        try:
+            oblikovanje_preveri_nedejavnost()
+        except Exception:  # noqa: BLE001
+            _log("oblikovanje-nadzor: " + traceback.format_exc())
 
 
 # ---------------------------------------------------------------------------
@@ -3766,6 +3969,7 @@ class Zahteva(http.server.BaseHTTPRequestHandler):
             # Plošča Tiskaj (nit strežnika, pomnjeno 2 s): za čipe tiskalnikov v vrstici stanja in zavihek Tiskanje.
             self._odgovor(json.dumps(tiskaj_stanje(), ensure_ascii=False).encode("utf-8"))
         elif pot == "/oblikovanje/stanje":
+            _oblikovanje_dejavnost()   # brskalnik vpraša ob odprtju zavihka, orodja MCP pred klicem: to je delo
             self._odgovor(json.dumps(oblikovanje_stanje(), ensure_ascii=False).encode("utf-8"))
         elif pot == "/grafika/stanje":
             self._odgovor(json.dumps(grafika_stanje(), ensure_ascii=False).encode("utf-8"))
@@ -3910,6 +4114,25 @@ class Zahteva(http.server.BaseHTTPRequestHandler):
         if pot == "/oblikovanje/zazeni":
             ok, sporocilo = oblikovanje_zazeni()
             self._odgovor(json.dumps({"ok": ok, "sporocilo": sporocilo}, ensure_ascii=False).encode("utf-8"))
+            return
+        if pot == "/oblikovanje/nedejavnost":
+            # Prag ugasnitve Blenderja med tekom (preizkus, nastavitev): {min: 30} (0 = nikoli); {ugasni: true} ga ugasne zdaj,
+            # če ni zaseden. Trajna nastavitev je okoljska SPLET_OBLIKOVANJE_NEDEJAVNOST_MIN.
+            telo = {"ok": True}
+            if "min" in podatki:
+                try:
+                    _OBLIKOVANJE["prag_min"] = max(0.0, float(podatki.get("min") or 0))
+                except (TypeError, ValueError):
+                    telo = {"ok": False, "sporocilo": "min mora biti število"}
+            if telo["ok"] and podatki.get("ugasni"):
+                s = oblikovanje_stanje()
+                if s["tece"]:
+                    ok, sporocilo = oblikovanje_ugasni("zahteva prek /oblikovanje/nedejavnost", int(s.get("pid") or 0))
+                    telo.update(ok=ok, sporocilo=sporocilo)
+                else:
+                    telo["sporocilo"] = "Oblikovanje ne teče."
+            telo["pragMin"] = _OBLIKOVANJE["prag_min"]
+            self._odgovor(json.dumps(telo, ensure_ascii=False).encode("utf-8"))
             return
         if pot in ("/toplota/nastavi", "/toplota/izracun", "/toplota/mke"):
             # Toplota (nit strežnika): nastavitve, bilančni izračun v niti, MKE v FreeCADCmd v ozadju
@@ -4288,6 +4511,7 @@ def zazeni():
 
     nit = threading.Thread(target=streznik.serve_forever, name="splet-streznik", daemon=True)
     nit.start()
+    threading.Thread(target=_oblikovanje_nadzor, name="oblikovanje-nadzor", daemon=True).start()   # Blender po nedejavnosti ugasne
     _log("strežnik teče na %s (okno: %s)" % (naslov, "da" if IMA_OKNO else "ne"))
     _zapisi_povezavo()
 

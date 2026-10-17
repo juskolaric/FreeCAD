@@ -557,7 +557,7 @@ KONCNE_TOCKE = [
     ("GET", "/knjiznica", "baza standardnih delov po kategorijah", ""),
     ("GET", "/zgradba", "zgradba sestava čez datoteke (količine kosov)", "?ime=<dokument>"),
     ("GET", "/tiskaj/stanje", "plošča tiskalnikov Tiskaj: teče, tiskalniki, vrsta", ""),
-    ("GET", "/oblikovanje/stanje", "Blender (Oblikovanje): teče, vrata", ""),
+    ("GET", "/oblikovanje/stanje", "Blender (Oblikovanje): teče, vrata, nedejavnostMin, zaseden, prag ugasnitve", ""),
     ("GET", "/render/seznam", "renderji te seje", ""),
     ("GET", "/render/stanje", "stanje renderja", "?id=<id>"),
     ("GET", "/oblak/zgodovina", "različice datoteke v oblaku", "?pot=<pot>"),
@@ -579,6 +579,7 @@ KONCNE_TOCKE = [
     ("POST", "/tisk/lega", "analiza lege za 3D tisk", "{dokument, imena, kot_previsa}"),
     ("POST", "/tiskaj/zazeni", "zaženi ploščo Tiskaj", "{}"),
     ("POST", "/oblikovanje/zazeni", "zaženi Blender (Oblikovanje)", "{}"),
+    ("POST", "/oblikovanje/nedejavnost", "prag ugasnitve Blenderja po nedejavnosti v minutah (0 = nikoli); ugasni ga zdaj", "{min?, ugasni?}"),
     ("POST", "/render/ustavi", "ustavi render", "{id}"),
     ("POST", "/oblak/odpri", "odpri različico iz oblaka", "{pot, rev}"),
     ("POST", "/oblak/obnovi", "povrni različico (nova revizija)", "{pot, rev}"),
@@ -744,6 +745,10 @@ def t_stanje(a):
                                                               for p in t.get("tiskalniki") or []))
         else:
             v.append("Plošča tiskalnikov (Tiskaj) ne teče.")
+    except Exception:  # noqa: BLE001
+        pass
+    try:
+        v.append(S.oblikovanje_povzetek())   # Blender v ozadju: teče, minute mirovanja, prag ugasnitve, zaseden
     except Exception:  # noqa: BLE001
         pass
     if st.get("napaka"):
@@ -2251,6 +2256,7 @@ def _oblikovanje_klic(metoda, pot, telo=None, cas=60.0):
     p = _oblikovanje_povezava()
     if p is None:
         raise Napaka("Oblikovanje ne teče (ni oblikovanje.json).")
+    getattr(S, "_oblikovanje_dejavnost", lambda: None)()   # klic orodja je delo: nedejavnost šteje znova
     c = http.client.HTTPConnection("127.0.0.1", int(p.get("vrata") or S.OBLIKOVANJE_VRATA), timeout=cas)
     try:
         glave = {"X-Zeton": p.get("zeton", "")}

@@ -484,7 +484,8 @@ async function ukaz(telo, tiho) {
 let stanje = {}, verzijaIdeje = -1, ideja = null, pidStreznika = 0;
 async function osvezi(takoj) {
   try {
-    stanje = await (await fetch('/stanje', { cache: 'no-store' })).json();
+    // ?vidno=1: vidna stran je delo (strežnik FreeCAD-a Blender po 30 min brez zahtev ugasne; skrit zavihek ga ne drži živega)
+    stanje = await (await fetch('/stanje' + (vidno && document.visibilityState !== 'hidden' ? '?vidno=1' : ''), { cache: 'no-store' })).json();
     // Nov zagon strežnika (drug pid): stran ima star žeton in staro kodo, zato se naloži znova (iz ozadja čez nekaj sekund).
     if (stanje.pid && pidStreznika && stanje.pid !== pidStreznika) { $('hud').textContent = 'Oblikovanje se je znova zagnalo, osvežujem …'; location.reload(); return; }
     if (stanje.pid) pidStreznika = stanje.pid;
@@ -492,7 +493,11 @@ async function osvezi(takoj) {
     if (stanje.verzijaIdeje !== verzijaIdeje) { verzijaIdeje = stanje.verzijaIdeje; await naloziIdeje(); }
     if (stanje.ai === 'dela' || ai.dela) await osveziAI();
     narisiNaslov();
-  } catch (e) { $('hud').textContent = 'Blender ne odgovarja …'; }
+  } catch (e) {
+    $('hud').textContent = 'Blender ne odgovarja …';
+    // Blender je ugasnil (po nedejavnosti ali padel): spletni FreeCAD okvir zamenja z »zaganjam« in ga ob vidnem zavihku zažene znova
+    if (parent !== window) parent.postMessage({ vir: 'oblikovanje', dejanje: 'ne-odgovarja' }, '*');
+  }
   if (!takoj) setTimeout(osvezi, vidno ? 700 : 3000);
 }
 function narisiNaslov() {
