@@ -4237,6 +4237,22 @@ def zazeni():
             _qt_izbira_datotek(aplikacija)
             _log("okno FreeCAD-a je skrito; pogovori in opravila so obrazci v brskalniku")
 
+    # Vrata zasedemo pred vsem drugim: če spletni strežnik že teče v drugem FreeCAD-u, se ta primerek konča, še preden
+    # ustvari dokument. Prej je ostal živ brez strežnika (14. 10. 2026: pet takih kopij po 600 MB v ozadju, ker so seje
+    # zaposlen strežnik imele za ugasnjen). SPLET_OSTANI=1 ohrani staro vedenje, SPLET_VRATA izbere druga vrata.
+    naslov = "http://127.0.0.1:%d/" % VRATA
+    try:
+        streznik = Streznik(("127.0.0.1", VRATA), Zahteva)
+    except OSError as e:
+        _log("vrata %d so že zasedena (%s): spletni strežnik že teče v drugem FreeCAD-u." % (VRATA, e))
+        if os.environ.get("SPLET_OSTANI") == "1":
+            _log("SPLET_OSTANI=1: ta primerek ostane brez strežnika.")
+            return
+        _log("ta primerek se konča (podvojen zagon).")
+        sys.stdout.flush()
+        sys.stderr.flush()
+        os._exit(0)
+
     if App.ActiveDocument is None:
         _vzorcni_dokument()
 
@@ -4249,13 +4265,6 @@ def zazeni():
         except Exception:  # noqa: BLE001
             _log("ukazov ni bilo mogoče zgraditi: %s" % traceback.format_exc())
 
-    naslov = "http://127.0.0.1:%d/" % VRATA
-    try:
-        streznik = Streznik(("127.0.0.1", VRATA), Zahteva)
-    except OSError as e:
-        _log("vrata %d so že zasedena (%s): spletni strežnik že teče v drugem FreeCAD-u; ta primerek ostane brez njega. "
-             "Zapri drugega ali nastavi SPLET_VRATA." % (VRATA, e))
-        return
     nit = threading.Thread(target=streznik.serve_forever, name="splet-streznik", daemon=True)
     nit.start()
     _log("strežnik teče na %s (okno: %s)" % (naslov, "da" if IMA_OKNO else "ne"))

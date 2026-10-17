@@ -177,6 +177,11 @@ configure-release = { cmd = [ "cmake", "--preset", "conda-windows-release", "-DC
 freecad-debug = { cmd = [ ".pixi/envs/default/Library/bin/FreeCAD.exe" ], depends-on = ["install-debug"]}
 freecad-release = { cmd = [ ".pixi/envs/default/Library/bin/FreeCAD.exe" ], depends-on = ["install-release"]}
 
+[activation.env]
+# Lastno (17. 10. 2026): gradnja brez omejitve zažene 22 cl.exe na 20 nitih in ohromi računalnik; 12 jeder pusti
+# prostor za delo. Velja za vsak 'pixi run cmake --build' brez --parallel. Skripta lastno/gradnja.ps1 doda še nižjo prednost.
+CMAKE_BUILD_PARALLEL_LEVEL = "12"
+
 [tasks]
 initialize = { cmd = ["git", "submodule", "update", "--init", "--recursive"]}
 # redirect to debug by default

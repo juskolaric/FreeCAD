@@ -10,8 +10,8 @@ if not exist "build\release\build.ninja" (
   "%PIXI%" run configure-release
   if errorlevel 1 goto napaka
 )
-echo [1/3] Gradnja - samo spremenjeno ...
-"%PIXI%" run build-release
+echo [1/3] Gradnja - samo spremenjeno (12 jeder, nizja prednost: lastno\gradnja.ps1) ...
+powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0lastno\gradnja.ps1"
 if errorlevel 1 goto napaka
 echo [2/3] Namestitev in [3/3] zagon ...
 "%PIXI%" run freecad-release

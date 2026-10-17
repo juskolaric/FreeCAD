@@ -22,6 +22,7 @@ from __future__ import annotations
 import base64
 import json
 import os
+import socket
 import subprocess
 import sys
 import tempfile
@@ -138,12 +139,33 @@ def klic(metoda: str, pot: str, telo=None, cas: float = 30.0, ponovi: bool = Tru
         raise ConnectionError(str(getattr(e, "reason", e)))
 
 
-def tece() -> bool:
+VRATA_PRIVZETA = 3020
+
+
+def odgovarja() -> bool:
+    """Spletni FreeCAD odgovarja na /stanje (glavna nit je prosta)."""
     try:
         status, _ = klic("GET", "/stanje", cas=3.0)
         return status == 200
     except ConnectionError:
         return False
+
+
+def vrata_odprta(cas: float = 1.0) -> bool:
+    """Kdo posluša na vratih spletnega FreeCAD-a (TCP). Res tudi, ko je glavna nit zaposlena (nalaganje dokumentov,
+    boolean, shranjevanje) in /stanje v 3 s ne odgovori: zaposlen primerek ni ugasnjen primerek."""
+    p = povezava()
+    vrata = int(p["vrata"]) if p else VRATA_PRIVZETA
+    try:
+        with socket.create_connection(("127.0.0.1", vrata), timeout=cas):
+            return True
+    except OSError:
+        return False
+
+
+def tece() -> bool:
+    """Spletni FreeCAD teče: odgovarja ali vsaj posluša na vratih."""
+    return odgovarja() or vrata_odprta()
 
 
 def katalog(osvezi: bool = True) -> dict:
@@ -237,8 +259,13 @@ def freecadcmd(argumenti: dict) -> tuple[str, bool]:
 
 
 def zazeni(argumenti: dict) -> tuple[str, bool]:
-    if tece():
+    if odgovarja():
         return "Spletni FreeCAD že teče (http://127.0.0.1:%d/)." % povezava()["vrata"], False
+    if vrata_odprta():
+        # 14. 10. 2026: pet sej je med nalaganjem dokumentov dobilo »ne teče« in zagnalo pet kopij, ki so brez vrat
+        # ostale v ozadju po 600 MB. Zaposlen strežnik ni razlog za novo kopijo.
+        return ("Spletni FreeCAD že teče, a trenutno ne odgovarja (zaposlena glavna nit: nalaganje dokumentov, boolean, "
+                "shranjevanje). Druge kopije ne zaganjam; počakaj in poskusi znova (build/splet-zagon.log)."), True
     zagon = os.environ.get("FREECAD_MCP_ZAGON") or ZAZENI_BAT   # prepis za preizkusni primerek
     if not os.path.isfile(zagon):
         return "Ni zagonske skripte %s." % zagon, True
@@ -254,7 +281,7 @@ def zazeni(argumenti: dict) -> tuple[str, bool]:
     rok = time.time() + float(argumenti.get("cakaj") or 240)
     while time.time() < rok:
         time.sleep(2.0)
-        if tece():
+        if odgovarja():
             k = katalog()
             _poslji_spremembo_orodij(k)
             return "Spletni FreeCAD teče (http://127.0.0.1:%d/), orodij: %d." % (

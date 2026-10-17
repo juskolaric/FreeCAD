@@ -28,6 +28,10 @@ pixi run freecad-release     # install-release + zagon .pixi/envs/default/Librar
 - Prevedeni program zaganjaj **samo** prek `pixi run freecad-release` ali iz `pixi shell` (sicer manjkajo DLL-ji).
 - `build/` in `.pixi/` sta izven gita. **Ne briši ju** brez naročila: polna gradnja traja do uro in pol.
 - Dnevniki gradnje gredo v `build/` (npr. `build/build-release.log`), ne v koren repozitorija.
+- **Gradnjo iz seje poganjaj prek `powershell -NoProfile -File lastno/gradnja.ps1`** (največ 12 vzporednih prevajalnikov,
+  nižja prednost procesa, dnevnik `build/build-release-<datum>.log`, na koncu zadnjih 15 vrstic in izhodna koda). Goli
+  `pixi run cmake --build` brez omejitve je 17. 10. 2026 zagnal 22 `cl.exe` na 20 nitih in računalnik za 53 min
+  ohromil; `[activation.env] CMAKE_BUILD_PARALLEL_LEVEL=12` v `pixi.toml` ga omeji tudi, če skripto kdo obide.
 - Preverjanje spremembe: prevedi, namesti, zaženi in preveri v oknu. Konzolna različica:
   `.pixi\envs\default\Library\bin\FreeCADCmd.exe --version`.
 - Hitri preizkus, da prevedeni program teče: `pixi run -- .pixi/envs/default/Library/bin/FreeCAD.exe lastno/preveri-naslov.py`
