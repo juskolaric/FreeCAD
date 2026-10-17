@@ -438,7 +438,7 @@ FreeCAD je motor, vmesnik in grafika nastajata v brskalniku (plan, korak 8 napre
   Imena teles: »<kos> – <stanje>« (npr. »Podstavek – upognjen«, »Podstavek – razgrnitev«).
 - **Povezave na druge datoteke v drevesu** (od 2026-10-08): vozel `App::Link` na objekt v drugem dokumentu nosi `povezava`
   {dokument, sestav}; gumb ↗ Odpri (dvojni klik, desni klik) odpre ta podsestav ali del (`drevo._odpri_povezano`: delno
-  naložen dokument — `Document.Partial` — se naloži v celoti z `restore()`, nato postane dejaven). Seznam odprtih
+  naložen dokument — `Document.Partial` — se naloži v celoti z `delno.nalozi_v_celoti`, ki spremembe ohrani, nato postane dejaven). Seznam odprtih
   dokumentov je razdeljen: zgoraj Sestavi (N), spodaj Deli (N).
 - **Izrisi kosov in razporeditev** (od 2026-10-08): vsak vozel drevesa z geometrijo v pogledu ima 40 px izometrični izris samo
   tega kosa (`izrisiIzometrijo(ime, velikost, zunanja)`; vozel brez lastne geometrije — sestav, App::Part, skupina — izriše
@@ -646,6 +646,32 @@ FreeCAD je motor, vmesnik in grafika nastajata v brskalniku (plan, korak 8 napre
   (obvestilo). Obnovljen dokument, katerega datoteka je novejša od obnovitvene kopije, se ne shranjuje sam. Izklop:
   `SPLET_SAMODEJNO_SHRANJEVANJE=0`. Po selitvi mape pixi okolje kaže na staro pot v `.pixi/envs/default/qt6.conf` in
   `Library/bin/qt6.conf` (»no Qt platform plugin«): popravi poti ali `pixi install`.
+- **Delno naloženi dokumenti** (od 2026-10-17, `lastno/splet/delno.py`): FreeCAD datoteke, ki jih odpre šele povezava
+  (App::Link) iz sestava, naloži le delno (`Document.Partial`, samo objekti, ki jih povezava potrebuje). Takega dokumenta
+  ne shrani in to skrije: `save()` zapiše le FC_ERR in vrne uspeh (src/App/Document.cpp, `Document::save`), `saveAs()` mu
+  le zamenja pot, `saveCopy()` zapiše okrnjeno datoteko, `restore()` (in `App.openDocument` na isti poti) ga naloži z
+  diska in spremembe zavrže. 17. 10. 2026 so se tako izgubile spremembe skript na veži in spalnici celote stanovanja.
+  (1) Strežnik ob zagonu nastavi `BaseApp/Preferences/Document/NoPartialLoading = True` (`delno.zagotovi_nastavitev`;
+  FreeCAD jo prebere ob vsakem odpiranju, zato velja takoj; izklop `SPLET_DELNO_NALAGANJE=1`) — nastavitev je skupna z
+  nameščenim FreeCAD-om in ostane. (2) `delno.nalozi_v_celoti(doc)`: polno nalaganje **brez izgube sprememb** — okrnjena
+  varnostna kopija v `%LOCALAPPDATA%/FreeCAD-splet/delni`, posnetek vseh shranljivih lastnosti naloženih objektov in
+  njihovih pogledov (`dumpPropertyContent`), `restore()`, vrnitev lastnosti, ki se od diska razlikujejo
+  (`restorePropertyContent`; nove dinamične lastnosti in v pomnilniku ustvarjeni objekti se ustvarijo znova), dotaknjenost
+  kot prej (brez preračuna), primerjava oblik (prostornina, ploskve, okvir). Razveljavitve se izgubijo. Uporabljajo ga
+  orodje `shrani` (delen dokument brez `nalozi_v_celoti: true` vrne napako z navodilom, nikoli uspeha; po vsakem
+  shranjevanju preveri, da se je čas datoteke spremenil), Std_Save/SaveAs/SaveAll/SaveCopy iz brskalnika
+  (`_sprozi_ukaz`), odpri/aktiviraj v seznamu dokumentov, ↗ Odpri v drevesu, baza standardnih delov in knjižnica.
+  (3) Samodejno shranjevanje delen dokument s spremembami enkrat javi z obvestilom (ne tihega preskoka) in ga ne šteje
+  med samodejne (brskalnik pokaže »Shrani različico«). (4) `stanje` ima vrstico »Delno naloženi« (polje `delen` v seznamu
+  odprtih), `dokumenti` oznako DELNO NALOŽEN, `python` opozori na spremenjene delne dokumente. Preizkus brez pravih
+  modelov: par datotek iz FreeCADCmd (`App::Link` na Part::Feature v drugi datoteki), odpiranje z začasno
+  `NoPartialLoading = False`; datoteka, ki jo je enkrat shranil GUI, se pogosto ne naloži več delno.
+- **Pomnilnik in `App.listDocuments`** (od 2026-10-16, `lastno/splet/pomnilnik.py`): C++ `Application::sListDocuments` (tudi upstream)
+  ne sprosti ključa slovarja — vsak klic pusti po en niz na odprt dokument; strežnik ga kliče večkrat na sekundo, pri 185 dokumentih
+  je proces v dveh dneh zrasel na 57,7 GB (48 GB nizov z imeni dokumentov). Strežnik ob zagonu (`pomnilnik.namesti()`) zamenja
+  `App.listDocuments` z ovojem, ki slovar hrani do odprtja/zaprtja dokumenta; popravek C++ (`Py_DECREF(pKey)`) je v `src/App/ApplicationPy.cpp`.
+  Orodje `stanje` in `/stanje` (`pomnilnik`) kažeta zasebni pomnilnik procesa, zavezani pomnilnik sistema in disk; nad pragom
+  (`SPLET_POMNILNIK_OPOZORILO_GB`, privzeto 16) gre v brskalnik obvestilo. Nove kode ne piši tako, da kliče C++ izvirnik (`App._listDocuments_cpp`).
 - **Dvojniki po obnovi** (od 2026-10-08): FreeCAD-ova Obnova dokumentov ob zagonu odpre kopijo vsakega dokumenta iz vsakega nasilno končanega primerka in ne preveri, ali je ista datoteka že odprta (dva ubita primerka = isti dokument dvakrat). Strežnik zato 1,5 s po zadnjem novem dokumentu (ko se nič ne nalaga in ni modalnega okna) pokliče `_zapri_dvojnike`: od dokumentov z isto datoteko obdrži tistega z najnovejšim `LastModifiedDate`, ostale shrani s `saveCopy` v `%LOCALAPPDATA%/FreeCAD-splet/dvojniki` in zapre; nedotaknjene vzorčne dokumente »Preizkus« (`_je_vzorec`) zapre, ko je odprt kakšen drug dokument. Strežnik ustavljaj z gumbom Izhod (`POST /izhod`), ne z ubijanjem procesa.
 - Če `povezava.json` manjka, strežnik pa teče (`/stanje` odgovarja), žeton piše v strani (`ZETON = '...'` v `GET /`); datoteko obnovi ročno (`vrata`, `zeton`, `pid` iz `tasklist`).
 - Veja `ukazna-vrstica`: ustavljeno delo na C++ ukazni vrstici v slogu SolidWorksa; ne razvijaj naprej brez naročila.

@@ -88,6 +88,7 @@ from drevo import drevo_dejanje, drevo_dokumenta  # noqa: E402
 from baza import baza_dejanje, v_bazi as _v_bazi, tarca as _tarca_baze, BAZA as MAPA_BAZE  # noqa: E402
 import videz  # noqa: E402
 import samodejno  # noqa: E402  (tiha obnova dokumentov, samodejno shranjevanje)
+import delno  # noqa: E402  (delno naloženi dokumenti: NoPartialLoading, polno nalaganje brez izgube sprememb)
 from oblak import Oblak, obdelaj_zahtevo as oblak_zahteva, pot_slicice_revizije as oblak_slicica_revizije  # noqa: E402
 import mcp_orodja  # noqa: E402  (orodja za AI prek MCP: GET /mcp/orodja, POST /mcp/orodje; most lastno/mcp)
 import pomocnik  # noqa: E402  (pomočnik AI v stranski plošči strani: GET/POST /pomocnik, isti katalog orodij)
@@ -1222,6 +1223,13 @@ def _sprozi_ukaz(ime, indeks):
     Python okvirja na skladu. Če ukaz odpre modalno okno, to ne zadrži GIL-a in strežnik
     med njim naprej odgovarja (z Gui.runCommand bi vse niti Pythona obstale)."""
     from PySide6 import QtCore
+    if ime in ("Std_Save", "Std_SaveAs", "Std_SaveAll", "Std_SaveCopy"):
+        # FreeCAD delnega dokumenta ne shrani (save() vrne uspeh brez zapisa, saveAs mu le zamenja pot, kopija je
+        # okrnjena): pred ukazom ga naložimo v celoti, spremembe ostanejo (delno.py, 2026-10-17)
+        dokumenti = list(App.listDocuments().values()) if ime == "Std_SaveAll" else [App.ActiveDocument]
+        for d in dokumenti:
+            if delno.je_delen(d) and (ime != "Std_SaveAll" or _spremenjen(d)):
+                delno.nalozi_in_javi(STANJE, d, ohrani=True)
     cmd = Gui.Command.get(ime)
     akcije = []
     if cmd is not None:
@@ -2407,6 +2415,8 @@ def zgradi_projekte():
             continue
         o = {"ime": d.Name, "oznaka": d.Label, "pot": _pot(d.FileName) if d.FileName else "",
              "spremenjen": _spremenjen(d), "aktiven": d.Name == aktivni, "slicica": False, "spremenjeno": 0, "slicicaV": 0}
+        if getattr(d, "Partial", False):
+            o["delen"] = True   # odprt prek povezave, naložen le delno: FreeCAD ga ne shrani (delno.py)
         o.update(_vrsta_iz_tipov(x.TypeId for x in d.Objects))
         o["verzija"] = verzija_dokumenta(d)
         o["samodejno"] = samodejno.velja_za(d)   # vsaka sprememba se shrani sama -> nova različica (brez gumba Shrani)
@@ -2514,7 +2524,7 @@ def _knjiznica_dejanje(stanje, podatki):
         _log("knjižnica: odpiram %s" % pot)
         doc = App.openDocument(pot, True)
     if getattr(doc, "Partial", False):
-        doc.restore()
+        delno.nalozi_in_javi(stanje, doc)   # golo restore() bi zavrglo neshranjene spremembe
     kos = _tarca_baze(doc)
     if kos is None:
         return {"ok": False, "sporocilo": "»%s« nima glavnega objekta (dela ali sestava)." % doc.Label}
@@ -2756,6 +2766,8 @@ def _projekt_dejanje(stanje, podatki):
         pot = podatki.get("pot", "")
         for d in App.listDocuments().values():
             if _ista_pot(d.FileName, pot):
+                if delno.je_delen(d):   # odprt prek povezave: urejanje delnega dokumenta bi se tiho izgubilo
+                    delno.nalozi_in_javi(stanje, d)
                 App.setActiveDocument(d.Name)
                 break
         else:
@@ -2769,6 +2781,8 @@ def _projekt_dejanje(stanje, podatki):
         ime = podatki.get("ime", "")
         pot = podatki.get("pot", "")
         if ime in App.listDocuments():
+            if delno.je_delen(App.getDocument(ime)):
+                delno.nalozi_in_javi(stanje, App.getDocument(ime))
             App.setActiveDocument(ime)
         elif pot and os.path.isfile(pot):
             # Seznam v brskalniku je bil zastarel (dokument je medtem zaprt): datoteko odpremo znova.
@@ -4256,6 +4270,13 @@ def zazeni():
     if App.ActiveDocument is None:
         _vzorcni_dokument()
 
+    try:
+        prej, zdaj = delno.zagotovi_nastavitev()   # povezane datoteke naj se ne nalagajo delno (ne shranijo se)
+        _log("NoPartialLoading: %s%s" % (zdaj, " (nastavljeno ob zagonu)" if zdaj != prej else ""))
+    except Exception as e:  # noqa: BLE001
+        _log("NoPartialLoading: %r" % e)
+    if pomnilnik.namesti() is not None:   # pred prvim opazovalcem: vsak klic izvirnika pušča po en niz na dokument
+        _log("App.listDocuments: ovoj brez puščanja (pomnilnik.py)")
     App.addDocumentObserver(OpazovalecDokumenta())
     if IMA_OKNO:
         Gui.Selection.addObserver(OpazovalecIzbire())

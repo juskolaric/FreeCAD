@@ -10,6 +10,9 @@
   brskalniku), med odprtim modalnim oknom, med nalaganjem, delno naloženih dokumentov, ogledov različic iz oblaka in
   datotek, ki jih je medtem spremenil kdo drug (odjemalec oblaka, drug program): te javi in pusti neshranjene.
   Shranjevanje je tiho (brskalnik ne vpraša »Kaj si spremenil?«).
+- **Delno naložen dokument** (odprt prek povezave iz sestava, `Partial`; od 2026-10-17): FreeCAD ga ne shrani
+  (`save()` ne zapiše nič in vrne uspeh). S spremembami ga strežnik enkrat javi z obvestilom (ne tihega preskoka);
+  shrani ga »Shrani različico« v brskalniku ali orodje `shrani` z nalozi_v_celoti (delno.py ohrani spremembe).
 - Izklop: okoljska `SPLET_SAMODEJNO_SHRANJEVANJE=0`.
 
 Vse teče na glavni niti (klic `korak(stanje)` iz `Stanje.obdelaj`)."""
@@ -133,6 +136,19 @@ def _javi_oblaku(stanje, oblak, doc):
         _log("dogodek oblaka po shranjevanju: %r" % e)
 
 
+def _javi_delnega(stanje, doc):
+    """Delen dokument s spremembami: samodejno se ne shrani (FreeCAD ga ne zapiše); enkrat obvestilo v brskalnik."""
+    try:
+        import delno
+        kaj = delno.opis(doc)
+    except Exception:  # noqa: BLE001
+        kaj = "»%s« je naložen le delno" % doc.Label
+    _log("%s; ima spremembe, samodejno se ne shrani" % kaj)
+    stanje.oddaj("obvestilo", {"sporocilo": "%s, zato se njegove spremembe ne shranijo (niti samodejno). Shrani ga z "
+                                            "»Shrani različico« (strežnik ga naloži v celoti in spremembe ohrani), sicer "
+                                            "se ob zaprtju ali ponovnem zagonu izgubijo." % kaj, "slabo": True})
+
+
 def korak(stanje, oblak=None):
     """En pregled; kliče ga glavna nit pogosto, dela pa največ enkrat na PREGLED sekund."""
     global _zadnji
@@ -169,7 +185,12 @@ def korak(stanje, oblak=None):
             s = _sledi[ime] = {"odtis": None, "prva": None, "zadnja": zdaj, "mtime": _mtime(doc.FileName),
                                "pot": doc.FileName, "napaka_do": 0.0, "javljeno": False}
         if not gdoc.Modified:
-            s.update(prva=None, odtis=None, javljeno=False, mtime=_mtime(doc.FileName))
+            s.update(prva=None, odtis=None, javljeno=False, delno_javljeno=False, mtime=_mtime(doc.FileName))
+            continue
+        if getattr(doc, "Partial", False) and not getattr(doc, "Restoring", False):
+            if not s.get("delno_javljeno"):
+                s["delno_javljeno"] = True
+                _javi_delnega(stanje, doc)
             continue
         odtis = _odtis(doc)
         if odtis != s["odtis"]:
@@ -214,7 +235,7 @@ def korak(stanje, oblak=None):
 
 def velja_za(doc):
     """Ali se dokument shranjuje sam (za seznam odprtih: vrstica različic namesto gumba Shrani pokaže stanje)."""
-    return bool(VKLOPLJENO and doc.FileName and doc.Name not in _brez
+    return bool(VKLOPLJENO and doc.FileName and doc.Name not in _brez and not getattr(doc, "Partial", False)
                 and "FreeCAD-splet" not in doc.FileName.replace("\\", "/").split("/"))
 
 

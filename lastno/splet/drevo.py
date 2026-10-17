@@ -271,19 +271,19 @@ def _cilj_povezave(obj):
 
 def _odpri_povezano(stanje, cilj):
     """Kot »Odpri podsestav« v SolidWorksu: dokument povezave postane dejaven (seznam odprtih, drevo, pogled).
-    Povezane dokumente FreeCAD ob odpiranju sestava naloži le delno (samo potrebne objekte); tak se naloži v celoti."""
+    Povezane dokumente FreeCAD ob odpiranju sestava naloži le delno (samo potrebne objekte); tak se naloži v celoti,
+    neshranjene spremembe pa ostanejo (delno.py; golo restore() bi jih zavrglo)."""
     cdoc = cilj.Document
+    tip = cilj.TypeId   # po polnem nalaganju je cilj izbrisan objekt
     if getattr(cdoc, "Partial", False):
-        try:
-            cdoc.restore()
-        except Exception as e:  # noqa: BLE001
-            App.Console.PrintWarning("[splet] polno nalaganje %s: %r\n" % (cdoc.Name, e))
+        import delno
+        delno.nalozi_in_javi(stanje, cdoc)
     App.setActiveDocument(cdoc.Name)
     try:
         Gui.setActiveDocument(cdoc.Name)
     except Exception:  # noqa: BLE001
         pass
-    vrsta = "sestav" if cilj.TypeId in ("Assembly::AssemblyObject", "App::Part") else "del"
+    vrsta = "sestav" if tip in ("Assembly::AssemblyObject", "App::Part") else "del"
     stanje.oddaj("obvestilo", {"sporocilo": "Odprt %s »%s«." % (vrsta, cdoc.Label)})
 
 

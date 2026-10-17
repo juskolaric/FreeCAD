@@ -705,6 +705,7 @@ def t_stanje(a):
     odprti = projekti.get("odprti", [])
     aktivni = next((d for d in odprti if d.get("aktiven")), None)
     neshranjeni = [d["oznaka"] for d in odprti if d.get("spremenjen")]
+    delni = [d["oznaka"] + (" (NESHRANJENE SPREMEMBE)" if d.get("spremenjen") else "") for d in odprti if d.get("delen")]
     v = ["FreeCAD %s (lastna gradnja), strežnik http://127.0.0.1:%d, zavihkov brskalnika: %d" % (
         VERZIJA_FREECAD, S.VRATA, st.get("odjemalcev", 0))]
     if aktivni:
@@ -715,6 +716,9 @@ def t_stanje(a):
         v.append("Ni aktivnega dokumenta.")
     v.append("Odprtih dokumentov: %d%s" % (len(odprti), (" · neshranjeni: " + ", ".join(neshranjeni[:15]) +
                                                          (" …" if len(neshranjeni) > 15 else "")) if neshranjeni else ""))
+    if delni:
+        v.append("Delno naloženi (odprti prek povezave; FreeCAD jih ne shrani, `shrani` z nalozi_v_celoti): %s%s" % (
+            ", ".join(delni[:15]), " …" if len(delni) > 15 else ""))
     okolje = st.get("okolje") or {}
     v.append("Okolje: %s%s%s" % (okolje.get("delovnaMiza", "?"),
                                  (" · v urejanju: " + okolje["urejanje"]) if okolje.get("urejanje") else "",
@@ -810,9 +814,10 @@ def t_dokumenti(a):
             continue
         vrsta = S._vrsta_iz_tipov(o.TypeId for o in d.Objects).get("vrsta", "")
         verzija = S.verzija_dokumenta(d)
-        vrstice.append("%s »%s« [%s] %s%s, objektov %d%s · %s" % (
+        vrstice.append("%s »%s« [%s] %s%s, objektov %d%s%s · %s" % (
             "*" if aktivni is not None and d.Name == aktivni.Name else "-", d.Label, d.Name, vrsta or "?",
-            " v%d" % verzija if verzija else "", len(d.Objects), " · NESHRANJEN" if _spremenjen(d) else "", d.FileName or "ni shranjen"))
+            " v%d" % verzija if verzija else "", len(d.Objects), " · NESHRANJEN" if _spremenjen(d) else "",
+            " · DELNO NALOŽEN (ne shrani se)" if getattr(d, "Partial", False) else "", d.FileName or "ni shranjen"))
     return "Odprti dokumenti (%d; * = aktivni):\n%s" % (len(vrstice), "\n".join(vrstice) or "(ni jih)")
 
 
@@ -1159,6 +1164,11 @@ def t_python(a):
             v.append("Preračunano: " + ", ".join(preracunani[:10]))
         if napake_po:
             v.append("⚠ Napake po preračunu:\n  " + "\n  ".join(napake_po[:30]))
+    # delno naložen dokument (odprt prek povezave iz sestava) FreeCAD ne shrani: spremembe bi se ob zagonu izgubile
+    delni = [d.Label for d in _dokumenti() if getattr(d, "Partial", False) and _spremenjen(d)]
+    if delni and not napaka:
+        v.append("⚠ Spremenjeni delno naloženi dokumenti: %s. FreeCAD jih ne shrani (ne samodejno ne z Shrani); "
+                 "shrani jih s `shrani` {dokument, nalozi_v_celoti: true}." % ", ".join("»%s«" % x for x in delni[:10]))
     return {"napaka": bool(napaka), "besedilo": "\n".join(v)}
 
 
@@ -1888,12 +1898,27 @@ def t_razveljavi(a):
     "pot": {"type": "string", "description": "shrani kot (.FCStd); obvezno za še neshranjen dokument"},
     "kopija": {"type": "boolean", "description": "shrani le kopijo na pot (dokument ostane na stari poti)"},
     "komentar": {"type": "string", "description": "kaj se je spremenilo: komentar k različici v oblaku (PDM)"},
+    "nalozi_v_celoti": {"type": "boolean", "description": "delno naložen dokument (odprt prek povezave iz sestava) "
+                                                          "pred shranjevanjem naloži v celoti in ohrani spremembe"},
 }, opis="""
 Shrani dokument na disk (edino orodje, ki to sme). Brez poti na obstoječo datoteko; s potjo »shrani kot« (mapa mora
 obstajati, obstoječe datoteke druge vsebine ne prepiše brez kopija). Za datoteke v mapi oblaka komentar zapiše opis
-spremembe k novi različici.""")
+spremembe k novi različici. Delno naloženega dokumenta FreeCAD ne shrani: orodje vrne napako, z nalozi_v_celoti pa
+dokument naloži v celoti, spremembe naloženih objektov ohrani (varnostna kopija) in shrani.""")
 def t_shrani(a):
     doc = _dokument(a.get("dokument"))
+    nalaganje = ""
+    if getattr(doc, "Partial", False):
+        # App::Document::save() delnega dokumenta ne zapiše (le FC_ERR, vrne True), saveAs mu le zamenja pot,
+        # saveCopy zapiše okrnjeno datoteko. Brez polnega nalaganja bi orodje javilo uspeh brez zapisa (17. 10. 2026).
+        import delno
+        if not a.get("nalozi_v_celoti"):
+            raise Napaka("%s, zato ga FreeCAD ne shrani (na disk ne gre nič)%s. Ponovi `shrani` z nalozi_v_celoti: true: "
+                         "strežnik ga naloži v celoti, spremembe naloženih objektov ohrani (varnostna kopija v "
+                         "FreeCAD-splet/delni) in shrani; razveljavitve dokumenta se pri tem izgubijo." % (
+                             delno.opis(doc), "; v pomnilniku ima neshranjene spremembe" if _spremenjen(doc) else ""))
+        nalaganje = delno.povzetek(delno.nalozi_v_celoti(doc, ohrani=True))
+        S.STANJE.umazano = True
     pot = a.get("pot") or ""
     if pot:
         pot = os.path.normpath(pot)
@@ -1907,6 +1932,11 @@ def t_shrani(a):
     elif not doc.FileName:
         raise Napaka("»%s« še ni shranjen: podaj pot (.FCStd)." % doc.Label)
     tiho = bool(a.get("komentar"))
+    cilj = pot or doc.FileName
+    try:
+        cas_pred = os.path.getmtime(cilj)
+    except OSError:
+        cas_pred = None
     if tiho:
         S.STANJE.tiho_shranjevanje = True   # brskalnik ne vpraša »Kaj si spremenil?«; komentar pošljemo sami
     try:
@@ -1924,6 +1954,12 @@ def t_shrani(a):
     finally:
         if tiho:
             S.STANJE.tiho_shranjevanje = False
+    try:
+        cas_po = os.path.getmtime(izhod)
+    except OSError:
+        cas_po = None
+    if cas_po is None or cas_po == cas_pred:   # FreeCAD lahko javi uspeh brez zapisa (delen dokument)
+        raise Napaka("FreeCAD je javil uspeh, datoteka »%s« pa ni zapisana. Dokument ostaja neshranjen." % izhod)
     if not a.get("kopija"):
         try:
             Gui.getDocument(doc.Name).Modified = False
@@ -1931,7 +1967,8 @@ def t_shrani(a):
             pass
     S.STANJE.zadnji_projekti = 0.0
     verzija = 0 if a.get("kopija") else S.verzija_dokumenta(doc)
-    izid = {"besedilo": "Shranjeno: %s%s" % (izhod, " (različica v%d)" % verzija if verzija else "")}
+    izid = {"besedilo": ("%s\n" % nalaganje if nalaganje else "") +
+            "Shranjeno: %s%s" % (izhod, " (različica v%d)" % verzija if verzija else "")}
     if a.get("komentar") and not a.get("kopija"):
         komentar, datoteka = a["komentar"], izhod
 

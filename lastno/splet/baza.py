@@ -26,7 +26,9 @@ try:
 except ImportError:  # FreeCADCmd
     Gui = None
 
-KOREN = os.environ.get("SPLET_MODELIRANJE") or os.path.join(os.path.expanduser("~"), "Oblak", "3D modeliranje")
+import delno  # noqa: E402  (delno naložen dokument v celoti brez izgube sprememb)
+
+KOREN =os.environ.get("SPLET_MODELIRANJE") or os.path.join(os.path.expanduser("~"), "Oblak", "3D modeliranje")
 BAZA = os.environ.get("SPLET_BAZA") or os.path.join(KOREN, "Standardni deli")
 BREZ_KATEGORIJE = "Ostalo"
 
@@ -244,7 +246,7 @@ def _prestavi(stanje, doc, nova_pot):
     uporabniki = _odprti_uporabniki(doc)
     for d in uporabniki:   # podsestave odprtega sestava FreeCAD naloži le delno; takega ni mogoče shraniti
         if getattr(d, "Partial", False):
-            d.restore()
+            delno.nalozi_v_celoti(d)   # golo restore() bi zavrglo neshranjene spremembe
     uporabniki = _odprti_uporabniki(doc)
     stanje.tiho_shranjevanje = True
     try:
@@ -316,7 +318,7 @@ def _preusmeri_na(stanje, doc, cilj_doc):
     try:
         for d in _odprti_uporabniki(doc):
             if getattr(d, "Partial", False):
-                d.restore()
+                delno.nalozi_v_celoti(d)
         for d in _odprti_uporabniki(doc):
             for o in d.Objects:
                 if o.TypeId != "App::Link":
@@ -389,7 +391,7 @@ def _kos(podatki):
     if not doc.FileName:
         raise Napaka("»%s« še ni shranjen; shrani ga, nato ga označi." % doc.Label)
     if getattr(doc, "Partial", False):
-        doc.restore()
+        delno.nalozi_v_celoti(doc)
         t = tarca(doc)
     return doc, t
 
