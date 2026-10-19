@@ -2425,6 +2425,16 @@ def _vrsta_iz_tipov(tipi):
 
 
 _LASTNOSTI_FCSTD = {}  # (pot, mtime, velikost) -> {vrsta, teles, povezav, slicica}; branje zipa je drago
+# Meja vnosov predpomnilnikov datotek (lastnosti FCStd, uporabnost renderjev); nad njo se izločijo le najstarejši vnosi.
+# Do 2026-10-19 se je slovar pri 500 vnosih v celoti izpraznil: pri 793 projektih (DJ DarMar) je pregled map vsaki 2 s
+# znova bral ~500 datotek (zip, Document.xml, analiza sličic, ~6–10 s) in glavno nit zasedel 98 %, vsak klik je čakal.
+PREDPOMNILNIK_DATOTEK = 5000
+
+
+def _omeji_predpomnilnik(slovar):
+    """Izloči najstarejše vnose nad mejo (slovar ohranja vrstni red vstavljanja)."""
+    while len(slovar) > PREDPOMNILNIK_DATOTEK:
+        del slovar[next(iter(slovar))]
 
 
 def _lastnosti_fcstd(pot, st):
@@ -2463,9 +2473,8 @@ def _lastnosti_fcstd(pot, st):
                     r.update(_vrsta_iz_tipov(tipi))
         except Exception:  # noqa: BLE001
             _log("lastnosti %s: %s" % (pot, traceback.format_exc().splitlines()[-1]))
-        if len(_LASTNOSTI_FCSTD) > 500:
-            _LASTNOSTI_FCSTD.clear()
         _LASTNOSTI_FCSTD[kljuc] = r
+        _omeji_predpomnilnik(_LASTNOSTI_FCSTD)
     return dict(r)
 
 
@@ -2533,9 +2542,8 @@ def _shranjena_slicica(pot):
                 ok = _uporabna_slicica(f.read())
         except OSError:
             return 0
-        if len(_RENDER_OK) > 500:
-            _RENDER_OK.clear()
         _RENDER_OK[(r, mtime)] = ok
+        _omeji_predpomnilnik(_RENDER_OK)
     return mtime if ok else 0
 
 
