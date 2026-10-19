@@ -3358,6 +3358,8 @@ class Stanje:
         self.odjemalci = []                 # vrste SSE odjemalcev
         self.kljuc = threading.Lock()
         self._posnetek = b'{"dokument":"","verzija":0,"objekti":[]}'
+        self._gradnja = None               # zadnja gradnja posnetka po objektih (zgradi): vrstni red, verzije, drevo
+        self._posnetek_cel = None          # (verzija, bajti) celotnega posnetka, zlepljenega ob prvi zahtevi (leno)
         self._ukazi = b'{"delovnaOkolja":[],"hitriDostop":[]}'
         self.imena_ukazov = []
         self.aktivni = {}
@@ -3409,7 +3411,41 @@ class Stanje:
                 q.put((dogodek, podatki))
 
     def posnetek(self):
-        return self._posnetek
+        """Celoten posnetek aktivnega dokumenta (bajti JSON za GET /model, orodje slika, render). Zlepi se šele ob prvi
+        zahtevi po gradnji (leno) in ostane do naslednje: brskalnik po spremembi enega objekta zahteva le razliko
+        (posnetek_delni), zato lepljenje 76 MB (ODER, 0,25 s) ne sodi v vsako gradnjo (2026-10-19)."""
+        g = getattr(self, "_gradnja", None)
+        if g is None:
+            return getattr(self, "_posnetek", b'{"dokument":"","verzija":0,"objekti":[]}')
+        cel = getattr(self, "_posnetek_cel", None)
+        if cel is None or cel[0] != g["verzija"]:
+            zacetek = time.time()
+            telo = ('{"dokument":%s,"verzija":%d,"objekti":[%s],"drevo":%s}' % (
+                g["dokument"], g["verzija"], ",".join(g["objekti"][ime][1] for ime in g["vrstniRed"]),
+                g["drevo"])).encode("utf-8")
+            cel = (g["verzija"], telo)
+            self._posnetek_cel = cel
+            _log("posnetek %d: cel, %.1f kB, %.2f s lepljenja" % (g["verzija"], len(telo) / 1024.0, time.time() - zacetek))
+        return cel[1]
+
+    def posnetek_delni(self, od):
+        """Posnetek za brskalnik, ki ima že različico `od` istega dokumenta (GET /model?od=): vrstni red vseh objektov,
+        le objekti, spremenjeni po `od`, in drevo ("delni": true). Celoten posnetek, ko gradnje še ni, je bil vmes
+        zamenjan dokument, je `od` novejša od zadnje gradnje (nov zagon strežnika) ali so se spremenili vsi objekti."""
+        g = getattr(self, "_gradnja", None)
+        if g is None or od < g["odDokumenta"] or od > g["verzija"]:
+            return self.posnetek()
+        spremenjeni = [ime for ime in g["vrstniRed"] if g["objekti"][ime][0] > od]
+        if spremenjeni and len(spremenjeni) >= len(g["vrstniRed"]):
+            return self.posnetek()
+        telo = ('{"dokument":%s,"verzija":%d,"delni":true,"vrstniRed":%s,"objekti":[%s],"drevo":%s}' % (
+            g["dokument"], g["verzija"], json.dumps(g["vrstniRed"]),
+            ",".join(g["objekti"][ime][1] for ime in spremenjeni), g["drevo"])).encode("utf-8")
+        _log("posnetek %d: delni od %d, %d/%d objektov%s, %.1f kB" % (
+            g["verzija"], od, len(spremenjeni), len(g["vrstniRed"]),
+            " (%s%s)" % (", ".join(spremenjeni[:5]), ", …" if len(spremenjeni) > 5 else "") if spremenjeni else "",
+            len(telo) / 1024.0))
+        return telo
 
     def ukazi(self):
         return self._ukazi
@@ -3564,35 +3600,54 @@ class Stanje:
             yield lambda d=ime_dok: drevo(d)
 
     def zgradi(self):
+        """Posnetek aktivnega dokumenta po objektih: vsak objekt nosi številko posnetka, pri kateri se je njegov JSON
+        nazadnje zamenjal (isti niz iz predpomnilnika = nespremenjen), da brskalnik z /model?od= dobi le razliko.
+        Celota se ne lepi tu, ampak šele v posnetek() na zahtevo."""
         zacetek = time.time()
         doc = App.ActiveDocument
-        objekti = []
-        zadetki = 0
+        ime_doc = doc.Name if doc is not None else ""
+        prejsnja = getattr(self, "_gradnja", None)
+        isti_dokument = prejsnja is not None and prejsnja["ime"] == ime_doc
+        stari = prejsnja["objekti"] if isti_dokument else {}
+        verzija = self.verzija + 1
+        objekti, vrstni_red = {}, []
+        zadetki = spremenjeni = bajtov = 0
         if doc is not None:
             for obj in _vidni_objekti(doc):
                 try:
                     posnetek, zadetek = _geometrija_predpomnjena(doc, obj)
-                    objekti.append(posnetek)
                     zadetki += zadetek
                 except Exception:  # noqa: BLE001
                     _log("objekt %s preskočen: %s" % (obj.Name, traceback.format_exc()))
+                    continue
+                star = stari.get(obj.Name)
+                if star is not None and star[1] is posnetek:
+                    objekti[obj.Name] = star
+                else:
+                    objekti[obj.Name] = (verzija, posnetek)
+                    spremenjeni += 1
+                vrstni_red.append(obj.Name)
+                bajtov += len(posnetek)
         try:
             drevo = drevo_dokumenta(doc, _ikona_uri, _kljuc_oblike)
         except Exception:  # noqa: BLE001
             drevo = {"koreni": [], "vozli": {}}
             _log("drevo dokumenta: %s" % traceback.format_exc())
-        self.verzija += 1
-        self._posnetek = ('{"dokument":%s,"verzija":%d,"objekti":[%s],"drevo":%s}' % (
-            json.dumps(doc.Label if doc else ""), self.verzija, ",".join(objekti),
-            json.dumps(drevo, separators=(",", ":")))).encode("utf-8")
+        self.verzija = verzija
+        self._gradnja = {
+            "verzija": verzija, "ime": ime_doc, "dokument": json.dumps(doc.Label if doc else ""),
+            "odDokumenta": prejsnja["odDokumenta"] if isti_dokument else verzija,   # od te različice je aktiven ta dokument
+            "vrstniRed": vrstni_red, "objekti": objekti, "drevo": json.dumps(drevo, separators=(",", ":")),
+        }
+        self._posnetek_cel = None
         self.umazano = False
         self.zadnja_gradnja = time.time()
         # posnetki drugih odprtih dokumentov (sestavi, ki ta dokument vsebujejo) so morda zastareli: ogrevanje jih v mirovanju
         # zgradi vnaprej, da preklop nanje ne čaka na mreženje (2026-10-19)
         self.ogrevanje_odtis = None
         self.oddaj("model", {"verzija": self.verzija})
-        _log("posnetek %d: %d objektov (%d iz predpomnilnika), %.1f kB, %.2f s"
-             % (self.verzija, len(objekti), zadetki, len(self._posnetek) / 1024.0, time.time() - zacetek))
+        _log("posnetek %d: %d objektov (%d iz predpomnilnika, %d spremenjenih), %.1f kB, %.2f s"
+             % (self.verzija, len(objekti), zadetki, spremenjeni, bajtov / 1024.0, time.time() - zacetek))
 
     def zgradi_ukaze(self):
         self.nalozena = nalozena_okolja()
@@ -4157,7 +4212,10 @@ class Zahteva(http.server.BaseHTTPRequestHandler):
             else:
                 self._odgovor(slika, "image/png", predpomni=True)
         elif pot == "/model":
-            self._odgovor(STANJE.posnetek())
+            # ?od=<verzija>: brskalnik ima že to različico dokumenta, dobi le spremenjene objekte (Stanje.posnetek_delni)
+            import urllib.parse
+            od = (urllib.parse.parse_qs(self.path.partition("?")[2]).get("od") or [""])[0]
+            self._odgovor(STANJE.posnetek_delni(int(od)) if od.isdigit() else STANJE.posnetek())
         elif pot == "/zgradba":
             # Drevesna shema sestava čez datoteke (povezave App::Link); zgradi jo glavna nit.
             import urllib.parse

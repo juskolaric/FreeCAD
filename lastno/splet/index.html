@@ -3365,11 +3365,44 @@ function pocisti() {
   objekti = new Map();
 }
 
+function odstraniObjekt(z) {
+  z.skupina.traverse(n => { if (n.geometry) n.geometry.dispose(); });
+  koren.remove(z.skupina);
+}
+// Delni posnetek (/model?od=stanje.verzija, »delni«: vrstniRed vseh objektov, objekti le spremenjeni): skupine nespremenjenih
+// objektov ostanejo, spremenjeni se zgradijo znova, manjkajoči odstranijo, vrstni red sledi posnetku. Vrne false, če kakega
+// nespremenjenega objekta tu ni (potem je potreben celoten posnetek).
+function uporabiDelniModel(model) {
+  const novi = new Map(model.objekti.map(o => [o.ime, o]));
+  if (model.vrstniRed.some(ime => !novi.has(ime) && !objekti.has(ime))) return false;
+  const nova = new Map();
+  for (const ime of model.vrstniRed) {
+    const o = novi.get(ime); let z = objekti.get(ime);
+    if (o) { if (z) odstraniObjekt(z); z = zgradiObjekt(o); }
+    nova.set(ime, z);
+  }
+  for (const [ime, z] of objekti) if (!nova.has(ime)) odstraniObjekt(z);
+  koren.remove(...koren.children);
+  for (const z of nova.values()) koren.add(z.skupina);
+  objekti = nova;
+  if (osvetljenObjekt) { const o = osvetljenObjekt; osvetljenObjekt = null; osvetli(o); }   // zamenjani kosi: osvetlitev znova
+  return true;
+}
+
 async function naloziModel() {
-  const odziv = await fetch('/model', { cache: 'no-store' });
-  const model = await odziv.json();
-  pocisti();
-  for (const o of model.objekti) { const z = zgradiObjekt(o); koren.add(z.skupina); objekti.set(o.ime, z); }
+  const zacetek = performance.now();
+  // isti dokument: strežnik vrne le objekte, spremenjene po različici, ki jo stran že ima (ODER: 76 MB -> en kos)
+  let odziv = await fetch('/model' + (stanje.verzija > 0 && objekti.size ? '?od=' + stanje.verzija : ''), { cache: 'no-store' });
+  let model = await odziv.json();
+  let delno = false;
+  if (model.delni) {
+    delno = model.dokument === stanje.dokument && uporabiDelniModel(model);
+    if (!delno) { odziv = await fetch('/model', { cache: 'no-store' }); model = await odziv.json(); }
+  }
+  if (!delno) {
+    pocisti();
+    for (const o of model.objekti) { const z = zgradiObjekt(o); koren.add(z.skupina); objekti.set(o.ime, z); }
+  }
   // nov dokument ima lahko čisto drugačno velikost: pogled se mu prilagodi znova
   const drugDokument = model.dokument !== stanje.dokument;
   if (drugDokument) { prviNalozen = false; nastaviRazstavitev(0, false); }
@@ -3385,11 +3418,13 @@ async function naloziModel() {
   uporabiRazstavitev();   // nove skupine objektov dobijo odmik trenutne razstavitve; nastavi tudi sferaModela
   if (legaTiska.odprta) { if (stanje.dokument !== legaTiska.dokument) zapriLegoTiska(); else uporabiPrikazLege(); }   // nove mreže kosov
   if (skica.posnetek) zgradiPripenjanjeModela();
-  if (!prviNalozen && model.objekti.length) { prilagodiPogled(true); prviNalozen = true; }
+  if (!prviNalozen && objekti.size) { prilagodiPogled(true); prviNalozen = true; }
   oznaciIzbiro(stanje.izbira);
   osveziHud();
   nacrtujSlicico();
   nacrtujSliciceVozlov();
+  console.debug('naloziModel ' + model.verzija + ': ' + (delno ? 'delni, ' + model.objekti.length + '/' + objekti.size : 'cel, ' + objekti.size)
+    + ' objektov, ' + Math.round(performance.now() - zacetek) + ' ms');
 }
 
 function okvirModela() { return new THREE.Box3().setFromObject(koren); }
