@@ -65,13 +65,28 @@ PRORACUN_TOCK = 150000       # na objekt: gostejša mreža (npr. uvožen hladiln
 MIROVANJE_OGREVANJA = 3.0    # s brez zahtev iz brskalnika, preden strežnik vnaprej pripravlja posnetke (Stanje.ogrej)
 
 
-def _natancnost(oblika):
-    """Natančnost mreže glede na velikost objekta: majhni deli 0,1 mm / 0,05 mm, veliki sestavi sorazmerno grobje."""
+_NATANCNOST_OBJEKTOV = {}    # polno ime objekta -> (diagonala, toleranca, odmik robov): glej _natancnost
+
+
+def _natancnost(oblika, kljuc=None):
+    """Natančnost mreže glede na velikost objekta: majhni deli 0,1 mm / 0,05 mm, veliki sestavi sorazmerno grobje.
+    S `kljuc` (polno ime objekta) ostane natančnost ista, dokler se diagonala ne spremeni za več kot 1 %: okvir oblike
+    niha z mrežo (iz trikotnikov ali iz geometrije, ~1e-5 relativno), zato bi se sicer mreže kosov (_MREZE_LISTOV) ob
+    vsakem posnetku sestava mrežile znova (2026-10-19)."""
     try:
         d = oblika.BoundBox.DiagonalLength
     except Exception:  # noqa: BLE001
         d = 0.0
-    return max(TOLERANCA_PLOSKEV, d * RELATIVNA_PLOSKEV), max(ODMIK_ROBOV, d * RELATIVNI_ROB)
+    if kljuc is not None:
+        z = _NATANCNOST_OBJEKTOV.get(kljuc)
+        if z is not None and abs(z[0] - d) <= 0.01 * max(d, 1e-9):
+            return z[1], z[2]
+    izid = (max(TOLERANCA_PLOSKEV, d * RELATIVNA_PLOSKEV), max(ODMIK_ROBOV, d * RELATIVNI_ROB))
+    if kljuc is not None:
+        if len(_NATANCNOST_OBJEKTOV) > 100000:
+            _NATANCNOST_OBJEKTOV.clear()
+        _NATANCNOST_OBJEKTOV[kljuc] = (d,) + izid
+    return izid
 ODPRI_BRSKALNIK = os.environ.get("SPLET_BRSKALNIK", "1") == "1"
 # Okno FreeCAD-a: "skrito" (privzeto; pokaže se le, ko potrebuje vnos) ali "vidno".
 OKNO_SKRITO = os.environ.get("SPLET_OKNO", "skrito") != "vidno"
@@ -921,7 +936,12 @@ def _geometrija(obj, faktor=1.0):
 
     Oblike ne kopiramo: kopija izgubi že izračunano mrežo (BRepMesh) in se teselira znova (3-4x počasneje).
     Teseliramo izvirno obliko in točke po potrebi prestavimo iz lege oblike v globalno lego objekta
-    (povezava App::Link vrne obliko povezanega objekta brez lastne lege)."""
+    (povezava App::Link vrne obliko povezanega objekta brez lastne lege).
+
+    Objekt iz več kosov (povezava na sestav, App::Part) se sestavi iz mrež kosov (_MREZE_LISTOV, _geometrija_iz_listov):
+    po spremembi enega kosa se mreži le ta kos, ne ves sestav (ODER, 14 povezav na sestave, 73 MB: 11–17 s -> ~1 s,
+    2026-10-19). Mreža je ista (iste ploskve, ista toleranca), zato se prikaz ne spremeni. Ko kosi ne pokrijejo oblike
+    (drugačen vrstni red ploskev), se mreži cela oblika kot prej (_geometrija_cele_oblike)."""
     oblika = obj.Shape
     try:
         globalna = obj.getGlobalPlacement()
@@ -930,58 +950,27 @@ def _geometrija(obj, faktor=1.0):
     premik = globalna.multiply(oblika.Placement.inverse())
     pretvori = None if premik.isIdentity(1e-9) else premik.multVec
 
-    tocke, trikotniki, ploskve = [], [], []
-    toleranca, odmik_robov = _natancnost(oblika)
+    toleranca, odmik_robov = _natancnost(oblika, obj.FullName)
     toleranca *= faktor
     # barva in PBR (kovinskost, hrapavost, zrnatost) po ploskvah; pri sestavu po kosih (videz.py)
     osnovna, po_ploskvah = videz.ploskve_videza(obj, oblika.countElement("Face"), _barve)
-    # grobejša mreža velikih objektov: obstoječo finejšo mrežo je treba pobrisati (OCC jo sicer ohrani)
-    pobrisi = toleranca > TOLERANCA_PLOSKEV + 1e-9
-    try:
-        # Vse ploskve naenkrat: OCC jih mreži vzporedno (BRepMesh_IncrementalMesh, isInParallel), branje po
-        # ploskvah spodaj mrežo le prebere. Mreženje ploskev eno po eno je teklo na enem jedru (2x počasneje).
-        skupaj, _ = oblika.tessellate(toleranca, pobrisi)
-        pobrisi = False
-        if len(skupaj) > PRORACUN_TOCK and faktor < 30:
-            return _geometrija(obj, faktor * 3)   # proračun presežen že brez podvojenih točk na robovih
-        del skupaj
-    except Exception:  # noqa: BLE001
-        pass
-    for i, ploskev in enumerate(oblika.Faces):
+    jedro = None
+    vsi = videz.listi(obj) if faktor == 1.0 else []
+    if len(vsi) > 1:
         try:
-            v, t = ploskev.tessellate(toleranca, pobrisi)
-            if len(tocke) // 3 + len(v) > PRORACUN_TOCK and faktor < 30:
-                # proračun presežen: celoten objekt znova, trikrat grobje (obstoječa mreža se pobriše)
-                return _geometrija(obj, faktor * 3)
+            jedro = _geometrija_iz_listov(obj, oblika, premik, toleranca, odmik_robov, vsi)
         except Exception:  # noqa: BLE001
-            v, t = [], []
-        zacetek_tock = len(tocke) // 3
-        zacetek_trik = len(trikotniki) // 3
-        if pretvori is None:
-            for p in v:
-                tocke.extend(_z3(p))
-        else:
-            for p in v:
-                tocke.extend(_z3(pretvori(p)))
-        for a, b, c in t:
-            trikotniki.extend((a + zacetek_tock, b + zacetek_tock, c + zacetek_tock))
+            _log("mreže kosov %s: %s" % (obj.Name, traceback.format_exc().splitlines()[-1]))
+            jedro = None
+    if jedro is None:
+        jedro = _geometrija_cele_oblike(oblika, pretvori, toleranca, odmik_robov, faktor)
+    if jedro == "prevec":
+        return _geometrija(obj, faktor * 3)   # proračun točk presežen: celoten objekt znova, trikrat grobje
+    tocke, trikotniki, ploskve_surove, rob_tocke, robovi, rob_info = jedro
+    ploskve = []
+    for i, p in enumerate(ploskve_surove):
         barva = po_ploskvah[i] if po_ploskvah else osnovna
-        ploskve.append([zacetek_tock, len(v), zacetek_trik, len(t)] + [round(c, 3) for c in barva[:7]])
-
-    rob_tocke, robovi, rob_info = [], [], []
-    for rob in oblika.Edges:
-        try:
-            pts = rob.discretize(Deflection=odmik_robov)
-        except Exception:  # noqa: BLE001
-            pts = [v.Point for v in rob.Vertexes]
-        if pretvori is not None:
-            pts = [pretvori(p) for p in pts]
-        zacetek = len(rob_tocke) // 6
-        for a, b in zip(pts, pts[1:]):
-            rob_tocke.extend(_z3(a))
-            rob_tocke.extend(_z3(b))
-        robovi.append([zacetek, max(len(pts) - 1, 0)])
-        rob_info.append(_rob_info(rob, pretvori))
+        ploskve.append(p + [round(c, 3) for c in barva[:7]])
 
     izid = {
         "ime": obj.Name,
@@ -997,6 +986,261 @@ def _geometrija(obj, faktor=1.0):
     if rob_barva:
         izid["robBarva"] = rob_barva
     return izid
+
+
+def _geometrija_cele_oblike(oblika, pretvori, toleranca, odmik_robov, faktor):
+    """Jedro posnetka iz cele oblike (en kos; sestav le, ko ga kosi ne pokrijejo): (tocke, trikotniki, ploskve
+    [[zacetek točk, točk, zacetek trikotnikov, trikotnikov]], robTocke, robovi, robInfo) v globalnih koordinatah
+    ali "prevec", ko je proračun točk presežen (klicatelj mreži znova, trikrat grobje)."""
+    tocke, trikotniki, ploskve = [], [], []
+    # grobejša mreža velikih objektov: obstoječo finejšo mrežo je treba pobrisati (OCC jo sicer ohrani)
+    pobrisi = toleranca > TOLERANCA_PLOSKEV + 1e-9
+    try:
+        # Vse ploskve naenkrat: OCC jih mreži vzporedno (BRepMesh_IncrementalMesh, isInParallel), branje po
+        # ploskvah spodaj mrežo le prebere. Mreženje ploskev eno po eno je teklo na enem jedru (2x počasneje).
+        skupaj, _ = oblika.tessellate(toleranca, pobrisi)
+        pobrisi = False
+        if len(skupaj) > PRORACUN_TOCK and faktor < 30:
+            return "prevec"   # proračun presežen že brez podvojenih točk na robovih
+        del skupaj
+    except Exception:  # noqa: BLE001
+        pass
+    for ploskev in oblika.Faces:
+        try:
+            v, t = ploskev.tessellate(toleranca, pobrisi)
+            if len(tocke) // 3 + len(v) > PRORACUN_TOCK and faktor < 30:
+                return "prevec"   # proračun presežen (obstoječa mreža se ob ponovnem mreženju pobriše)
+        except Exception:  # noqa: BLE001
+            v, t = [], []
+        zacetek_tock = len(tocke) // 3
+        zacetek_trik = len(trikotniki) // 3
+        if pretvori is None:
+            for p in v:
+                tocke.extend(_z3(p))
+        else:
+            for p in v:
+                tocke.extend(_z3(pretvori(p)))
+        for a, b, c in t:
+            trikotniki.extend((a + zacetek_tock, b + zacetek_tock, c + zacetek_tock))
+        ploskve.append([zacetek_tock, len(v), zacetek_trik, len(t)])
+
+    rob_tocke, robovi, rob_info = [], [], []
+    for rob in oblika.Edges:
+        try:
+            pts = rob.discretize(Deflection=odmik_robov)
+        except Exception:  # noqa: BLE001
+            pts = [v.Point for v in rob.Vertexes]
+        if pretvori is not None:
+            pts = [pretvori(p) for p in pts]
+        zacetek = len(rob_tocke) // 6
+        for a, b in zip(pts, pts[1:]):
+            rob_tocke.extend(_z3(a))
+            rob_tocke.extend(_z3(b))
+        robovi.append([zacetek, max(len(pts) - 1, 0)])
+        rob_info.append(_rob_info(rob, pretvori))
+    return tocke, trikotniki, ploskve, rob_tocke, robovi, rob_info
+
+
+# ---------------------------------------------------------------------------
+# Mreže kosov sestavov (2026-10-19). Povezava na sestav (ODER: TRUSS 15 kosov, KONTROLA 65, MIRROR G2 534) se je mrežila
+# kot ena oblika: sprememba enega kosa (ali njegove datoteke) je znova mrežila ves sestav, 2–6 s na povezavo (MIRROR do
+# 30 s, ker gre čez pet stopenj proračuna točk) in 11–17 s za ODER na glavni niti. Zdaj se vsak kos (list po videz.listi)
+# mreži enkrat v svojih koordinatah in hrani tu; posnetek sestava je le prestavitev mrež v lego kosov (numpy) in
+# serializacija. Stare in nove mreže imajo iste točke (ista toleranca); le na ravnih ploskvah so lahko diagonale
+# štirikotnikov drugače izbrane (OCC jih pri enakih razdaljah izbere po lokalnih koordinatah), kar se v prikazu ne vidi.
+_MREZE_LISTOV = {}                       # (polno ime kosa, toleranca, odmik) -> mreža z odtisom oblike (glej _mreza_lista)
+_MREZE_LISTOV_STANJE = {"bajtov": 0}     # skupna velikost polj numpy v _MREZE_LISTOV
+MREZE_LISTOV_MEJA = 600 * 1024 * 1024    # bajtov; nad mejo se izločijo najdlje nerabljene mreže (slovar hrani vrstni red)
+_TOCKE_LISTOV = {}                       # (polno ime kosa, toleranca, odmik) -> (odtis, število točk): proračun brez mrež
+_INFO_TOCKE = ("p1", "p2", "sredina", "sredisce")   # polja robInfo, ki so točke (os je smer)
+
+
+def _listi_s_potjo(obj, pot="", globina=0):
+    """[(kos, podpot od obj)] z isto izbiro in istim vrstnim redom kot videz.listi (ki da videz po ploskvah)."""
+    if globina < 12 and videz._je_vsebnik(obj):
+        izhod = []
+        for sub in obj.getSubObjects():
+            try:
+                otrok = obj.getSubObject(sub, retType=1)
+            except Exception:  # noqa: BLE001
+                otrok = None
+            if otrok is None or not videz._viden(obj, sub, otrok):
+                continue
+            izhod.extend(_listi_s_potjo(otrok, pot + sub, globina + 1))
+        return izhod
+    if globina and not hasattr(obj, "Shape"):
+        return []          # skupina spojev (JointGroup) ipd.: brez oblike
+    return [(obj, pot)]
+
+
+def _rob_info_lista(rob, tocke, smeri):
+    """Analitični podatki roba kot _rob_info, a v koordinatah kosa in brez zaokrožanja: točke (p1, p2, sredina, sredisce)
+    in os so indeksi v `tocke` oz. `smeri` (seznama vektorjev kosa), ki jih _geometrija_iz_listov prestavi z numpy."""
+    try:
+        info = {"tip": type(rob.Curve).__name__}
+    except Exception:  # noqa: BLE001
+        info = {"tip": ""}  # npr. rob brez krivulje (TypeError: undefined curve type); objekt ostane v posnetku
+
+    def tocka(v):
+        tocke.append((v.x, v.y, v.z))
+        return len(tocke) - 1
+
+    try:
+        if rob.Vertexes:
+            info["p1"] = tocka(rob.Vertexes[0].Point)
+            info["p2"] = tocka(rob.Vertexes[-1].Point)
+        info["sredina"] = tocka(rob.valueAt((rob.FirstParameter + rob.LastParameter) / 2.0))
+        info["zaprt"] = bool(rob.isClosed())
+        if info["tip"] == "Circle":
+            info["sredisce"] = tocka(rob.Curve.Center)
+            info["r"] = round(rob.Curve.Radius, 4)
+            os_ = rob.Curve.Axis
+            smeri.append((os_.x, os_.y, os_.z))
+            info["os"] = len(smeri) - 1
+    except Exception:  # noqa: BLE001
+        pass
+    return info
+
+
+def _mreza_lista(kos, oblika, odtis, toleranca, odmik_robov):
+    """Mreža oblike kosa `kos` (`oblika` = kos.Shape, v koordinatah kosa) iz _MREZE_LISTOV ali na novo (ista teselacija kot
+    _geometrija_cele_oblike): {tocke (n, 3), trikotniki (3m,), ploskve [[zt, nt, zk, nk]], robTocke (2k, 3), robovi [[z, n]],
+    robInfo, infoTocke (p, 3), infoSmeri (q, 3), odtis, bajtov}. Ključ je kos (ime), ne oblika: oblika povezave (App::Link)
+    je ob vsakem branju nova z drugim hashCode; odtis (hashCode oblike kosa, ploskev, robov, oglišč) pove, ali se je kos
+    spremenil."""
+    import numpy as np
+    kljuc = (kos.FullName, round(toleranca, 6), round(odmik_robov, 6))
+    vnos = _MREZE_LISTOV.pop(kljuc, None)
+    if vnos is not None:
+        if vnos["odtis"] == odtis:
+            _MREZE_LISTOV[kljuc] = vnos      # nazadnje uporabljena na konec
+            return vnos
+        _MREZE_LISTOV_STANJE["bajtov"] -= vnos["bajtov"]
+    pobrisi = toleranca > TOLERANCA_PLOSKEV + 1e-9   # grobejša mreža: obstoječo finejšo je treba pobrisati (OCC jo ohrani)
+    try:
+        oblika.tessellate(toleranca, pobrisi)   # vse ploskve naenkrat (vzporedno); branje spodaj mrežo le prebere
+        pobrisi = False
+    except Exception:  # noqa: BLE001
+        pass
+    tocke, trikotniki, ploskve = [], [], []
+    st_tock = st_trik = 0
+    for ploskev in oblika.Faces:
+        try:
+            v, t = ploskev.tessellate(toleranca, pobrisi)
+        except Exception:  # noqa: BLE001
+            v, t = [], []
+        tocke.extend((p.x, p.y, p.z) for p in v)
+        if t:
+            trikotniki.append(np.asarray(t, dtype=np.int32).reshape(-1) + st_tock)
+        ploskve.append([st_tock, len(v), st_trik, len(t)])
+        st_tock += len(v)
+        st_trik += len(t)
+    rob_tocke, robovi, rob_info, info_tocke, info_smeri = [], [], [], [], []
+    for rob in oblika.Edges:
+        try:
+            pts = rob.discretize(Deflection=odmik_robov)
+        except Exception:  # noqa: BLE001
+            pts = [v.Point for v in rob.Vertexes]
+        robovi.append([len(rob_tocke) // 2, max(len(pts) - 1, 0)])
+        for a, b in zip(pts, pts[1:]):
+            rob_tocke.append((a.x, a.y, a.z))
+            rob_tocke.append((b.x, b.y, b.z))
+        rob_info.append(_rob_info_lista(rob, info_tocke, info_smeri))
+    vnos = {"tocke": np.array(tocke, dtype=float).reshape(-1, 3),
+            "trikotniki": np.concatenate(trikotniki) if trikotniki else np.zeros(0, dtype=np.int32),
+            "ploskve": ploskve,
+            "robTocke": np.array(rob_tocke, dtype=float).reshape(-1, 3),
+            "robovi": robovi, "robInfo": rob_info,
+            "infoTocke": np.array(info_tocke, dtype=float).reshape(-1, 3),
+            "infoSmeri": np.array(info_smeri, dtype=float).reshape(-1, 3),
+            "odtis": odtis}
+    vnos["bajtov"] = (vnos["tocke"].nbytes + vnos["trikotniki"].nbytes + vnos["robTocke"].nbytes
+                      + vnos["infoTocke"].nbytes + vnos["infoSmeri"].nbytes
+                      + 120 * (len(ploskve) + len(robovi)) + 300 * len(rob_info))
+    _MREZE_LISTOV[kljuc] = vnos
+    _MREZE_LISTOV_STANJE["bajtov"] += vnos["bajtov"]
+    while _MREZE_LISTOV_STANJE["bajtov"] > MREZE_LISTOV_MEJA and len(_MREZE_LISTOV) > 1:
+        _MREZE_LISTOV_STANJE["bajtov"] -= _MREZE_LISTOV.pop(next(iter(_MREZE_LISTOV)))["bajtov"]
+    if len(_TOCKE_LISTOV) > 200000:
+        _TOCKE_LISTOV.clear()
+    _TOCKE_LISTOV[kljuc] = (odtis, st_tock)
+    return vnos
+
+
+def _stevilo_tock_lista(kos, oblika, odtis, toleranca, odmik_robov):
+    """Število točk mreže kosa pri toleranci (za proračun točk) iz _TOCKE_LISTOV; kos, ki še ni bil mrežen, se zmreži."""
+    vnos = _TOCKE_LISTOV.get((kos.FullName, round(toleranca, 6), round(odmik_robov, 6)))
+    if vnos is not None and vnos[0] == odtis:
+        return vnos[1]
+    return len(_mreza_lista(kos, oblika, odtis, toleranca, odmik_robov)["tocke"])
+
+
+def _geometrija_iz_listov(obj, oblika, premik, toleranca, odmik_robov, vsi):
+    """Jedro posnetka objekta iz mrež njegovih kosov (kot _geometrija_cele_oblike, a brez mreženja že znanih kosov).
+    Oblika sestava je zaporedje oblik kosov v vrstnem redu videz.listi (ista TShape, druga lega). Mreža kosa je v
+    koordinatah oblike povezanega kosa (telo v svoji datoteki; stabilen hashCode), podoblika v sestavu
+    (`getSubObject(pot, retType=0)`) pa ima lego v koordinatah obj: lega mreže = premik · lega podoblike · lega oblike
+    kosa⁻¹ (preverjeno na ODER do 1e-12). Proračun točk kot v _geometrija_cele_oblike (trikrat grobje, dokler vsota
+    presega PRORACUN_TOCK), a iz števil točk že mreženih kosov. Vrne None, ko kosi ne pokrijejo oblike (drugo število
+    ploskev ali robov, drugi kosi)."""
+    import numpy as np
+    listi = _listi_s_potjo(obj)
+    if len(listi) != len(vsi) or any(a.FullName != b.FullName for (a, _), (b, _, _) in zip(listi, vsi)):
+        return None
+    kosi = []
+    st_ploskev = st_robov = 0
+    for kos, pot in listi:
+        cilj = videz._cilj(kos)
+        ls = cilj.Shape
+        sub = obj.getSubObject(pot, retType=0)
+        if sub is None or ls.isNull():
+            return None
+        nf, ne = ls.countElement("Face"), ls.countElement("Edge")
+        kosi.append((cilj, ls, premik.multiply(sub.Placement.multiply(ls.Placement.inverse())),
+                     (ls.hashCode(), nf, ne, ls.countElement("Vertex"))))
+        st_ploskev += nf
+        st_robov += ne
+    if st_ploskev != oblika.countElement("Face") or st_robov != oblika.countElement("Edge"):
+        return None
+    faktor = 1.0
+    while True:
+        tol = toleranca * faktor
+        st_tock = 0
+        for cilj, ls, lega, odtis in kosi:
+            st_tock += _stevilo_tock_lista(cilj, ls, odtis, tol, odmik_robov)
+            if st_tock > PRORACUN_TOCK:
+                break
+        if st_tock > PRORACUN_TOCK and faktor < 30:
+            faktor *= 3
+            continue
+        break
+    tocke_vse, trik_vse, ploskve, rob_vse, robovi, rob_info = [], [], [], [], [], []
+    zt = zk = zr = 0
+    for cilj, ls, lega, odtis in kosi:
+        m = _mreza_lista(cilj, ls, odtis, tol, odmik_robov)
+        M = np.array(lega.toMatrix().A, dtype=float).reshape(4, 4)
+        R, t = M[:3, :3].T, M[:3, 3]
+        if len(m["tocke"]):
+            tocke_vse.append(m["tocke"] @ R + t)
+        if len(m["trikotniki"]):
+            trik_vse.append(m["trikotniki"] + zt)
+        for p in m["ploskve"]:
+            ploskve.append([p[0] + zt, p[1], p[2] + zk, p[3]])
+        if len(m["robTocke"]):
+            rob_vse.append(m["robTocke"] @ R + t)
+        for r in m["robovi"]:
+            robovi.append([r[0] + zr, r[1]])
+        T = np.round(m["infoTocke"] @ R + t, 3).tolist() if len(m["infoTocke"]) else []
+        D = np.round(m["infoSmeri"] @ R, 3).tolist() if len(m["infoSmeri"]) else []
+        for info in m["robInfo"]:
+            rob_info.append({k: (T[v] if k in _INFO_TOCKE else D[v] if k == "os" else v) for k, v in info.items()})
+        zt += len(m["tocke"])
+        zk += len(m["trikotniki"]) // 3
+        zr += len(m["robTocke"]) // 2
+    tocke = np.round(np.concatenate(tocke_vse), 3).reshape(-1).tolist() if tocke_vse else []
+    trikotniki = np.concatenate(trik_vse).tolist() if trik_vse else []
+    rob_tocke = np.round(np.concatenate(rob_vse), 3).reshape(-1).tolist() if rob_vse else []
+    return tocke, trikotniki, ploskve, rob_tocke, robovi, rob_info
 
 
 # Predpomnilnik posnetkov objektov: (ime dokumenta, ime objekta) -> (ključ, posnetek). Ključ zajame vse, od
@@ -1055,16 +1299,35 @@ def _geometrija_kljuc(obj):
             tuple(_barva_robov(obj) or ()))
 
 
+def _razlika_kljuca(a, b, pot=""):
+    """Pot do prve razlike med starim in novim ključem posnetka (dnevnik: zakaj se objekt mreži znova)."""
+    if a == b:
+        return None
+    if isinstance(a, tuple) and isinstance(b, tuple):
+        if len(a) != len(b):
+            return "%s dolžina %d -> %d" % (pot, len(a), len(b))
+        for i, (x, y) in enumerate(zip(a, b)):
+            r = _razlika_kljuca(x, y, pot + "[%d]" % i)
+            if r:
+                return r
+    return "%s %.50r -> %.50r" % (pot, a, b)
+
+
 def _geometrija_predpomnjena(doc, obj):
     """Posnetek objekta kot JSON niz iz predpomnilnika, če se ni nič spremenilo; sicer ga zgradi in shrani.
     Vrne (json, zadetek). Hranimo že serializiran JSON, ker je serializacija celega posnetka (več MB) stala
-    skoraj pol sekunde na vsako gradnjo."""
+    skoraj pol sekunde na vsako gradnjo. Ponovna gradnja objekta, ki je že bil v predpomnilniku, gre v dnevnik
+    s potjo do spremenjenega dela ključa (mreženje velikega sestava traja več sekund na glavni niti)."""
     kljuc = _geometrija_kljuc(obj)
     vnos = _PREDPOMNILNIK.get((doc.Name, obj.Name))
     if vnos is not None and vnos[0] == kljuc:
         return vnos[1], True
+    zacetek = time.time()
     posnetek = json.dumps(_geometrija(obj), separators=(",", ":"))
     _PREDPOMNILNIK[(doc.Name, obj.Name)] = (kljuc, posnetek)
+    if vnos is not None:
+        _log("posnetek: »%s« znova, %.1f s, %.0f kB (ključ: %s)"
+             % (obj.Label, time.time() - zacetek, len(posnetek) / 1024.0, _razlika_kljuca(vnos[0], kljuc)))
     return posnetek, False
 
 
@@ -3324,6 +3587,9 @@ class Stanje:
             json.dumps(drevo, separators=(",", ":")))).encode("utf-8")
         self.umazano = False
         self.zadnja_gradnja = time.time()
+        # posnetki drugih odprtih dokumentov (sestavi, ki ta dokument vsebujejo) so morda zastareli: ogrevanje jih v mirovanju
+        # zgradi vnaprej, da preklop nanje ne čaka na mreženje (2026-10-19)
+        self.ogrevanje_odtis = None
         self.oddaj("model", {"verzija": self.verzija})
         _log("posnetek %d: %d objektov (%d iz predpomnilnika), %.1f kB, %.2f s"
              % (self.verzija, len(objekti), zadetki, len(self._posnetek) / 1024.0, time.time() - zacetek))
