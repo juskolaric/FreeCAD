@@ -186,6 +186,14 @@
   #dokumentiProjekt { flex: 0 1 auto; min-width: 0; display: inline-flex; align-items: center; gap: 4px; font: inherit; font-weight: 600; color: var(--besedilo);
     background: transparent; border: 1px solid var(--crta); border-radius: 6px; padding: 1px 4px 1px 7px; cursor: pointer; }
   #dokumentiProjekt .ime { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  /* delovni projekt (od 2026-10-19): ko je prikazan drug projekt (npr. Standardni deli ob odprtem standardnem delu), je pred njim
+     projekt, v katerem delaš: »DJ DarMar › Standardni deli« */
+  #dokumentiProjekt .delovni { flex: 0 0 auto; max-width: 65%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--poudarek); }
+  #dokumentiProjekt .delovni:empty { display: none; }
+  #dokumentiProjekt .delovni::after { content: ' \203A'; color: var(--besedilo3); font-weight: 400; padding-right: 3px; }
+  #dokumentiProjekt .delovni + .ime { flex: 0 1 auto; font-weight: 500; color: var(--besedilo2); }
+  #dokumentiGlava .naslov:has(#dokumentiProjekt .delovni:not(:empty)) .napis { display: none; }   /* prostor za oba projekta */
+  #dokumentiProjekt .delovni:empty + .ime { font-weight: inherit; color: inherit; }
   #dokumentiProjekt svg { flex: none; color: var(--besedilo2); }
   #dokumentiProjekt:hover { background: var(--lebdenje); border-color: var(--crtaMocna); }
   #dokumentiProjekt:focus-visible { outline: none; box-shadow: var(--obroc); }
@@ -941,7 +949,7 @@
     <div id="stranskiStolpca">
       <div id="dokumentiStolpec">
         <div id="dokumentiGlava">
-          <div class="naslov"><span class="napis">Dokumenti</span><button type="button" id="dokumentiProjekt" title="Projekt, katerega dokumenti so prikazani; klik odpre vse projekte"><span class="ime"></span><svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M3 4.5 6 7.5 9 4.5"/></svg></button><span class="stevilo" id="dokumentiStevilo"></span></div>
+          <div class="naslov"><span class="napis">Dokumenti</span><button type="button" id="dokumentiProjekt" title="Projekt, katerega dokumenti so prikazani; klik odpre vse projekte"><span class="delovni"></span><span class="ime"></span><svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M3 4.5 6 7.5 9 4.5"/></svg></button><span class="stevilo" id="dokumentiStevilo"></span></div>
           <label class="iskanje"><span id="dokumentiLupa"></span><input id="dokumentiIskanje" type="search" placeholder="Išči med dokumenti …" autocomplete="off" spellcheck="false"><span class="stevec" id="dokumentiStevec"></span></label>
         </div>
         <div id="stranskiVsebina"><div class="prazno">Nalagam …</div></div>
@@ -2277,13 +2285,32 @@ function imeProjekta(k) { return k === '' ? 'Brez projekta (koren mape)' : k.inc
 function prikazaniProjekt() {   // null ali '*' = vsi
   const pot = aktivniDokumentPot(), akt = pot ? projektPoti(pot) : null;
   if (akt !== null && akt !== zadnjiProjekt) { zadnjiProjekt = akt; izbraniProjekt = null; }   // preklop na dokument drugega projekta
+  if (akt && akt !== PROJEKT_KNJIZNICE) delovniProjektZadnji = akt;
   return izbraniProjekt !== null ? izbraniProjekt : zadnjiProjekt;
 }
-// gumb v glavi stolpca: ime prikazanega projekta; klik odpre okno projektov
+// Delovni projekt (od 2026-10-19, želja uporabnika »pokaži, kateri projekt imamo odprt«): standardni del iz sestava preklopi seznam
+// na projekt »Standardni deli«, delaš pa še vedno v projektu sestava. Delovni = projekt zadnjega aktivnega dokumenta zunaj knjižnice,
+// dokler ga ni (npr. po osvežitvi strani na standardnem delu), projekt z največ odprtimi dokumenti.
+const PROJEKT_KNJIZNICE = 'Standardni deli';
+let delovniProjektZadnji = null;
+function delovniProjekt() {
+  if (delovniProjektZadnji) return delovniProjektZadnji;
+  const stevec = new Map();
+  for (const o of (stanje.projekti && stanje.projekti.odprti) || []) {
+    const k = projektPoti(o.pot); if (!k || k === PROJEKT_KNJIZNICE) continue;
+    stevec.set(k, (stevec.get(k) || 0) + 1);
+  }
+  let naj = null; for (const [k, n] of stevec) if (!naj || n > stevec.get(naj)) naj = k;
+  return naj;
+}
+// gumb v glavi stolpca: ime prikazanega projekta (pred njim delovni, če je drug); klik odpre okno projektov
 function napisIzbirnikaProjekta(proj) {
-  const g = $('dokumentiProjekt'), vsi = proj === null || proj === '*';
+  const g = $('dokumentiProjekt'), vsi = proj === null || proj === '*', delovni = delovniProjekt();
+  const pokaziDelovni = delovni && delovni !== proj;
+  g.querySelector('.delovni').textContent = pokaziDelovni ? imeProjekta(delovni) : '';
   g.querySelector('.ime').textContent = vsi ? 'Vsi projekti' : imeProjekta(proj);
-  g.title = (vsi ? 'Prikazani so dokumenti vseh projektov' : 'Prikazani so le dokumenti projekta »' + imeProjekta(proj) + '«') + '\nKlik: izberi projekt v oknu projektov';
+  g.title = (delovni ? 'Odprt projekt: »' + imeProjekta(delovni) + '«\n' : '')
+    + (vsi ? 'Prikazani so dokumenti vseh projektov' : 'Prikazani so le dokumenti projekta »' + imeProjekta(proj) + '«') + '\nKlik: izberi projekt v oknu projektov';
 }
 // Okno projektov (od 2026-10-16, želja uporabnika: projekte videti grafično namesto v spustnem seznamu). Kartica projekta:
 // mozaik do štirih sličic datotek (najprej sestavi, nato najnovejše), ime, število sestavov in delov, odprti dokumenti in zadnja
