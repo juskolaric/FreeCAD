@@ -3374,6 +3374,7 @@ async function naloziModel() {
   const drugDokument = model.dokument !== stanje.dokument;
   if (drugDokument) { prviNalozen = false; nastaviRazstavitev(0, false); }
   stanje.dokument = model.dokument; stanje.verzija = model.verzija;
+  if (drugDokument) osveziNaslovZavihka();   // zavihek brskalnika pokaže odprt kos
   if (drugDokument) narisiOdprteDokumente();   // seznam dokumentov kaže projekt aktivnega dokumenta
   if (meritve.dokument !== model.dokument) pocistiMeritve();
   meritve.dokument = model.dokument; meritve.tocke = null;
@@ -3616,6 +3617,13 @@ function osveziStopnjo() {
   $('gumbStrojno').classList.toggle('aktiven', !zunaj);
   document.body.classList.toggle('stopnjaZunaj', zunaj);
   try { localStorage.setItem('stopnja', tiskanje.odprto ? 'tiskanje' : oblikovanje.odprto ? 'oblikovanje' : grafika.odprto ? 'grafika' : toplota.odprto ? 'toplota' : 'strojno'); } catch (e) { /* zasebno okno */ }
+  osveziNaslovZavihka();
+}
+// Naslov zavihka brskalnika: v strojnem risanju ime odprtega dokumenta (kosa ali sestava), na drugih stopnjah ime stopnje
+function osveziNaslovZavihka() {
+  const stopnja = tiskanje.odprto ? 'Tiskanje' : oblikovanje.odprto ? 'Oblikovanje' : grafika.odprto ? 'Grafika' : toplota.odprto ? 'Toplota' : '';
+  const kaj = stopnja || stanje.dokument || '';
+  document.title = kaj ? kaj + ' · FreeCAD' : 'FreeCAD v brskalniku';
 }
 $('gumbStrojno').addEventListener('click', () => { zapriTiskanje(); zapriOblikovanje(); zapriGrafiko(); zapriToploto(); });
 // --- Risbe (strani TechDraw) --------------------------------------------------------------------------------
