@@ -139,7 +139,9 @@ FreeCAD je motor, vmesnik in grafika nastajata v brskalniku (plan, korak 8 napre
   satenast. **Sestav**: povezava na podsestav je en objekt posnetka, njene ploskve gredo po vrsti `getSubObjects()`
   (le vidni elementi, `isElementVisible`), zato `listi()` sestavi videz po kosih (prej je cel podsestav dobil eno barvo).
   Kovinske ploskve (kovinskost >= 0,5) imajo v brskalniku svoj material z okoljem ×3,2 (skupine geometrije), ker je
-  okolje (0,35) za kovino pretemno. `POST /videz {dejanje: seznam | nastavi (ime, videz) | plocevina (shrani)}`; desni klik
+  okolje (0,35) za kovino pretemno. **Barva robov kosa** (od 2026-10-19): če ima kos `ViewObject.LineColor` svetlejšo od
+  privzete temne (največji kanal ≥ 0,2), posnetek nosi `robBarva` in brskalnik ter rezervni izris `slika` rišeta njegove robove
+  v tej barvi (laminat: stiki plošč komaj vidni); sicer skupna temno siva. Ključ predpomnilnika in `_videz_kljuc` jo vključujeta. `POST /videz {dejanje: seznam | nastavi (ime, videz) | plocevina (shrani)}`; desni klik
   v drevesu -> ◐ Videz. »plocevina« poišče kose (`je_plocevina`: Vrsta, Debelina, SheetMetal; folije ne) v aktivnem
   dokumentu in vseh povezanih datotekah, nerjavno/aluminij izbere po `MaterialSW`. Vroča zamenjava funkcij v tekočem
   strežniku (brez ponovnega zagona): ast iz `streznik.py` -> `exec` v `sys.modules["streznik"].__dict__`, metode s `setattr`

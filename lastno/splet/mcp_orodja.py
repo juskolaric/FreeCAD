@@ -2085,7 +2085,7 @@ def izris_mreze(objekti, smer, velikost, samo=None):
     desno /= np.linalg.norm(desno)
     gor = np.cross(nazaj, desno)
     R = np.stack([desno, gor, nazaj])
-    tri, barve, robovi = [], [], []
+    tri, barve, robovi, rob_barve = [], [], [], []
     for o in objekti:
         if samo and o.get("ime") not in samo:
             continue
@@ -2101,11 +2101,14 @@ def izris_mreze(objekti, smer, velikost, samo=None):
         rt = np.array(o.get("robTocke") or [], float).reshape(-1, 2, 3)
         if len(rt):
             robovi.append(rt)
+            rb = o.get("robBarva")   # robovi v barvi kosa (LineColor), sicer temno sivi
+            rob_barve.append(np.tile(np.array(rb if rb else [0.157, 0.173, 0.204]), (len(rt), 1)))
     if not tri:
         raise Napaka("Ni geometrije za izris (prazen dokument ali skriti objekti).")
     tri = np.concatenate(tri) @ R.T
     barve = np.concatenate(barve)
     robovi = (np.concatenate(robovi) @ R.T) if robovi else np.zeros((0, 2, 3))
+    rob_rgb = np.clip(np.concatenate(rob_barve) * 255, 0, 255).astype(int).tolist() if rob_barve else []
     n = np.cross(tri[:, 1] - tri[:, 0], tri[:, 2] - tri[:, 0])
     dol = np.linalg.norm(n, axis=1)
     ok = dol > 1e-12
@@ -2158,7 +2161,7 @@ def izris_mreze(objekti, smer, velikost, samo=None):
             d.polygon([tuple(p) for p in zt[k]], fill=b, outline=b)
         else:
             r = zr[k - n_tri]
-            d.line([tuple(r[0]), tuple(r[1])], fill=(40, 44, 52), width=debelina)
+            d.line([tuple(r[0]), tuple(r[1])], fill=tuple(rob_rgb[k - n_tri]), width=debelina)
     img = img.resize((velikost, velikost), Image.LANCZOS)
     izhod = io.BytesIO()
     img.save(izhod, "JPEG", quality=88)

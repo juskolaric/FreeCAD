@@ -1143,6 +1143,8 @@ const $ = id => document.getElementById(id);
 try { document.body.classList.toggle('brezTraku', localStorage.getItem('trakUkazov') !== '1'); } catch (e) { document.body.classList.add('brezTraku'); }   // trak ukazov skrit, glej CSS
 const hud = $('hud'), trak = $('trak'), zavihki = $('zavihki'), hitri = $('hitri'), opis = $('opis'), meni = $('meni');
 const BARVA_ROBA = new THREE.Color(0x353a42);   // temno siva (ne črna) kot v Fusionu: gosti robovi drobnih kosov ne počrnijo
+// robovi kosa v njegovi barvi (posnetek `robBarva` iz FreeCAD-ove LineColor, npr. laminat: stiki plošč komaj vidni), sicer skupna
+function barvaRobov(o) { return o && o.robBarva ? new THREE.Color(o.robBarva[0], o.robBarva[1], o.robBarva[2]) : BARVA_ROBA; }
 const BARVA_IZBIRE = new THREE.Color(0x1e88e5);
 const BARVA_IZBIRE_ROBA = new THREE.Color(0x0d47a1);
 const VELIKIH_NA_SKUPINO = 2;   // kot v SolidWorksu: prvi ukazi skupine veliki, ostali majhni v stolpcih po tri
@@ -3346,7 +3348,8 @@ function zgradiObjekt(o) {
     const geo = new THREE.BufferGeometry();
     geo.setAttribute('position', new THREE.Float32BufferAttribute(o.robTocke, 3));
     const barve = new Float32Array(o.robTocke.length);
-    for (let i = 0; i < barve.length; i += 3) { barve[i] = BARVA_ROBA.r; barve[i + 1] = BARVA_ROBA.g; barve[i + 2] = BARVA_ROBA.b; }
+    const rb = barvaRobov(o);
+    for (let i = 0; i < barve.length; i += 3) { barve[i] = rb.r; barve[i + 1] = rb.g; barve[i + 2] = rb.b; }
     geo.setAttribute('color', new THREE.BufferAttribute(barve, 3));
     crte = new THREE.LineSegments(geo, materialRobov);
     crte.userData = { objekt: o.ime, robovi: o.robovi };
@@ -4757,7 +4760,7 @@ function oznaciIzbiro(izbira) {
   stanje.izbira = izbira || [];
   for (const z of objekti.values()) {
     if (z.mesh) { z.mesh.geometry.attributes.color.array.set(z.mesh.userData.osnovneBarve); z.mesh.geometry.attributes.color.needsUpdate = true; }
-    if (z.crte) { const a = z.crte.geometry.attributes.color.array; for (let i = 0; i < a.length; i += 3) { a[i] = BARVA_ROBA.r; a[i + 1] = BARVA_ROBA.g; a[i + 2] = BARVA_ROBA.b; } z.crte.geometry.attributes.color.needsUpdate = true; }
+    if (z.crte) { const a = z.crte.geometry.attributes.color.array, rb = barvaRobov(z.podatki); for (let i = 0; i < a.length; i += 3) { a[i] = rb.r; a[i + 1] = rb.g; a[i + 2] = rb.b; } z.crte.geometry.attributes.color.needsUpdate = true; }
   }
   for (const s of stanje.izbira) {
     const z = objekti.get(s.objekt); if (!z) continue;

@@ -904,6 +904,18 @@ def _z3(v):
     return (round(v.x, 3), round(v.y, 3), round(v.z, 3))
 
 
+def _barva_robov(obj):
+    """[r, g, b] robov kosa iz ViewObject.LineColor, če je uporabnik robove posvetlil (laminat: stiki plošč komaj vidni);
+    None pri privzeti temni barvi (brskalnik riše skupno temno sivo)."""
+    try:
+        c = obj.ViewObject.LineColor
+    except Exception:  # noqa: BLE001
+        return None
+    if c is None or max(c[:3]) < 0.2:
+        return None
+    return [round(float(x), 3) for x in c[:3]]
+
+
 def _geometrija(obj, faktor=1.0):
     """Posnetek enega objekta: teselirane ploskve (Face{i+1}) in diskretizirani robovi (Edge{j+1}).
 
@@ -971,7 +983,7 @@ def _geometrija(obj, faktor=1.0):
         robovi.append([zacetek, max(len(pts) - 1, 0)])
         rob_info.append(_rob_info(rob, pretvori))
 
-    return {
+    izid = {
         "ime": obj.Name,
         "oznaka": obj.Label,
         "tocke": tocke,
@@ -981,6 +993,10 @@ def _geometrija(obj, faktor=1.0):
         "robovi": robovi,
         "robInfo": rob_info,
     }
+    rob_barva = _barva_robov(obj)
+    if rob_barva:
+        izid["robBarva"] = rob_barva
+    return izid
 
 
 # Predpomnilnik posnetkov objektov: (ime dokumenta, ime objekta) -> (ključ, posnetek). Ključ zajame vse, od
@@ -1035,7 +1051,8 @@ def _geometrija_kljuc(obj):
     except Exception:  # noqa: BLE001
         globalna = oblika.Placement
     barve = videz.kljuc_videza(obj, _barve)   # videz vseh kosov (pri sestavu tudi kosov v drugih datotekah)
-    return (_kljuc_oblike(obj), _lega_kljuc(oblika.Placement), _lega_kljuc(globalna), obj.Label, barve)
+    return (_kljuc_oblike(obj), _lega_kljuc(oblika.Placement), _lega_kljuc(globalna), obj.Label, barve,
+            tuple(_barva_robov(obj) or ()))
 
 
 def _geometrija_predpomnjena(doc, obj):
@@ -3780,7 +3797,8 @@ def _videz_kljuc(doc):
             barve = tuple(tuple(m.DiffuseColor[:3]) for m in vo.ShapeAppearance) if hasattr(vo, "ShapeAppearance") else ()
         except Exception:  # noqa: BLE001
             barve = ()
-        odtis.append((obj.Name, bool(getattr(vo, "Visibility", True)), getattr(vo, "Transparency", 0), barve))
+        odtis.append((obj.Name, bool(getattr(vo, "Visibility", True)), getattr(vo, "Transparency", 0), barve,
+                      tuple(_barva_robov(obj) or ())))
     return (doc.Name, tuple(odtis))
 
 
