@@ -694,6 +694,18 @@
   #pogledi .gumb.aktiven svg .poudarjeno { fill: #fff; opacity: .5; }
   #pogledi .gumb svg .skrito { stroke-dasharray: 1.6 1.8; opacity: .45; }
   #mere { position: absolute; inset: 0; pointer-events: none; overflow: hidden; }
+  /* Preklop dokumenta (2026-10-19): od klika v seznamu do izrisa modela okno sredi pogleda pove, kaj se odpira, koliko časa
+     že čaka in na kaj čaka FreeCAD (polje zaseda iz /stanje: mreženje kosa, orodje AI druge seje ...) */
+  #preklop { position: absolute; left: 50%; top: 42%; transform: translate(-50%, -50%); z-index: 6; pointer-events: none;
+             background: var(--steklo); backdrop-filter: blur(8px); border: 1px solid var(--crta); border-radius: 12px; box-shadow: var(--senca2);
+             padding: 12px 18px; min-width: 240px; max-width: min(460px, 90%); text-align: center; font-variant-numeric: tabular-nums; }
+  #preklop .naslov { display: flex; align-items: center; justify-content: center; gap: 8px; font-weight: 600; color: var(--besedilo); }
+  #preklop .naslov::before { content: ''; flex: none; width: 14px; height: 14px; border-radius: 50%; border: 2px solid #c7d7f1;
+                             border-top-color: var(--poudarek); animation: odpiramVrti .8s linear infinite; }
+  #preklop .faza { margin-top: 4px; color: var(--besedilo2); font-size: 12px; }
+  #preklop .zaseda { margin-top: 6px; color: #8a4b00; font-size: 12px; }
+  #preklop .zaseda:empty { display: none; }
+  #preklop.skrit { display: none; }
   /* Meritve (2026-10-13): oznake metra in najkrajše razdalje izbire nad pogledom, pripenjalni znaki kot v SolidWorksu */
   #meritve { position: absolute; inset: 0; pointer-events: none; overflow: hidden; z-index: 4; }
   .meritev { position: absolute; transform: translate(-50%, -50%); background: rgba(255,255,255,.95); border: 1px solid #b7c3d3; border-radius: 6px;
@@ -995,6 +1007,7 @@
   <button type="button" id="stranskiPokazi" class="skrit" title="Pokaže stranski meni z odprtimi dokumenti in drevesom">&#9654; Dokumenti in drevo</button>
   <div id="pogledi" title="Standardni pogledi (tudi tipke 1–8 ali preslednica)"></div>
   <div id="mere"></div>
+  <div id="preklop" class="skrit"><div class="naslov"></div><div class="faza"></div><div class="zaseda"></div></div>
   <div id="meritve"><div id="pripenjanjeMeter" class="pripenjanje skrit"></div></div>
   <div id="pripenjanjeNapis" class="skrit"></div>
   <div id="pasica" class="skrit"><span id="pasicaBesedilo"></span><button id="pasicaGumb" type="button">Pokaži FreeCAD</button></div>
@@ -2244,21 +2257,62 @@ function vnosDatoteke(d, odprti, vProjektu) {
   else if (odpiram && odpiram.pot === d.pot) { v.classList.add('odpiram'); pod.append(cipVnosa('odpiram', 'Odpiram …')); }
   b.append(pod); v.append(b);
   v.addEventListener('click', () => {
-    if (odprt) { projektDejanje({ dejanje: 'aktiviraj', ime: odprt.ime, pot: d.pot }); return; }
+    if (odprt) { zacniPreklop({ ime: odprt.ime, oznaka: odprt.oznaka, pot: d.pot }); projektDejanje({ dejanje: 'aktiviraj', ime: odprt.ime, pot: d.pot }); return; }
     // Strežnik odpre datoteko na glavni niti in takoj odgovori; velik sestav s povezanimi deli se nalaga desetine
     // sekund. Do novega seznama odprtih (ali največ 3 min) vrstica kaže »Odpiram …«.
     if (odpiram) clearTimeout(odpiram.casovnik);
     odpiram = { pot: d.pot, casovnik: setTimeout(() => { odpiram = null; narisiOdprteDokumente(); }, 180000) };
-    narisiOdprteDokumente();
+    zacniPreklop({ pot: d.pot, oznaka: d.ime });
     projektDejanje({ dejanje: 'odpri', pot: d.pot });
   });
   if (vOblaku(d.pot)) { const dej = el('div', 'dejanja'); dej.append(gumbRazlicic(d.pot, d.ime)); v.append(dej); }
   return v;
 }
 let odpiram = null;   // {pot, casovnik}: datoteka, ki jo strežnik ravno odpira
+// Preklop dokumenta (2026-10-19): od klika na dokument ali datoteko do izrisa modela okno sredi pogleda šteje sekunde in pove,
+// na kaj FreeCAD čaka (/stanje, polje zaseda: mreženje kosa, orodje AI druge seje …). Preklop na predpomnjen model se konča
+// prej, kot se okno pokaže (0,4 s). Konec: naloziModel nariše ta dokument (ali po 5 min).
+let preklop = null;   // {ime, pot, oznaka, zacetek, zaseda, casovnik, prikaz}
+function zacniPreklop(p) {
+  if (p.oznaka && p.oznaka === stanje.dokument) return;   // že prikazan
+  koncajPreklop();
+  preklop = { ...p, zacetek: performance.now(), zaseda: null };
+  preklop.casovnik = setInterval(osveziPreklop, 1000);
+  preklop.prikaz = setTimeout(() => { if (preklop) { $('preklop').classList.remove('skrit'); osveziPreklop(); } }, 400);
+  narisiOdprteDokumente();
+}
+function koncajPreklop() {
+  if (!preklop) return;
+  clearInterval(preklop.casovnik); clearTimeout(preklop.prikaz); preklop = null;
+  $('preklop').classList.add('skrit');
+  narisiOdprteDokumente();
+}
+function jePreklopNa(oznaka) {
+  if (!preklop) return false;
+  if (preklop.oznaka === oznaka) return true;
+  const o = ((stanje.projekti && stanje.projekti.odprti) || []).find(o => o.oznaka === oznaka);
+  return !!o && (o.ime === preklop.ime || (!!preklop.pot && !!o.pot && o.pot.toLowerCase() === preklop.pot.toLowerCase()));
+}
+async function osveziPreklop() {
+  const p = preklop; if (!p) return;
+  const s = (performance.now() - p.zacetek) / 1000;
+  if (s > 300) { koncajPreklop(); return; }
+  const okno = $('preklop');
+  okno.querySelector('.naslov').textContent = 'Odpiram »' + p.oznaka + '«';
+  okno.querySelector('.faza').textContent = 'Čakam na FreeCAD · ' + Math.round(s) + ' s';
+  const z = p.zaseda, tuje = z && /^(orodje AI|ukaz|skripta)/.test(z.kaj);
+  okno.querySelector('.zaseda').textContent = z && z.kaj && z.s >= 1
+    ? (tuje ? 'FreeCAD je zaseden: ' : 'FreeCAD: ') + z.kaj + ' (' + Math.round(z.s) + ' s)' + (tuje ? ' – klik pride na vrsto, ko konča' : '') : '';
+  if (s < 0.9) return;
+  try {
+    const st = await (await fetch('/stanje', { cache: 'no-store' })).json();
+    if (preklop === p) p.zaseda = st.zaseda || null;
+  } catch (e) { /* strežnik zaseden ali nedosegljiv: ostane zadnje */ }
+}
 function narisiProjekte(p) {
   stanje.projekti = p;
   if (odpiram && (p.odprti || []).some(o => o.pot && o.pot.toLowerCase() === odpiram.pot.toLowerCase())) { clearTimeout(odpiram.casovnik); odpiram = null; }
+  if (preklop && stanje.dokument && jePreklopNa(stanje.dokument)) koncajPreklop();   // model je prišel pred seznamom odprtih
   setTimeout(() => izrisiSliciceDokumentov().catch(e => console.warn(e)), 2000);
   nacrtujSlicico();   // pot aktivnega dokumenta je zdaj znana (ob prvem nalaganju še ni bila)
   narisiOdprteDokumente();
@@ -2581,8 +2635,9 @@ function vnosOdprtega(o, q) {
     z.title = (moj ? 'Zaklenil si ti' : 'Zaklenil ' + kdo) + (naprava ? ' z naprave ' + naprava : '') + ' · od ' + datumRazlicice(o.zaklep.since) + (moj ? '' : '\nOdprto le za ogled: tvoje shranjene spremembe bodo v oblaku nasprotujoča kopija.');
     pod.append(z);
   }
+  if (preklop && preklop.ime === o.ime) { v.classList.add('odpiram'); pod.append(cipVnosa('odpiram', 'Odpiram …')); }
   b.append(pod); v.append(b);
-  v.addEventListener('click', () => projektDejanje({ dejanje: 'aktiviraj', ime: o.ime }));
+  v.addEventListener('click', () => { zacniPreklop({ ime: o.ime, oznaka: o.oznaka, pot: o.pot }); projektDejanje({ dejanje: 'aktiviraj', ime: o.ime }); });
   const dej = el('div', 'dejanja');
   if (vOblaku(o.pot)) dej.append(gumbRazlicic(o.pot, o.oznaka));
   if (o.vrsta === 'sestav') dej.append(gumbVnosa('', 'shema', 'Zgradba: drevesna shema sestava »' + o.oznaka + '«', () => odpriZgradbo(o.ime, o.oznaka)));
@@ -2598,7 +2653,10 @@ $('dokumentiIskanje').addEventListener('input', e => { dokumentiIskanje = e.targ
 $('dokumentiIskanje').addEventListener('keydown', e => {
   e.stopPropagation();   // tipke iskanja niso bližnjice pogleda
   if (e.key === 'Escape') { e.target.value = ''; dokumentiIskanje = ''; narisiOdprteDokumente(); e.target.blur(); }
-  if (e.key === 'Enter' && prviNajdeniDokument) projektDejanje({ dejanje: 'aktiviraj', ime: prviNajdeniDokument.ime });
+  if (e.key === 'Enter' && prviNajdeniDokument) {
+    const o = prviNajdeniDokument; zacniPreklop({ ime: o.ime, oznaka: o.oznaka, pot: o.pot });
+    projektDejanje({ dejanje: 'aktiviraj', ime: o.ime });
+  }
   else if (e.key === 'Enter' && prvaNajdenaDatoteka) projektDejanje({ dejanje: 'odpri', pot: prvaNajdenaDatoteka.pot });
 });
 
@@ -3450,6 +3508,10 @@ async function naloziModel() {
   osveziHud();
   nacrtujSlicico();
   nacrtujSliciceVozlov();
+  if (jePreklopNa(model.dokument)) {
+    console.debug('preklop na »' + model.dokument + '«: ' + Math.round(performance.now() - preklop.zacetek) + ' ms od klika');
+    koncajPreklop();
+  }
   console.debug('naloziModel ' + model.verzija + ': ' + (delno ? 'delni, ' + model.objekti.length + '/' + objekti.size : 'cel, ' + objekti.size)
     + ' objektov, ' + Math.round(performance.now() - zacetek) + ' ms');
 }

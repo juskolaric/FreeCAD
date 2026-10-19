@@ -62,6 +62,7 @@ ODMIK_ROBOV = 0.05        # mm, diskretizacija robov (najmanj)
 RELATIVNA_PLOSKEV = 0.0005   # delež diagonale objekta: sestav 2 m -> 1 mm (sicer 190 MB posnetka in 35 s gradnje)
 RELATIVNI_ROB = 0.00025
 PRORACUN_TOCK = 150000       # na objekt: gostejša mreža (npr. uvožen hladilnik s 4200 ploskvami) se naredi grobje
+KOT_UKRIVLJENIH = 0.2        # rad, kotni odklon mreže ploskev BSpline (kabli, uvoženi kosi); glej _predmrezi_ukrivljene
 MIROVANJE_OGREVANJA = 3.0    # s brez zahtev iz brskalnika, preden strežnik vnaprej pripravlja posnetke (Stanje.ogrej)
 
 
@@ -988,13 +989,39 @@ def _geometrija(obj, faktor=1.0):
     return izid
 
 
+_UKRIVLJENE = ("BSplineSurface", "BezierSurface", "SurfaceOfExtrusion", "SurfaceOfRevolution", "OffsetSurface")
+
+
+def _predmrezi_ukrivljene(oblika, toleranca, pobrisi):
+    """Ploskve BSpline (kabli dodatka Cables, uvoženi kosi) zmreži vnaprej s kotnim odklonom KOT_UKRIVLJENIH. Shape.tessellate
+    ima trdo 0,1 rad (TopoShape.cpp, defaultAngularDeflection): na kablu dolžine 3,6 m (BSpline s 101 vozlom) to da 316 000
+    točk v 70 s na glavni niti, z 0,2 rad 39 000 točk v 0,4 s (2026-10-19, SPOT - Kabli). Ostale ploskve se mrežijo kot
+    prej (vzporedno), ukrivljene nato z MeshPart (BRepMesh na istih TFace), zato kasnejši tessellate mrežo le prebere.
+    Vrne novo vrednost `pobrisi` (False, ko je mreža narejena)."""
+    try:
+        ukrivljene, ostale = [], []
+        for f in oblika.Faces:
+            (ukrivljene if type(f.Surface).__name__ in _UKRIVLJENE else ostale).append(f)
+        if not ukrivljene:
+            return pobrisi
+        import MeshPart
+        import Part
+        if ostale:
+            Part.makeCompound(ostale).tessellate(toleranca, pobrisi)
+        MeshPart.meshFromShape(Shape=Part.makeCompound(ukrivljene), LinearDeflection=toleranca,
+                               AngularDeflection=KOT_UKRIVLJENIH, Relative=False)
+        return False
+    except Exception:  # noqa: BLE001
+        return pobrisi
+
+
 def _geometrija_cele_oblike(oblika, pretvori, toleranca, odmik_robov, faktor):
     """Jedro posnetka iz cele oblike (en kos; sestav le, ko ga kosi ne pokrijejo): (tocke, trikotniki, ploskve
     [[zacetek točk, točk, zacetek trikotnikov, trikotnikov]], robTocke, robovi, robInfo) v globalnih koordinatah
     ali "prevec", ko je proračun točk presežen (klicatelj mreži znova, trikrat grobje)."""
     tocke, trikotniki, ploskve = [], [], []
     # grobejša mreža velikih objektov: obstoječo finejšo mrežo je treba pobrisati (OCC jo sicer ohrani)
-    pobrisi = toleranca > TOLERANCA_PLOSKEV + 1e-9
+    pobrisi = _predmrezi_ukrivljene(oblika, toleranca, toleranca > TOLERANCA_PLOSKEV + 1e-9)
     try:
         # Vse ploskve naenkrat: OCC jih mreži vzporedno (BRepMesh_IncrementalMesh, isInParallel), branje po
         # ploskvah spodaj mrežo le prebere. Mreženje ploskev eno po eno je teklo na enem jedru (2x počasneje).
@@ -1117,6 +1144,7 @@ def _mreza_lista(kos, oblika, odtis, toleranca, odmik_robov):
             return vnos
         _MREZE_LISTOV_STANJE["bajtov"] -= vnos["bajtov"]
     pobrisi = toleranca > TOLERANCA_PLOSKEV + 1e-9   # grobejša mreža: obstoječo finejšo je treba pobrisati (OCC jo ohrani)
+    pobrisi = _predmrezi_ukrivljene(oblika, toleranca, pobrisi)
     try:
         oblika.tessellate(toleranca, pobrisi)   # vse ploskve naenkrat (vzporedno); branje spodaj mrežo le prebere
         pobrisi = False
@@ -1323,12 +1351,53 @@ def _geometrija_predpomnjena(doc, obj):
     if vnos is not None and vnos[0] == kljuc:
         return vnos[1], True
     zacetek = time.time()
-    posnetek = json.dumps(_geometrija(obj), separators=(",", ":"))
+    prej = _zaseda("mrežim »%s« (%s)" % (obj.Label, doc.Label))
+    try:
+        posnetek = json.dumps(_geometrija(obj), separators=(",", ":"))
+    finally:
+        _GLAVNA[0] = prej
     _PREDPOMNILNIK[(doc.Name, obj.Name)] = (kljuc, posnetek)
     if vnos is not None:
         _log("posnetek: »%s« znova, %.1f s, %.0f kB (ključ: %s)"
              % (obj.Label, time.time() - zacetek, len(posnetek) / 1024.0, _razlika_kljuca(vnos[0], kljuc)))
     return posnetek, False
+
+
+# Kaj glavna nit ravno dela (opis, začetek): nit strežnika to vrne v /stanje (polje zaseda), brskalnik pa ob čakanju na
+# preklop dokumenta pokaže, na kaj čaka (mreženje kabla, orodje AI druge seje ...; 2026-10-19). En element seznama, ki se
+# zamenja v celoti, da nit strežnika nikoli ne prebere opisa enega dela z začetkom drugega.
+_GLAVNA = [("", 0.0)]
+
+
+def _zaseda(kaj):
+    """Zapiše, kaj glavna nit začenja, in vrne prejšnji zapis (klicatelj ga po koncu vrne v _GLAVNA[0])."""
+    prej = _GLAVNA[0]
+    _GLAVNA[0] = (kaj, time.time())
+    return prej
+
+
+def _opis_ukaza(ukaz, podatki):
+    if ukaz == "mcp":
+        fn = podatki.get("fn") if isinstance(podatki, dict) else None
+        ime = getattr(fn, "__qualname__", "").split(".")[0]
+        # mcp_orodja.izvedi pošlje lambdo, ki zapre opis orodja {"fn": t_python, ...}: ime orodja je ime te funkcije
+        for celica in getattr(fn, "__closure__", None) or ():
+            try:
+                v = celica.cell_contents
+            except ValueError:
+                continue
+            if isinstance(v, dict) and callable(v.get("fn")):
+                ime = v["fn"].__name__
+                break
+        return "orodje AI »%s«" % (ime[2:] if ime.startswith("t_") else ime or "?")
+    return {"projekt": "odpiranje dokumenta", "posnetek": "sličica dokumenta", "okolje": "nalaganje okolja",
+            "python": "skripta Python (izvedi.py)"}.get(
+        ukaz, "ukaz »%s«" % ukaz)
+
+
+def _zasedenost():
+    kaj, od = _GLAVNA[0]
+    return {"kaj": kaj, "s": round(time.time() - od, 1)} if kaj else None
 
 
 def _pozabi_geometrijo(ime_dokumenta, ime_objekta=None):
@@ -3465,6 +3534,7 @@ class Stanje:
             "napaka": self.napaka,
             "obrazec": self.obrazec is not None,
             "projektov": sum(len(s["datoteke"]) for s in json.loads(self._projekti)["skupine"]),
+            "zaseda": _zasedenost(),   # kaj glavna nit ravno dela (brskalnik ob čakanju na preklop dokumenta)
         }
 
     # -- glavna nit --
@@ -3483,6 +3553,7 @@ class Stanje:
                     break
             else:
                 self.zadnja_zahteva = time.time()
+            prej = _zaseda(_opis_ukaza(ukaz, podatki))
             try:
                 self._izvedi(ukaz, podatki, odgovor)
             except Exception:  # noqa: BLE001
@@ -3490,6 +3561,8 @@ class Stanje:
                 _log("napaka pri ukazu %s: %s" % (ukaz, self.napaka))
                 if odgovor is not None:
                     odgovor["napaka"] = self.napaka
+            finally:
+                _GLAVNA[0] = prej
             if odgovor is not None:
                 odgovor["konec"].set()
         zdaj = time.time()
@@ -3520,7 +3593,11 @@ class Stanje:
             except Exception:  # noqa: BLE001
                 _log("videz: %s" % traceback.format_exc())
         if self.umazano and zdaj - self.zadnja_gradnja > 0.3:
-            self.zgradi()
+            prej = _zaseda("priprava pogleda dokumenta")
+            try:
+                self.zgradi()
+            finally:
+                _GLAVNA[0] = prej
         if zdaj - self.zadnji_projekti > 2.0:
             self.zadnji_projekti = zdaj
             try:
