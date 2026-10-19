@@ -111,11 +111,15 @@ class Razgrnitev:
 
     @staticmethod
     def korenska_ploskev(oblika):
-        kandidati = [(k, f) for k, f in enumerate(oblika.Faces, 1)
-                     if f.Surface.TypeId == "Part::GeomPlane" and f.normalAt(0, 0).z > 0.99]
-        if not kandidati:
-            kandidati = [(k, f) for k, f in enumerate(oblika.Faces, 1) if f.Surface.TypeId == "Part::GeomPlane"]
-        return "Face%d" % max(kandidati, key=lambda t: t[1].Area)[0]
+        """Izhodiščna ploskev razgrnitve: največja ravna ploskev kosa. Prednost ima ploskev z normalo +Z (kos, ki leži
+        plosko, se razgrne iz zgornje ploskve), a le, če ni bistveno manjša od največje: pri kosih, ki stojijo pokonci
+        (kotniki, nosilci), je največja ploskev z normalo +Z pogosto ploskev debeline in razgrnitev iz nje pade
+        (»Wire is not closed«)."""
+        ravne = [(k, f) for k, f in enumerate(oblika.Faces, 1) if f.Surface.TypeId == "Part::GeomPlane"]
+        najvecja = max(ravne, key=lambda t: t[1].Area)
+        zgoraj = [t for t in ravne if t[1].normalAt(0, 0).z > 0.99 and t[1].Area >= 0.5 * najvecja[1].Area]
+        izbrana = max(zgoraj, key=lambda t: t[1].Area) if zgoraj else najvecja
+        return "Face%d" % izbrana[0]
 
     def execute(self, obj):
         if obj.Kos is None or obj.Kos.Shape.isNull():
@@ -123,14 +127,22 @@ class Razgrnitev:
         _sheetmetal_na_poti()
         from SheetMetalNewUnfolder import BendAllowanceCalculator, getUnfold
         bac = BendAllowanceCalculator.from_single_value(obj.KFaktor, obj.Standard.lower())
-        _koren, ravno, _pregibi, _normala, _info = getUnfold(bac, obj.Kos, self.korenska_ploskev(obj.Kos.Shape))
+        koren = self.korenska_ploskev(obj.Kos.Shape)
+        _koren, ravno, _pregibi, normala, _info = getUnfold(bac, obj.Kos, koren)
+        # razgrnjena ploskev ne leži nujno v ravnini izhodiščne ploskve; njeno normalo vrne razgrnjevalnik
+        normala = App.Vector(normala) if normala is not None else obj.Kos.Shape.getElement(koren).normalAt(0, 0)
+        zasuk = App.Rotation()
+        if abs(normala.z) < 0.99:   # razgrnjevalnik vrne ploskev pokonci: položi jo vodoravno
+            zasuk = App.Rotation(normala, App.Vector(0, 0, 1))
+        # zasuk in premik gresta v lego objekta (`transformed` zasuk zapiše le v lego oblike, ki jo prirejanje
+        # obj.Placement spodaj prepiše); okvir za premik se vzame z zasukane oblike
         premik = App.Vector()
         if obj.ObStrani:   # desno od kosa, na višini dna, da se ne prekrivata
-            k, r = obj.Kos.Shape.BoundBox, ravno.BoundBox
+            k = obj.Kos.Shape.BoundBox
+            r = ravno.transformed(App.Placement(App.Vector(), zasuk).toMatrix()).BoundBox
             premik = App.Vector(k.XMax + obj.Razmik.Value - r.XMin, (k.YMin + k.YMax - r.YMin - r.YMax) / 2, k.ZMin - r.ZMin)
         obj.Shape = ravno
-        # premik gre v lego objekta: lego oblike Part::FeaturePython po izračunu nastavi na obj.Placement
-        nova = App.Placement(premik, App.Rotation())
+        nova = App.Placement(premik, zasuk)
         if not obj.Placement.isSame(nova, 1e-7):   # le ob spremembi, sicer bi se objekt sam označil kot spremenjen
             obj.Placement = nova
 
