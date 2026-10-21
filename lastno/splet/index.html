@@ -687,6 +687,12 @@
   #pogledi .gumb.aktiven:hover { background: var(--poudarekTemen); }
   #pogledi .locilo { width: 1px; align-self: stretch; background: rgba(15,23,42,.1); margin: 5px 4px; }
   #pogledi input[type=range] { width: 90px; margin: 0 6px; accent-color: var(--poudarek); }
+  /* Prerez: kontrole se pokažejo ob vključenem prerezu (osveziKontrolePrereza) */
+  #prerezKontrole { display: inline-flex; align-items: center; gap: 2px; margin-left: 2px; }
+  #prerezKontrole.skrit { display: none; }
+  #prerezKontrole .gumb { padding: 0 7px; }
+  #prerezKontrole input[type=range] { width: 120px; }
+  #prerezMera { font-size: 11.5px; color: #334155; font-variant-numeric: tabular-nums; min-width: 92px; white-space: nowrap; }
   /* Ikone gumbov (zgradiVrsticoPogledov): kocka z obarvano ploskvijo pogleda, skriti robovi črtkani */
   #pogledi .gumb.ikona { width: 30px; height: 30px; padding: 0; display: inline-flex; align-items: center; justify-content: center; }
   #pogledi .gumb svg { width: 20px; height: 20px; display: block; overflow: visible; }
@@ -1158,6 +1164,8 @@ import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 import { ao } from 'three/addons/tsl/display/GTAONode.js';
 import { pass, mrt, normalView, screenUV, color, mix, smoothstep, uniform, vec4, vec3, attribute, positionLocal, mx_noise_float, clamp, fract, pow } from 'three/tsl';
 import { positionWorld, normalLocal, modelWorldMatrix, dot, step, float } from 'three/tsl';   // lega za tisk (previsi)
+import { faceDirection, vertexColor, screenCoordinate, texture, materialOpacity, vec2, min, max, floor, abs } from 'three/tsl';   // prerez: šrafirane prerezane ploskve
+import { positionView, cameraNear, cameraFar, cameraProjectionMatrix, viewZToOrthographicDepth, viewZToPerspectiveDepth, select } from 'three/tsl';   // prerez: prednost v globini
 
 let ZETON = '__ZETON__';
 const $ = id => document.getElementById(id);
@@ -3328,6 +3336,135 @@ scene.add(new THREE.AxesHelper(20));
 // (kovinskost >= 0,5) svoj material z močnejšim okoljem (skupine geometrije, zgradiObjekt).
 // Les (vzorec 1): vzporedne letnice (plast po Y in Z, zvite s šumom, vlakna vzdolž X), temnejši pozni les na koncu
 // vsake letnice in drobne pore; vse iz koordinat modela (mm), brez slikovne teksture.
+// Prerez (2026-10-19): model (koren) je v skupini z ravnino reza; skupina je vključena le ob prerezu (razdelek »Prerez«).
+const prerezSkupina = new THREE.ClippingGroup(); prerezSkupina.enabled = false; scene.add(prerezSkupina);
+const prerezVklop = uniform(0);
+// 1 = zadnja stran ploskve ob vključenem prerezu (ploskev prereza); material jo šrafira, senčenje v kotih je izpusti
+const prerezZadaj = prerezVklop.mul(faceDirection.mul(-0.5).add(0.5));
+const prerezMerilo = uniform(renderer.getPixelRatio());   // slikovne pike izrisa na CSS piko (renderer.getPixelRatio), da je šrafura enako gosta povsod
+// Maska prereza (2026-10-20): pred vsakim izrisom pogleda z vključenim prerezom se ploskve modela narišejo še enkrat v
+// `prerezCilj`: rdeča 1 = najbližja ploskev na tej piki je zadnja stran = rez (0 = zunanja ploskev ali ozadje), zelena in
+// modra = številka telesa (atribut `kos`, 16 bitov). Robovi na piki z rezom so robovi notranjosti za ravnino in se ne
+// rišejo; ploskev prereza dobi črno obrobo, kjer se rez konča ali se začne drugo telo.
+const prerezCilj = new THREE.RenderTarget(1, 1, { depthBuffer: true, minFilter: THREE.NearestFilter, magFilter: THREE.NearestFilter });
+const prerezMaskaTekst = texture(prerezCilj.texture);
+const prerezTexel = uniform(new THREE.Vector2(1, 1));   // velikost ene pike maske v UV
+const prerezVzorec = (zamik) => prerezMaskaTekst.sample(zamik ? screenUV.add(zamik.mul(prerezTexel)) : screenUV);
+const prerezMaska = (zamik) => prerezVzorec(zamik).r;
+const prerezKos = floor(attribute('kos', 'float').add(0.5));   // številka telesa (1..65535), 0 = še ni označena
+const prerezKodaKosa = vec2(floor(prerezKos.div(256)), prerezKos.sub(floor(prerezKos.div(256)).mul(256))).div(255);
+// Material maske se za čas izrisa maske zamenja na samih kosih (ne scene.overrideMaterial): tako kose reže ista
+// ClippingGroup kot pri pravem izrisu. Z nadomestnim materialom in lastno ravnino (do 21. 10.) je maska kazala odrezano
+// polovico, zato so se robovi skrivali in obroba nastajala na napačnih mestih (na navpični palici se to ni videlo).
+const materialMaskePrereza = new THREE.MeshBasicNodeMaterial({ side: THREE.DoubleSide });
+materialMaskePrereza.colorNode = vec3(faceDirection.mul(-0.5).add(0.5), prerezKodaKosa.x, prerezKodaKosa.y);
+// Prednost ploskve prereza v globini (2026-10-21): kjer se kosa dotikata (ležaj v izvrtini glave), zadnja stran enega leži na
+// sprednji strani drugega. Mreži sta teselirani vsaka zase (v sestavu ~0,05 % diagonale, SPOT ~1 mm), zato sta se v prerezu
+// izmenjevali v progah (sivi pasovi čez ležaj). Ob prerezu se zadnja stran v globini primakne kameri za `prerezPrednost` mm,
+// zato zmaga ploskev prereza. Globina se piše le ob prerezu (`zagotoviGlobinoPrereza`): pisanje globine izklopi polygonOffset,
+// robovi pa se ob prerezu tako ali tako ne rišejo. Ista globina gre v masko, da se obroba ujema s prikazom.
+const prerezPrednost = uniform(0.2);
+const globinaPrereza = (() => {
+  const vz = positionView.z.add(prerezPrednost.mul(prerezZadaj));
+  return select(cameraProjectionMatrix.element(3).w.greaterThan(0.5),
+    viewZToOrthographicDepth(vz, cameraNear, cameraFar), viewZToPerspectiveDepth(vz, cameraNear, cameraFar));
+})();
+function zagotoviGlobinoPrereza(material, vklop) {
+  for (const m of Array.isArray(material) ? material : [material]) {
+    if (!m || (m.depthNode === globinaPrereza) === vklop) continue;
+    m.depthNode = vklop ? globinaPrereza : null; m.needsUpdate = true;
+  }
+}
+materialMaskePrereza.depthNode = globinaPrereza;
+const _zamenjaniMateriali = [];
+const _velikostMaske = new THREE.Vector2(), _barvaCiscenja = new THREE.Color(), _plastiKamere = new THREE.Layers();
+// Telesa za prerez: ploskve objekta posnetka, ki si delijo oglišča (isti teselirani rob), so isto telo (unija-najdi po
+// legah oglišč, zaokroženih na 0,01 mm). Vsako telo dobi številko iz imena objekta in zaporedja telesa — tako ima vsak
+// kos sestava, tudi znotraj povezave na podsestav, na prerezu svojo barvo in smer šrafure (kot Fusion: barva po kosih).
+function oznaciTelesaZaPrerez() {
+  koren.traverse(n => {
+    const a = n.isMesh && n.geometry.attributes.kos;
+    if (!a || n.userData.telesaPrereza || !n.userData.ploskve) return;
+    n.userData.telesaPrereza = true;
+    const ploskve = n.userData.ploskve, poz = n.geometry.attributes.position.array, stars = ploskve.map((_, i) => i);
+    const koren_ = i => { while (stars[i] !== i) i = stars[i] = stars[stars[i]]; return i; };
+    const tel = n.userData.telesa;
+    if (tel) {   // od 2026-10-21 telesa pove strežnik (število ploskev po telesih): stikajoči se kosi se ne zlijejo več
+      let z = 0;
+      for (const k of tel) { for (let i = z; i < z + k && i < stars.length; i++) stars[i] = z; z += k; }
+      for (let i = z; i < stars.length; i++) stars[i] = z;   // ploskve zunaj teles (lupine): eno telo
+    } else {   // starejši posnetek: telesa po skupnih legah oglišč
+      const prva = new Map();
+      ploskve.forEach((p, i) => {
+        for (let v = p[0]; v < p[0] + p[1]; v++) {
+          const k = Math.round(poz[3 * v] * 100) * 73856093 ^ Math.round(poz[3 * v + 1] * 100) * 19349663 ^ Math.round(poz[3 * v + 2] * 100) * 83492791;
+          const j = prva.get(k);
+          if (j === undefined) prva.set(k, i); else { const x = koren_(i), y = koren_(j); if (x !== y) stars[x] = y; }
+        }
+      });
+    }
+    let h = 2166136261;
+    for (const c of String(n.userData.objekt)) h = Math.imul(h ^ c.charCodeAt(0), 16777619);
+    // barva po obliki: površina in število oglišč telesa se z lego in zasukom ne spremenita, zato imajo enaki kosi
+    // (vsi vijaki iste vrste) isto barvo; številka `kos` ostane po primerku (obroba med dvema enakima kosoma)
+    const idx = n.geometry.index.array, povrsina = new Map(), oglisc = new Map();
+    const tr = (t, k) => poz[3 * idx[3 * t] + k];
+    ploskve.forEach((p, i) => {
+      const r = koren_(i);
+      let s = 0;
+      for (let t = p[2]; t < p[2] + p[3]; t++) {
+        const ax = tr(t, 0), ay = tr(t, 1), az = tr(t, 2), b = 3 * idx[3 * t + 1], c = 3 * idx[3 * t + 2];
+        const ux = poz[b] - ax, uy = poz[b + 1] - ay, uz = poz[b + 2] - az, vx = poz[c] - ax, vy = poz[c + 1] - ay, vz = poz[c + 2] - az;
+        s += Math.hypot(uy * vz - uz * vy, uz * vx - ux * vz, ux * vy - uy * vx) / 2;
+      }
+      povrsina.set(r, (povrsina.get(r) || 0) + s); oglisc.set(r, (oglisc.get(r) || 0) + p[1]);
+    });
+    const stevilke = new Map(), barvne = new Map(), b = n.geometry.attributes.kosBarva;
+    ploskve.forEach((p, i) => {
+      const r = koren_(i);
+      if (!stevilke.has(r)) {
+        stevilke.set(r, ((h >>> 0) + stevilke.size * 40503) % 65535 + 1);
+        let g = 2166136261;
+        for (const c of povrsina.get(r).toPrecision(4) + '/' + oglisc.get(r)) g = Math.imul(g ^ c.charCodeAt(0), 16777619);
+        barvne.set(r, (g >>> 0) % 65535 + 1);
+      }
+      a.array.fill(stevilke.get(r), p[0], p[0] + p[1]);
+      b.array.fill(barvne.get(r), p[0], p[0] + p[1]);
+    });
+    a.needsUpdate = true; b.needsUpdate = true;
+  });
+}
+function izrisiMaskoPrereza(kam) {
+  oznaciTelesaZaPrerez();
+  renderer.getDrawingBufferSize(_velikostMaske);
+  if (prerezCilj.width !== _velikostMaske.x || prerezCilj.height !== _velikostMaske.y) prerezCilj.setSize(_velikostMaske.x, _velikostMaske.y);
+  prerezTexel.value.set(1 / Math.max(_velikostMaske.x, 1), 1 / Math.max(_velikostMaske.y, 1));
+  const ozadje = scene.backgroundNode, alfa = renderer.getClearAlpha(), prejsnji = renderer.getRenderTarget();
+  renderer.getClearColor(_barvaCiscenja); _plastiKamere.mask = kam.layers.mask;
+  // prednost = 1,5 × največja toleranca teselacije v modelu (strežnik: 0,05 % diagonale objekta, najmanj 0,1 mm)
+  let toleranca = 0.1;
+  koren.traverse(n => {
+    if (!n.isMesh) return;
+    zagotoviGlobinoPrereza(n.material, true);
+    const g = n.geometry; if (!g.boundingSphere) g.computeBoundingSphere();
+    toleranca = Math.max(toleranca, g.boundingSphere.radius * 2 * 0.0005);
+    if (n.layers.test(plastiSencenja)) { _zamenjaniMateriali.push(n, n.material); n.material = materialMaskePrereza; }
+  });
+  prerezPrednost.value = 1.5 * toleranca;
+  scene.backgroundNode = null; kam.layers.mask = plastiSencenja.mask;
+  renderer.setClearColor(0x000000, 0); renderer.setRenderTarget(prerezCilj);
+  try { renderer.render(scene, kam); }
+  finally {
+    for (let i = 0; i < _zamenjaniMateriali.length; i += 2) _zamenjaniMateriali[i].material = _zamenjaniMateriali[i + 1];
+    _zamenjaniMateriali.length = 0;
+    renderer.setRenderTarget(prejsnji); renderer.setClearColor(_barvaCiscenja, alfa);
+    scene.backgroundNode = ozadje; kam.layers.mask = _plastiKamere.mask;
+  }
+}
+// normala: smer, vzdolž katere se reže (os ali normala izbrane ploskve); d = lega ravnine (normala · točka, mm);
+// ohrani se stran z manjšim d (obrni: z večjim); min/max = obseg modela vzdolž normale za drsnik
+const prerez = { vklop: false, os: 'Y', normala: new THREE.Vector3(0, 1, 0), d: 0, min: -1, max: 1, obrni: true, ravnina: new THREE.Plane() };
+prerezSkupina.clippingPlanes = [prerez.ravnina];
 const PRIVZETI_PBR = [0.15, 0.42, 0, 0];
 function narediMaterialPloskev(jakostOkolja) {
   const m = new THREE.MeshStandardNodeMaterial({ vertexColors: true, side: THREE.DoubleSide,
@@ -3341,16 +3478,41 @@ function narediMaterialPloskev(jakostOkolja) {
   const lise = mx_noise_float(p.mul(vec3(0.004, 0.03, 0.03)));   // širše svetlejše in temnejše lise
   const les = vec3(1).sub(pow(letnica, 4).mul(0.36)).add(pore.mul(0.045)).add(lise.mul(0.07));
   const jeLes = smoothstep(0.5, 0.6, pbr.w);
-  m.metalnessNode = pbr.x;
-  m.roughnessNode = clamp(pbr.y.add(zrno.mul(0.06)).add(pore.mul(0.08).mul(jeLes)), 0.03, 1);
-  m.colorNode = mix(vec3(1).add(zrno.mul(0.025)), les, jeLes);   // pomnoži barvo ploskve (vertexColors)
+  // Prerez: ravnina odreže del modela, skozi rez se vidi notranjost (zadnje strani ploskev). Te se ob vključenem prerezu
+  // narišejo kot ploskev prereza (2026-10-20, po zgledu Fusiona »color coded by component«, želja uporabnika: polne
+  // ploskve brez šrafure in brez črnega, enaki kosi iste barve, vidni robovi): ploskev brez senčenja v barvi oblike
+  // (odtenek iz `kosBarva`, pastelno), na robu reza in med telesi obroba ~2 CSS piki v temnem odtenku iste barve.
+  const zadaj = prerezZadaj;
+  const odtenek = fract(floor(attribute('kosBarva', 'float').add(0.5)).mul(0.618034));
+  const nasicena = clamp(abs(fract(vec3(odtenek).add(vec3(0, 2 / 3, 1 / 3))).mul(6).sub(3)).sub(1), 0, 1);
+  const podlaga = mix(vec3(1), nasicena, 0.55).mul(0.8);
+  // obroba: pika do 2 CSS piki stran ni rez ali je drugo telo (rob prereza ob zunanji ploskvi, luknji, ozadju, sosednjem kosu)
+  const drugo = (zamik) => {
+    const s = prerezVzorec(zamik);
+    return max(step(s.r, 0.5), step(0.5 / 255, abs(s.g.sub(prerezKodaKosa.x)).add(abs(s.b.sub(prerezKodaKosa.y)))));
+  };
+  const okoli = (r) => {
+    const z = prerezMerilo.mul(r), mz = z.negate();
+    return max(max(drugo(vec2(z, 0)), drugo(vec2(mz, 0))), max(drugo(vec2(0, z)), drugo(vec2(0, mz))));
+  };
+  // od 2026-10-21 ~3,5 CSS pike in temnejša (želja uporabnika: robovi prereza odebeljeni)
+  const obroba = max(max(okoli(1), okoli(2)), max(okoli(3), okoli(3.5)))
+    .mul(float(1).sub(drugo(null)));   // le telo, ki je v maski na tej piki (prosojni kosi niso v njej: brez obrobe)
+  const ploskev = mix(podlaga, podlaga.mul(0.15), obroba);
+  m.metalnessNode = mix(pbr.x, float(0), zadaj);
+  m.roughnessNode = mix(clamp(pbr.y.add(zrno.mul(0.06)).add(pore.mul(0.08).mul(jeLes)), 0.03, 1), float(1), zadaj);
+  m.colorNode = mix(mix(vec3(1).add(zrno.mul(0.025)), les, jeLes), vec3(0), zadaj);   // pomnoži barvo ploskve (vertexColors)
+  m.emissiveNode = ploskev.mul(zadaj);
   m.envMapIntensity = jakostOkolja;
   return m;
 }
 const materialPloskev = narediMaterialPloskev(1), materialKovine = narediMaterialPloskev(3.2);
 const MATERIALI_PLOSKEV = [materialPloskev, materialKovine];
-const materialRobov = new THREE.LineBasicMaterial({ vertexColors: true });
-
+const materialRobov = new THREE.LineBasicNodeMaterial({ vertexColors: true });
+// ob prerezu se robovi kosov ne rišejo (želja uporabnika 2026-10-21): vidne so le senčene ploskve in ploskve prereza
+// z obrobo (material ploskev); prej so se skrili le robovi na pikah z rezom, notranji robovi votlin so ostali
+materialRobov.opacityNode = materialOpacity.mul(float(1).sub(prerezVklop));
+materialRobov.alphaTest = 0.01;
 // --- senčenje v kotih (ambient occlusion, GTAO) ---------------------------------------------------
 // Predprehod nariše normale in globino ploskev, GTAO iz njiju izračuna zakritost, ta pa zatemni izris glavnega
 // prehoda. Polmer sledi vidni višini pogleda, zato je senčenje enako pri vsaki povečavi. Ena veriga na
@@ -3360,6 +3522,9 @@ try { senceneVklop = localStorage.getItem('sencenje') !== '0'; } catch (e) { /* 
 const verigeIzrisa = new Map(), mocSencenja = uniform(0.9);
 // predprehod vidi samo ploskve modela (plast 2, poleg običajne 0): mreža tal, osi in robovi bi sicer dobili temne obrobe
 const PLAST_SENCENJA = 2, plastiSencenja = new THREE.Layers(); plastiSencenja.set(PLAST_SENCENJA);
+// Renderer upošteva ClippingGroup le, če skupina sama prestane test plasti kamere; maska prereza (in predprehod senčenja)
+// rišeta samo plast 2, zato je bila maska do 21. 10. izrisana brez reza (cel model, skoraj brez pik reza) in obrobe ni bilo.
+prerezSkupina.layers.enable(PLAST_SENCENJA);
 function verigaIzrisa(kam) {
   let v = verigeIzrisa.get(kam);
   if (v) return v;
@@ -3369,7 +3534,8 @@ function verigaIzrisa(kam) {
   const zakritost = ao(predprehod.getTextureNode('depth'), predprehod.getTextureNode(), kam);
   zakritost.resolutionScale = 0.5; zakritost.scale.value = 1.5;
   const prehod = pass(scene, kam);
-  const zakrito = zakritost.getTextureNode().sample(screenUV).r;
+  // ob prerezu brez senčenja v kotih: votline za ravnino reza bi potemnile do črnega (želja uporabnika 2026-10-20)
+  const zakrito = mix(zakritost.getTextureNode().sample(screenUV).r, float(1), prerezVklop);
   const veriga = new THREE.RenderPipeline(renderer);
   // zakritost zatemni celoten izris (kot v Fusionu), ne le okoljske svetlobe; predprehod je zato ločen izris pred glavnim
   // (prek builtinAOContext bi se gnezdil v glavnem prehodu in si z njim delil seznam izrisa, kar ob plasteh pade)
@@ -3379,6 +3545,7 @@ function verigaIzrisa(kam) {
   return v;
 }
 function izrisiPogled(kam) {
+  if (prerezSkupina.enabled) izrisiMaskoPrereza(kam);
   if (!senceneVklop || ortoControls || (kam !== camera && kam !== pravokotnaKamera)) { renderer.render(scene, kam); return; }
   const { veriga, zakritost } = verigaIzrisa(kam);
   zakritost.radius.value = Math.max(razdaljaPogleda() * Math.tan(THREE.MathUtils.degToRad(camera.fov / 2)) * 0.06, 1e-3);
@@ -3390,7 +3557,7 @@ function nastaviSencenje(vklop) {
   for (const g of document.querySelectorAll('[data-sencenje]')) g.classList.toggle('aktiven', senceneVklop);
 }
 
-let koren = new THREE.Group(); scene.add(koren);
+let koren = new THREE.Group(); prerezSkupina.add(koren);
 let objekti = new Map();
 let prviNalozen = false;
 
@@ -3413,6 +3580,9 @@ function zgradiObjekt(o) {
     }
     geo.setAttribute('color', new THREE.BufferAttribute(barve, 3));
     geo.setAttribute('pbr', new THREE.BufferAttribute(pbr, 4));
+    // številka telesa za prerez (barva in šrafura po kosih); izračuna jo šele vključen prerez (oznaciTelesaZaPrerez)
+    geo.setAttribute('kos', new THREE.BufferAttribute(new Float32Array(o.tocke.length / 3), 1));
+    geo.setAttribute('kosBarva', new THREE.BufferAttribute(new Float32Array(o.tocke.length / 3), 1));   // ista oblika = ista barva
     // skupine trikotnikov: 0 = satenast material, 1 = kovinski (zaporedne ploskve iste vrste v eni skupini)
     let kovinskih = 0;
     for (const p of o.ploskve) {
@@ -3425,7 +3595,7 @@ function zgradiObjekt(o) {
     geo.computeVertexNormals();
     mesh = new THREE.Mesh(geo, geo.groups.length ? MATERIALI_PLOSKEV : materialPloskev);
     mesh.layers.enable(PLAST_SENCENJA);
-    mesh.userData = { objekt: o.ime, ploskve: o.ploskve, osnovneBarve: barve.slice(), material: mesh.material };
+    mesh.userData = { objekt: o.ime, ploskve: o.ploskve, telesa: o.telesaPloskev, osnovneBarve: barve.slice(), material: mesh.material };
     skupina.add(mesh);
   }
   let crte = null;
@@ -3445,8 +3615,8 @@ function zgradiObjekt(o) {
 
 function pocisti() {
   koren.traverse(n => { if (n.geometry) n.geometry.dispose(); });
-  scene.remove(koren);
-  koren = new THREE.Group(); scene.add(koren);
+  prerezSkupina.remove(koren);
+  koren = new THREE.Group(); prerezSkupina.add(koren);
   objekti = new Map();
 }
 
@@ -3599,7 +3769,8 @@ async function izrisiVirZdaj(samo, zunanja, velikost, sestavi, smer) {
   const pol = Math.max(x1 - x0, y1 - y0, 1e-3) / 2 * 1.1, cx = (x0 + x1) / 2, cy = (y0 + y1) / 2;
   kam.left = cx - pol; kam.right = cx + pol; kam.bottom = cy - pol; kam.top = cy + pol;
   kam.updateProjectionMatrix();
-  const skriti = []; for (const o of scene.children) if (o !== koren && o !== zunanja && !o.isLight && o.visible) { o.visible = false; skriti.push(o); }
+  const skriti = []; for (const o of scene.children) if (o !== prerezSkupina && o !== zunanja && !o.isLight && o.visible) { o.visible = false; skriti.push(o); }
+  const prerezBil = prerezSkupina.enabled; prerezSkupina.enabled = false; prerezVklop.value = 0;   // sličice kažejo cel model
   if (zunanja && koren.visible) { koren.visible = false; skriti.push(koren); }   // drug dokument: aktivni model skrij
   const vidnost = [];   // samo izbrani objekti: ostale skupine skrij, izbrane pokaži tudi, če so v pogledu skriti
   if (samo) for (const z of objekti.values()) { vidnost.push([z.skupina, z.skupina.visible]); z.skupina.visible = samo.includes(z); }
@@ -3614,9 +3785,10 @@ async function izrisiVirZdaj(samo, zunanja, velikost, sestavi, smer) {
   let piksli;
   try {
     renderer.setRenderTarget(cilj); renderer.render(scene, kam); renderer.setRenderTarget(null);
-    sestavi();
+    sestavi(); prerezSkupina.enabled = prerezBil; prerezVklop.value = prerezBil ? 1 : 0;
     piksli = await renderer.readRenderTargetPixelsAsync(cilj, 0, 0, V, V);
   } finally {
+    prerezSkupina.enabled = prerezBil; prerezVklop.value = prerezBil ? 1 : 0;
     renderer.setRenderTarget(null); scene.background = ozadje; scene.backgroundNode = ozadjeNode; renderer.setClearColor(barvaCiscenja, alfaCiscenja);
     for (const o of skriti) o.visible = true;
     for (const [sk, vid] of vidnost) sk.visible = vid;
@@ -4455,7 +4627,7 @@ function osvetli(ime) {   // eno ime, seznam imen ali null
   const zdaj = nova.filter(i => { const z = objekti.get(i); if (z && z.mesh) { z.mesh.material = materialOsvetlitve; return true; } return false; });
   osvetljenObjekt = zdaj.length ? zdaj : null;
 }
-window.splet = Object.assign(window.splet || {}, { izrisiSlicico, potDokumenta, okvirModela, renderer, scene, THREE, koren: () => koren });   // za razhroščevanje iz konzole
+window.splet = Object.assign(window.splet || {}, { izrisiSlicico, potDokumenta, okvirModela, renderer, scene, THREE, koren: () => koren, prerezCilj, izrisiMaskoPrereza, kameraPogleda });   // za razhroščevanje iz konzole
 
 // Bližnja in daljna ravnina sledita kameri: pri povečavi bi stalna bližnja ravnina odrezala bližnje dele,
 // prevelik razpon pa pokvari globinsko natančnost (lise na vzporednih ploskvah).
@@ -4711,6 +4883,7 @@ function uporabiRazstavitev(k = skica.posnetek ? 0 : razstavitev) {
   const okvir = okvirModela();
   sferaModela = okvir.getBoundingSphere(new THREE.Sphere());
   if (!okvir.isEmpty()) nastaviMrezo(okvir);   // tla sledijo modelu (nov posnetek, razstavitev), ne le tipki F
+  if (prerez.vklop) { obsegPrereza(); osveziKontrolePrereza(); }   // drsnik prereza sledi obsegu modela, lega reza ostane
 }
 function nastaviRazstavitev(k, animiraj = true) {
   cancelAnimationFrame(animacijaRazstavitve); clearTimeout(nastaviRazstavitev.rezerva);
@@ -4732,6 +4905,77 @@ function nastaviRazstavitev(k, animiraj = true) {
   nastaviRazstavitev.rezerva = setTimeout(() => { if (razstavitev !== k) { cancelAnimationFrame(animacijaRazstavitve); razstavitev = k; uporabiRazstavitev(); osvezi(); } }, trajanje + 100);
 }
 function preklopiRazstavitev() { nastaviRazstavitev(razstavitev > 0 ? 0 : zadnjaRazstavitev); }
+
+// --- Prerez (2026-10-19) -------------------------------------------------------------------------------------------
+// Gumb v vrstici pogledov vklopi ravnino reza (ClippingGroup `prerezSkupina` okoli korena): rez pravokotno na X, Y ali Z
+// ali v ravnini izbrane ravne ploskve (odreže se, kar je pred ploskvijo), drsnik premika rez skozi model, Obrni ohrani
+// drugo polovico. Zadnje strani ploskev, ki se vidijo skozi rez, material nariše kot šrafirano ploskev prereza
+// (`prerezVklop`). Samo prikaz: model v FreeCAD-u ostane cel; sličice in slike za AI kažejo cel model; zadetki žarkov
+// na odrezani strani ne štejejo (izbira gre skozi rez).
+function jeOdrezano(h) {
+  for (let n = h.object; n; n = n.parent) if (n === prerezSkupina) return prerez.ravnina.distanceToPoint(h.point) < -1e-6;
+  return false;
+}
+function obsegPrereza() {
+  const o = okvirModela();
+  if (o.isEmpty()) { prerez.min = -1; prerez.max = 1; return; }
+  let lo = Infinity, hi = -Infinity; const t = new THREE.Vector3();
+  for (let i = 0; i < 8; i++) {
+    const s = t.set(i & 1 ? o.max.x : o.min.x, i & 2 ? o.max.y : o.min.y, i & 4 ? o.max.z : o.min.z).dot(prerez.normala);
+    lo = Math.min(lo, s); hi = Math.max(hi, s);
+  }
+  prerez.min = lo; prerez.max = hi;
+}
+function uporabiPrerez() {
+  const n = prerez.normala;
+  if (prerez.obrni) prerez.ravnina.set(n.clone(), -prerez.d); else prerez.ravnina.set(n.clone().negate(), prerez.d);
+  prerezSkupina.enabled = prerez.vklop; prerezVklop.value = prerez.vklop ? 1 : 0;
+  if (!prerez.vklop) koren.traverse(n => { if (n.isMesh) zagotoviGlobinoPrereza(n.material, false); });   // vklop: izrisiMaskoPrereza
+  osveziKontrolePrereza();
+}
+function nastaviPrerez(vklop = !prerez.vklop) {
+  prerez.vklop = !!vklop;
+  if (prerez.vklop) {
+    obsegPrereza();
+    if (!(prerez.d > prerez.min && prerez.d < prerez.max)) prerez.d = privzetaLegaPrereza();
+  }
+  uporabiPrerez();
+}
+// rez skozi izhodišče, če je v modelu (modeli so postavljeni na koordinatni sistem: SPOT os palice), sicer sredina obsega
+function privzetaLegaPrereza() { return prerez.os !== 'ploskev' && prerez.min < 0 && prerez.max > 0 ? 0 : (prerez.min + prerez.max) / 2; }
+function osPrereza(os) {
+  prerez.os = os; prerez.normala.set(os === 'X' ? 1 : 0, os === 'Y' ? 1 : 0, os === 'Z' ? 1 : 0);
+  prerez.obrni = os === 'Y';   // ostane polovica stran od kamere standardnih pogledov (Spredaj gleda od -Y, Desno od +X, Zgoraj od +Z)
+  prerez.vklop = true; obsegPrereza(); prerez.d = privzetaLegaPrereza(); uporabiPrerez();
+}
+function prerezPoPloskvi() {   // ravnina izbrane ravne ploskve; odreže se, kar je pred njo (v smeri normale)
+  for (const s of stanje.izbira) {
+    const z = objekti.get(s.objekt); if (!z || !z.mesh) continue;
+    for (const el of s.elementi || []) {
+      if (!el.startsWith('Face')) continue;
+      const k = parseInt(el.slice(4), 10) - 1, n = normalaPloskve(z.mesh, k); if (!n) continue;
+      const p = z.mesh.userData.ploskve[k], pos = z.mesh.geometry.attributes.position;
+      const tocka = new THREE.Vector3().fromBufferAttribute(pos, z.mesh.geometry.index.getX(3 * p[2])).applyMatrix4(z.mesh.matrixWorld);
+      n.transformDirection(z.mesh.matrixWorld);
+      prerez.os = 'ploskev'; prerez.normala.copy(n); prerez.obrni = false; prerez.vklop = true;
+      obsegPrereza(); prerez.d = prerez.d0 = tocka.dot(n); uporabiPrerez();
+      return true;
+    }
+  }
+  obvesti('Za prerez po ploskvi najprej izberi ravno ploskev modela.', true);
+  return false;
+}
+function osveziKontrolePrereza() {
+  const g = vrsticaPogledov.querySelector('[data-prerez]'); if (g) g.classList.toggle('aktiven', prerez.vklop);
+  const k = document.getElementById('prerezKontrole'); if (!k) return;
+  k.classList.toggle('skrit', !prerez.vklop);
+  for (const b of k.querySelectorAll('[data-os]')) b.classList.toggle('aktiven', b.dataset.os === prerez.os);
+  const o = k.querySelector('[data-obrni]'); if (o) o.classList.toggle('aktiven', prerez.obrni);
+  const d = document.getElementById('drsnikPrereza');
+  if (d && document.activeElement !== d) d.value = Math.round(1000 * (prerez.d - prerez.min) / Math.max(prerez.max - prerez.min, 1e-6));
+  const m = document.getElementById('prerezMera');
+  if (m) m.textContent = (prerez.os === 'ploskev' ? 'od ploskve ' + (prerez.d - prerez.d0).toFixed(1) : prerez.os + ' = ' + prerez.d.toFixed(1)).replace('.', ',') + ' mm';
+}
 
 // Izbirnik pogledov v kotu pogleda: isti seznam kot meni na preslednico. Gumb trenutnega pogleda je poudarjen,
 // dokler kamera gleda iz te smeri (po vrtenju se poudarek umakne).
@@ -4766,6 +5010,9 @@ const IKONE_POGLEDOV = {
     + '<path d="M4 15.5L12 12.5L20 15.5L12 19ZM4 15.5V18L12 21.5L20 18V15.5M12 19V21.5"/>'),
   meter: svgIkone('<path class="poudarjeno" d="M3 16.5L16.5 3L21 7.5L7.5 21Z" fill-opacity=".35"/>'
     + '<path d="M3 16.5L16.5 3L21 7.5L7.5 21Z"/><path d="M6.5 13l2.2 2.2M9.5 10l2.2 2.2M12.5 7l2.2 2.2"/>'),
+  prerez: svgIkone('<polygon class="poudarjeno" points="4,9 10,9 10,20 4,20" fill-opacity=".85"/>'
+    + '<polygon class="poudarjeno" points="10,9 15,4 15,15 10,20" fill-opacity=".35"/>'
+    + '<path class="skrito" d="M15 15H20M15 4H20V15L15 20"/><path d="M4 9H10V20H4ZM4 9L9 4H15M10 9L15 4V15L10 20"/>'),
   risba: svgIkone('<path d="M5 3h10l4 4v14H5z"/><path d="M15 3v4h4"/>'
     + '<rect class="poudarjeno" x="8" y="11" width="8" height="6" fill-opacity=".55"/><path d="M8 11h8v6H8zM10 9v2M14 9v2"/>'),
 };
@@ -4786,6 +5033,24 @@ function zgradiVrsticoPogledov() {
   dodaj(IKONE_POGLEDOV.prilagodi, 'Prilagodi pogled modelu (F)', () => prilagodiPogled());
   const gm = dodaj(IKONE_POGLEDOV.meter, 'Meter: razdalja med dvema točkama modela — oglišča, sredine robov, središča krogov ali prosta točka na ploskvi (M); Esc konča', () => preklopiMeter());
   gm.dataset.meter = '1'; gm.classList.toggle('aktiven', meritve.vklop);
+  const gpr = dodaj(IKONE_POGLEDOV.prerez, 'Prerez: ravnina odreže del modela, da se vidi notranjost (samo prikaz; model ostane cel). '
+    + 'X / Y / Z ali Ploskev (izbrana ravna ploskev), drsnik premakne rez, Obrni pokaže drugo polovico (Shift+X)', () => nastaviPrerez());
+  gpr.dataset.prerez = '1';
+  const kp = document.createElement('span'); kp.id = 'prerezKontrole'; kp.className = 'skrit';
+  const gumbPrereza = (napis, namig, dejanje) => {
+    const b = document.createElement('button'); b.type = 'button'; b.className = 'gumb'; b.textContent = napis; b.title = namig;
+    b.addEventListener('click', () => { dejanje(); b.blur(); }); kp.appendChild(b); return b;
+  };
+  for (const os of ['X', 'Y', 'Z']) gumbPrereza(os, 'Rez pravokotno na os ' + os, () => osPrereza(os)).dataset.os = os;
+  gumbPrereza('Ploskev', 'Rez v ravnini izbrane ravne ploskve; odreže se, kar je pred njo', prerezPoPloskvi).dataset.os = 'ploskev';
+  gumbPrereza('Obrni', 'Pokaži drugo polovico modela', () => { prerez.obrni = !prerez.obrni; uporabiPrerez(); }).dataset.obrni = '1';
+  const dp = document.createElement('input'); dp.type = 'range'; dp.min = 0; dp.max = 1000; dp.id = 'drsnikPrereza'; dp.title = 'Lega reza skozi model';
+  dp.addEventListener('input', () => { prerez.d = prerez.min + (prerez.max - prerez.min) * dp.value / 1000; uporabiPrerez(); });
+  dp.addEventListener('change', () => dp.blur());
+  kp.appendChild(dp);
+  const mp = document.createElement('span'); mp.id = 'prerezMera'; kp.appendChild(mp);
+  vrsticaPogledov.appendChild(kp);
+  osveziKontrolePrereza();
   locilo();
   const gp = dodaj(IKONE_POGLEDOV.perspektiva,'Perspektivna projekcija; izklopljena = pravokotna (SolidWorks: Pogled > Prikaz > Perspektiva)', () => nastaviPerspektivo(!perspektiva));
   gp.dataset.perspektiva = '1'; gp.classList.toggle('aktiven', perspektiva);
@@ -4909,6 +5174,12 @@ function oznaciIzbiro(izbira) {
 }
 
 const raycaster = new THREE.Raycaster();
+// prerez: zadetki na odrezani strani modela ne štejejo (izbira, meter, središče vrtenja gredo skozi rez)
+const presekBrezPrereza = raycaster.intersectObjects.bind(raycaster);
+raycaster.intersectObjects = (predmeti, rekurzivno, cilj) => {
+  const z = presekBrezPrereza(predmeti, rekurzivno, cilj);
+  return prerez.vklop ? z.filter(h => !jeOdrezano(h)) : z;
+};
 const kazalec = new THREE.Vector2();
 function nastaviKazalec(e) {
   const r = renderer.domElement.getBoundingClientRect();
@@ -5212,6 +5483,7 @@ function tipkaPogleda(e) {
   if (e.code === 'KeyE' && !e.ctrlKey && !e.altKey && !skica.posnetek) { preklopiRazstavitev(); return true; }
   if (e.code === 'KeyO' && !e.ctrlKey && !e.altKey && !skica.posnetek) { nastaviSencenje(!senceneVklop); return true; }
   if (e.code === 'KeyM' && !e.ctrlKey && !e.altKey && !skica.posnetek) { preklopiMeter(); return true; }
+  if (e.code === 'KeyX' && e.shiftKey && !e.ctrlKey && !e.altKey && !skica.posnetek) { nastaviPrerez(); return true; }
   if (e.code === 'KeyZ' && !e.ctrlKey && !e.altKey) { koncajAnimacijo(); povecajPogled(e.shiftKey ? 1 / 1.25 : 1.25); return true; }
   if (e.code === 'Space' && !e.ctrlKey) { odpriMeniPogledov(nadzor.kazalec.x, nadzor.kazalec.y); return true; }
   return false;

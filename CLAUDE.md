@@ -388,6 +388,38 @@ FreeCAD je motor, vmesnik in grafika nastajata v brskalniku (plan, korak 8 napre
   zasedeno (skica), meter ima `najdiPripenjanjeMetra`; pripenja tudi na zakrita oglišča (zakritost se ne preverja); oznake ne
   preživijo osvežitve strani. Vgradnja v tekoči strežnik: `lastno/mcp/namesti_v_tekoci.py` (reload `mcp_orodja`, `_izvedi`,
   `do_POST`), stran le F5.
+- **Prerez** (od 2026-10-19, `index.html` razdelek »Prerez«; samo prikaz v brskalniku): gumb v vrstici pogledov (Shift+X) vklopi
+  ravnino reza; koren modela je v `THREE.ClippingGroup` (`prerezSkupina`), rez pravokotno na X/Y/Z ali v ravnini izbrane ravne ploskve,
+  drsnik premika rez po obsegu modela, Obrni ohrani drugo polovico. Privzeto Y skozi izhodišče (če je v modelu, sicer sredina obsega),
+  ohrani se polovica stran od kamere standardnih pogledov (Y: y ≥ 0 za pogled Spredaj). Zadnje strani ploskev, vidne skozi rez, material ploskev
+  (`narediMaterialPloskev`, uniforma `prerezVklop`, `faceDirection`) nariše kot ploskev prereza: od 2026-10-20 (želja uporabnika; zgled
+  Fusion »color coded by component«, šrafuro in črno je uporabnik zavrnil) polna ploskev brez senčenja v **barvi oblike** (pastelni
+  odtenek iz atributa `kosBarva` = zgoščena površina telesa na 4 mesta + število oglišč, zato imajo enaki kosi — vsi vijaki iste
+  vrste — isto barvo ne glede na lego) z obrobo ~2 CSS piki v temnem odtenku iste barve (0,28×) na robu reza in med telesi; velja za satenast, kovinski in
+  prosojni material, ne za ploščice s teksturo. Ob prerezu je senčenje v kotih (GTAO) izklopljeno (`prerezVklop` v `verigaIzrisa`),
+  sicer votline za ravnino potemnijo do črnega. **Telesa**: atribut `kos` na geometriji (ob gradnji ničle); `oznaciTelesaZaPrerez` ob
+  prvem izrisu s prerezom ploskve objekta združi v telesa in jim da številko iz imena objekta + zaporedja (1..65535), zato ima vsak kos
+  tudi znotraj povezave na podsestav svojo barvo. Od 2026-10-21 telesa pove strežnik: posnetek objekta z več telesi nosi `telesaPloskev`
+  (število ploskev po `Shape.Solids` v vrstnem redu ploskev, `_telesa_ploskev`; preveri prvo ploskev vsakega telesa z isSame, sicer ga
+  izpusti). Brez njega (starejši vnos v `_PREDPOMNILNIK`, telesa niso po vrsti) brskalnik ugiba po skupnih legah oglišč (0,01 mm) — to je
+  stikajoče se kose (ležaj v izvrtini, distančnik na ležaju) zlilo v eno telo z eno barvo in brez obrobe med njimi (glava SPOT: 19 namesto 25). **Maska prereza**
+  (`izrisiMaskoPrereza`, pred vsakim `izrisiPogled` z vključenim prerezom): ploskve plasti 2 se z začasno zamenjanim materialom kosov
+  (`materialMaskePrereza`; ne `scene.overrideMaterial` — z njim in lastno ravnino je maska 20.–21. 10. kazala odrezano polovico) narišejo v
+  `prerezCilj` (NearestFilter; rdeča 1 = najbližja ploskev je zadnja stran = rez, zelena/modra = številka telesa); obroba nastane,
+  kjer se maska konča ali je sosednja pika drugo telo (~3,5 CSS pike, 0,15× barve ploskve, od 2026-10-21). **Past plasti**: renderer
+  ClippingGroup upošteva le, če skupina sama prestane test plasti kamere (`_projectObject`); maska riše samo plast 2, zato ima
+  `prerezSkupina` vključeno tudi plast 2 — brez tega je bila maska do 21. 10. cel model brez reza in obrobe ni bilo nikjer.
+  **Prednost v globini** (od 2026-10-21): kjer se kosa dotikata (ležaj v izvrtini), zadnja stran enega leži na sprednji strani drugega;
+  mreži sta teselirani vsaka zase (v sestavu 0,05 % diagonale, SPOT ~1 mm), zato sta se v prerezu izmenjevali v sivih pasovih (sam ležaj
+  je bil čist). Ob prerezu materiali ploskev in maske pišejo globino (`globinaPrereza`, `depthNode`): zadnja stran je za `prerezPrednost`
+  (1,5 × največja ocenjena toleranca teselacije, najmanj 0,15 mm) bližje kameri. `zagotoviGlobinoPrereza` jo vklopi v `izrisiMaskoPrereza`
+  in izklopi v `uporabiPrerez` (pisanje globine izklopi polygonOffset; robovi se ob prerezu ne rišejo).
+  Masko beri z `window.splet.prerezCilj` (+ `izrisiMaskoPrereza`, `kameraPogleda`); vrstice so poravnane na 256 bajtov. Robovi kosov (`materialRobov`) se ob prerezu **ne rišejo nikjer** (od 2026-10-21,
+  želja uporabnika: le senčene ploskve in ploskve prereza z obrobo; do takrat so se skrili le na pikah z rezom, robovi votlin za ravnino so ostali). Pasti: prosojni kosi niso v maski, zato obrobo dobi le telo,
+  ki je na piki v maski; `readRenderTargetPixelsAsync` vrne vrstice, poravnane na 256 bajtov (pri razhroščevanju maske); preizkušaj na
+  nesimetričnem pogledu (glava SPOT), ne na navpični palici, kjer se napačna maska ne opazi; skrito podokno brskalnika ne riše (rAF stoji). Zadetki žarkov na odrezani
+  strani ne štejejo (ovoj `raycaster.intersectObjects`), sličice in `izrisiVir` (slike za AI) prerez za čas izrisa izklopijo.
+  Stanje ni shranjeno (osvežitev strani ga izklopi).
 - **Knjižnica standardnih delov** (od 2026-10-09, gumb ▦ Knjižnica v glavi stranskega stolpca): okno `#knjiznica` z mrežo
   kartic po kategorijah (mape baze, sličice prek `/slicica`, iskanje). `GET /knjiznica` (`zgradi_knjiznico`, nit strežnika,
   brez FreeCAD API-ja; izpušča mape `_*`, `.*`, `DXF`), `POST /knjiznica {dejanje: vstavi | odpri, pot, dokument}`

@@ -983,10 +983,34 @@ def _geometrija(obj, faktor=1.0):
         "robovi": robovi,
         "robInfo": rob_info,
     }
+    telesa = _telesa_ploskev(oblika)
+    if telesa:
+        izid["telesaPloskev"] = telesa
     rob_barva = _barva_robov(obj)
     if rob_barva:
         izid["robBarva"] = rob_barva
     return izid
+
+
+def _telesa_ploskev(oblika):
+    """Število ploskev po telesih oblike v vrstnem redu ploskev ([n1, n2, ...]) za prerez v brskalniku: vsako telo dobi
+    svojo barvo in obrobo. Brskalnik je telesa do 2026-10-21 ugibal po skupnih ogliščih in je stikajoče se kose (ležaj v
+    izvrtini, distančnik na ležaju) zlil v eno telo. Ploskve oblike gredo po telesih (TopExp); prvo ploskev vsakega telesa
+    preveri isSame, sicer None (brskalnik ugiba kot prej). Ploskve zunaj teles (lupine) so za vsoto in brskalniku eno telo."""
+    try:
+        telesa = oblika.Solids
+        if len(telesa) < 2:
+            return None
+        stevila, zacetek, vse = [], 0, oblika.countElement("Face")
+        for t in telesa:
+            n = t.countElement("Face")
+            if n and (zacetek + n > vse or not oblika.getElement("Face%d" % (zacetek + 1)).isSame(t.getElement("Face1"))):
+                return None
+            stevila.append(n)
+            zacetek += n
+        return stevila
+    except Exception:  # noqa: BLE001
+        return None
 
 
 _UKRIVLJENE = ("BSplineSurface", "BezierSurface", "SurfaceOfExtrusion", "SurfaceOfRevolution", "OffsetSurface")
