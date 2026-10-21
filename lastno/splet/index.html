@@ -600,6 +600,8 @@
   .gumbPomocnik.aktiven { color: var(--poudarek); border-color: var(--poudarekObroba); background: var(--poudarekMehko); }
   .gumbPomocnik.dela::after { content: ''; display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: #f59e0b;
                               margin-left: 6px; vertical-align: middle; }
+  body.stopnjaZunaj #gumbNaIpad { display: none; }   /* posnetek je pogled Strojnega risanja */
+  #gumbNaIpad.dela { opacity: .6; cursor: progress; }
   #tiskanjeOkvir { flex: 1 1 auto; width: 100%; height: 100%; border: 0; background: #fff; }
   #tiskanjeStanje { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; background: var(--plosca); }
   #tiskanjeStanje .okno { width: min(92%, 460px); background: #fff; border: 1px solid var(--crta); border-radius: 14px; box-shadow: var(--senca2);
@@ -951,6 +953,7 @@
       <button type="button" id="gumbToplota" class="stopnja toplota" title="5. stopnja: toplotna simulacija boxa na soncu (bilanca pvlib + ht, MKE CalculiX): koliko se segreje in kakšno hlajenje potrebuje"><span class="st">5</span>Toplota</button>
     </div>
     <div id="orodja">
+      <button type="button" id="gumbNaIpad" title="Pošlje ta pogled na iPad (aplikacija Free 3D): tam po njem rišeš s Pencilom in ga pošlješ Claudu">&#9998; Na iPad</button>
       <button type="button" class="gumbPomocnik" title="Pomočnik AI: povej, kaj naj naredi v modelu (Claude z orodji FreeCAD-a); spremembe potrdiš v plošči">&#10022; Pomočnik</button>
       <button id="gumbOkno" type="button" title="Pokaže ali skrije okno namiznega FreeCAD-a" hidden>Pokaži FreeCAD</button><!-- skrit na željo uporabnika 2026-10-12; koda in pasica ostajata -->
 
@@ -6276,6 +6279,21 @@ function zapriPomocnika() {
   gumbiPomocnika('aktiven', false); pomocnikShrani('pomocnikOdprt', '0');
 }
 document.querySelectorAll('.gumbPomocnik').forEach(g => g.addEventListener('click', () => { if (pomocnik.odprto) zapriPomocnika(); else odpriPomocnika(); }));
+// gumb Na iPad (Free 3D, od 2026-10-21): posnetek tega pogleda s kamero gre na iPad (orodje MCP skice, akcija poslji;
+// strežnik posnetek zahteva od te strani z dogodkom mcp, medtem ko ta klic čaka)
+$('gumbNaIpad').addEventListener('click', async () => {
+  const g = $('gumbNaIpad');
+  if (g.classList.contains('dela')) return;
+  g.classList.add('dela');
+  try {
+    const r = await fetch('/mcp/orodje', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Zeton': ZETON },
+      body: JSON.stringify({ ime: 'skice', argumenti: { akcija: 'poslji', izvor: 'uporabnik' } }) });
+    const o = await r.json();
+    const besedilo = (o.vsebina || []).filter(v => v.vrsta === 'besedilo').map(v => v.besedilo).join(' ');
+    obvesti(o.ok ? 'Pogled je na iPadu (Free 3D).' : (besedilo || 'Pošiljanje na iPad ni uspelo.'), !o.ok);
+  } catch (err) { obvesti('Pošiljanje na iPad ni uspelo: ' + (err && err.message || err), true); }
+  finally { g.classList.remove('dela'); }
+});
 $('pomocnikZapri').addEventListener('click', zapriPomocnika);
 async function pomocnikPost(telo) {
   const r = await fetch('/pomocnik', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Zeton': ZETON }, body: JSON.stringify(telo) });

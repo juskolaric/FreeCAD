@@ -2935,3 +2935,13 @@ def t_izhod(a):
     S.STANJE.vrsta.put(("izhod", {}, None))
     return "FreeCAD se končuje%s. Znova ga zažene `zazeni`." % (
         (" (zavrženo: " + ", ".join(neshranjeni) + ")") if neshranjeni else "")
+
+
+# Skice za iPad (Free 3D, od 2026-10-21): orodje `skice` je v svojem modulu (skice.py); ob vroči zamenjavi tega modula se
+# ORODJA izpraznijo, zato ga naloži znova
+try:
+    import importlib as _importlib
+    import skice as _skice
+    _importlib.reload(_skice)
+except Exception as _e:  # noqa: BLE001
+    _dnevnik("mcp", "skice niso naložene: %r" % _e)

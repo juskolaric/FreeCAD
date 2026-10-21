@@ -216,6 +216,13 @@ FreeCAD je motor, vmesnik in grafika nastajata v brskalniku (plan, korak 8 napre
   dnevnik `FreeCAD-splet/grafika.log`; mapa ob repozitoriju ali `SPLET_GRAFIKA_MAPA`, vrata `SPLET_GRAFIKA_VRATA`) in pove, ali teče (`GET /grafika/stanje`,
   bere `/api/status` Studia). Stran: `grafika` (stanje), `odpriGrafiko`/`zapriGrafiko`/`osveziGrafiko`/`zazeniGrafiko`, okno `#grafikaStanje` z gumbom za zagon,
   zažene se sam ob prvem odprtju; v 4. stopnji velja `body.stopnjaZunaj` kot v 1. in 3. Studio teče naprej po Izhodu FreeCAD-a. Z okvirjem ni postMessage.
+- **Skice za iPad (Free 3D)** (od 2026-10-21, `lastno/splet/skice.py`, projekt `CAD in 3D/Free 3D/`, README tam): gumb »✎ Na iPad«
+  v glavi (`#gumbNaIpad`, v 1., 3.–5. stopnji skrit) in orodje MCP `skice` (`seznam | pokazi | poslji | stanje`). `poslji` vzame posnetek
+  zaslona brskalnika (`brskalnik("slika", pogled zaslon)`) in kamero, dokument z glavne niti, ter ga pošlje strežniku skic Free 3D
+  (`free3d.py`, vrata 3038, žeton `~/.free3d/nastavitve.json`); ta ga hrani v `Oblak/3D modeliranje/<Projekt>/Skice/<id>/`, iPad aplikacija
+  Free 3D ga pokaže, uporabnik nariše in »Pošlji Claudu« (stanje `poslana`). `pokazi` vrne označeno sliko in opombo; po popravku `poslji`
+  z `odgovor_na` (izvirnik postane rešen). Modul `skice.py` strežnik skic zažene sam (sistemski pythonw, kot Grafika). Registracija: konec
+  `mcp_orodja.py` uvozi in ob vroči zamenjavi znova naloži `skice` (sicer se ob reloadu `ORODJA` izpraznijo brez njega).
 - **Toplota (toplotna simulacija v zavihku)** (od 2026-10-14, plan `TOPLOTNA-ANALIZA-PLAN.md`): 5. stopnja »Toplota« (`#gumbToplota`) je okvir
   na stran `lastno/toplota/toplota.html`, ki jo streže isti strežnik (`GET /toplota`; modul `lastno/splet/toplota.py`). Podatki projekta so v
   `Oblak/3D modeliranje/<Projekt>/Toplota/` (`nastavitve.json`, `rezultati.json`, `POROCILO.md`, `urno/`, `slike/`, `vreme/`, `mke/`); projekt
