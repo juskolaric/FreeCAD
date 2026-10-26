@@ -96,6 +96,14 @@ FreeCAD je motor, vmesnik in grafika nastajata v brskalniku (plan, korak 8 napre
   spremenjeni objekti (soba: 6 s -> 0,3 s). Oblika se ne kopira (`copy()` izgubi mrežo); točke se prestavijo z `getGlobalPlacement`.
   Skupine (`App::DocumentObjectGroup`) niso v posnetku (njihov `Shape` je le sestav otrok, ki so v posnetku vsak zase). Ob preklopu
   dokumenta se posnetek zgradi takoj (brez zamika 300 ms). Dnevnik: `posnetek N: X objektov (Y iz predpomnilnika), kB, s`.
+  **Od 2026-10-26 (hitro odpiranje velikih sestavov, stanovanje ~2 min -> ~9 s ob ponovnem odpiranju):**
+  (1) `PartGui.setNoDisplay(True)` (lastna gradnja, `ViewProviderPartExt::updateVisual` preskoči mrežo za Coin): ob skritem oknu
+  FreeCAD ne gradi svojega 3D prikaza (bil je 69 % časa odpiranja); strežnik ga vklopi v `_skrij_okno`, izklopi v `_pokazi_okno`
+  (takrat se prikaz zgradi vsem vidnim objektom). Uporabnik okna FreeCAD-a ne rabi. (2) `Stanje.zgradi` gradi po rezinah
+  (`GRADNJA_REZINA` 0,25 s): klik na drug dokument med pripravo ne čaka; `/stanje` vrne `priprava` (napredek). (3) Trajni
+  predpomnilnik posnetkov na disku `build/splet-mreze` (`_mreza_z_diska`, `_mrezo_na_disk`, nit `mreze-na-disk`): ključ namesto
+  `hashCode` nosi žig datotek dokumenta in odvisnih dokumentov (pot, mtime, velikost) in odtis kode mreženja; neshranjen dokument
+  ga nima. Dnevnik: `(... iz predpomnilnika, od tega N z diska ...)`. (4) Drevo: `tarca` po dokumentih enkrat na gradnjo (3,8 -> 0,3 s).
   Od 2026-10-09: `_geometrija` najprej zmreži celo obliko naenkrat (`oblika.tessellate` = vzporedni BRepMesh), ploskve nato
   mrežo le preberejo (po ploskvah je OCC tekel na enem jedru, 1,5x počasneje); prostornine teles v drevesu so v predpomnilniku
   `drevo._PROSTORNINE` (sestav s 70 telesi 1,5 s ob vsakem posnetku); **ogrevanje** (`Stanje.ogrej`): ko 3 s ni zahtev iz brskalnika,
