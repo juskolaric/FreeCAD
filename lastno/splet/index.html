@@ -265,6 +265,62 @@
     border-radius: 6px; color: #6b7685; cursor: pointer; padding: 0; }
   #stranski .vnos .dejanje:hover { background: rgba(15,40,80,.08); color: var(--poudarek); }
   #stranski .vnos .dejanje.zapri:hover { background: #fde4e4; color: #b42318; }
+  /* Datoteke kot mreža sličic (od 2026-10-26): pogledi Mape / Vse / Seznam, ploščice map z mozaikom, drobtinice, čipi map */
+  #stranski .preklopPogleda { display: flex; gap: 2px; margin: 8px 8px 2px; padding: 2px; background: #e9edf2; border-radius: 8px; }
+  #stranski .preklopPogleda button { flex: 1; border: 0; background: none; font: inherit; font-size: 12px; padding: 3px 0; border-radius: 6px; color: #4b5563; cursor: pointer; }
+  #stranski .preklopPogleda button.izbran { background: #fff; color: #0d47a1; font-weight: 600; box-shadow: 0 1px 2px rgba(0,0,0,.08); }
+  #stranski .mrezaKosov { display: grid; grid-template-columns: repeat(auto-fill, minmax(86px, 1fr)); gap: 4px; padding: 2px 6px 8px; }
+  #stranski .ploscica, #stranski .ploscicaMape { position: relative; display: flex; flex-direction: column; gap: 4px; padding: 5px; min-width: 0; border: 0;
+    background: none; border-radius: 10px; cursor: pointer; font: inherit; color: inherit; text-align: center; transition: background-color .08s; }
+  #stranski .ploscica:hover, #stranski .ploscicaMape:hover { background: #e9edf2; }
+  #stranski .ploscica .slika { position: relative; display: block; }
+  #stranski .ploscica img.slicica { display: block; width: 100%; height: auto; aspect-ratio: 1; object-fit: contain; padding: 7%; box-sizing: border-box;
+    background: linear-gradient(#fff, #eef1f5); border: 1px solid #dfe4ea; border-radius: 9px; }
+  #stranski .ploscica img.slicica.ikonaNamesto { padding: 24%; background: #f1f3f6; }
+  #stranski .ploscica .slika .znacka { position: absolute; right: 4px; bottom: 4px; width: 17px; height: 17px; border-radius: 5px; display: flex;
+    align-items: center; justify-content: center; color: #fff; background: var(--barva, #5b6676); box-shadow: 0 0 0 2px #fff; }
+  #stranski .ploscica .ime, #stranski .ploscicaMape .ime { font-size: 11.5px; line-height: 1.25; overflow-wrap: anywhere; color: #1f2937; display: -webkit-box;
+    -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+  #stranski .ploscica .ime mark { background: #fff1a8; color: inherit; border-radius: 2px; padding: 0 1px; }
+  #stranski .ploscica .mapaKosa { font-size: 10px; color: #8a94a3; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-top: -2px; }
+  #stranski .ploscica.odprtaDatoteka img.slicica { border-color: #43a047; box-shadow: 0 0 0 1px #43a047; }
+  #stranski .ploscica.aktiven { background: #dcebfc; }
+  #stranski .ploscica.aktiven img.slicica { border-color: var(--poudarek); box-shadow: 0 0 0 1px var(--poudarek); }
+  #stranski .ploscica.aktiven .ime { font-weight: 600; color: #0f3d7a; }
+  #stranski .ploscica.odpiram img.slicica { opacity: .45; }
+  #stranski .ploscica.odpiram .slika::after { content: ''; position: absolute; left: 50%; top: 50%; width: 18px; height: 18px; margin: -10px 0 0 -10px;
+    border-radius: 50%; border: 2px solid #90b4e0; border-top-color: #0d47a1; animation: odpiramVrti .8s linear infinite; }
+  #stranski .ploscica .pika { position: absolute; left: 6px; top: 6px; width: 8px; height: 8px; border-radius: 50%; background: #43a047; box-shadow: 0 0 0 2px #fff; }
+  #stranski .ploscica .pika.neshranjeno { background: #f59e0b; }
+  #stranski .ploscica .dejanja { position: absolute; right: 8px; top: 8px; display: flex; gap: 1px; padding: 2px; border-radius: 8px; background: #fff;
+    box-shadow: 0 1px 4px rgba(0,0,0,.15); opacity: 0; pointer-events: none; transition: opacity .1s; }
+  #stranski .ploscica:hover .dejanja, #stranski .ploscica .dejanja:focus-within { opacity: 1; pointer-events: auto; }
+  #stranski .ploscica .dejanje { width: 24px; height: 24px; display: inline-flex; align-items: center; justify-content: center; border: none; background: transparent;
+    border-radius: 6px; color: #6b7685; cursor: pointer; padding: 0; }
+  #stranski .ploscica .dejanje:hover { background: rgba(15,40,80,.08); color: var(--poudarek); }
+  #stranski .ploscica .dejanje.zapri:hover { background: #fde4e4; color: #b42318; }
+  #stranski .ploscicaMape .mozaik { display: grid; grid-template-columns: 1fr 1fr; grid-template-rows: 1fr 1fr; gap: 2px; aspect-ratio: 1; border-radius: 9px;
+    overflow: hidden; border: 1px solid #d3dbe6; background: #dfe4ea; box-shadow: 3px -3px 0 -1px #eef1f5, 3px -3px 0 0 #d3dbe6; }
+  #stranski .ploscicaMape .mozaik.ena img { grid-column: 1 / 3; grid-row: 1 / 3; }
+  #stranski .ploscicaMape .mozaik.dve img, #stranski .ploscicaMape .mozaik.tri img:first-child { grid-row: 1 / 3; }
+  #stranski .ploscicaMape .mozaik img { width: 100%; height: 100%; min-height: 0; min-width: 0; object-fit: contain; padding: 6%; box-sizing: border-box; background: linear-gradient(#fff, #eef1f5); }
+  #stranski .ploscicaMape .mozaik img.ikonaNamesto { padding: 22%; opacity: .8; }
+  #stranski .ploscicaMape .napisMape { display: flex; align-items: flex-start; gap: 4px; text-align: left; }
+  #stranski .ploscicaMape .napisMape svg { flex: none; margin-top: 1px; color: #7a8594; }
+  #stranski .ploscicaMape .napisMape .ime { flex: 1 1 auto; font-weight: 600; overflow-wrap: break-word; }
+  #stranski .ploscicaMape .stevilo { position: absolute; right: 9px; top: 9px; font-size: 10.5px; font-weight: 600; box-shadow: 0 0 0 2px #fff; color: #6b7685; background: #e6eaef; border-radius: 999px; padding: 0 6px; line-height: 16px; font-variant-numeric: tabular-nums; }
+  #stranski .ploscicaMape.imaOdprte .stevilo { color: #1b5e20; background: #e6f4ea; }
+  #stranski .drobtinice { display: flex; flex-wrap: wrap; align-items: center; gap: 1px; padding: 8px 8px 2px; font-size: 12px; }
+  #stranski .drobtinice button { border: 0; background: none; color: #0d47a1; cursor: pointer; padding: 2px 5px; border-radius: 5px; font: inherit; }
+  #stranski .drobtinice button:hover { background: #e9edf2; }
+  #stranski .drobtinice .loc { color: #a0a8b3; }
+  #stranski .drobtinice .trenutna { font-weight: 600; color: #1f2937; padding: 2px 5px; }
+  #stranski .cipiMap { display: flex; flex-wrap: wrap; gap: 4px; padding: 8px 8px 2px; }
+  #stranski .cipiMap button { border: 1px solid #dfe4ea; background: #fff; border-radius: 999px; padding: 1px 8px; font: inherit; font-size: 11px; line-height: 18px;
+    cursor: pointer; color: #33404f; white-space: nowrap; max-width: 100%; overflow: hidden; text-overflow: ellipsis; }
+  #stranski .cipiMap button:hover { border-color: #b7c3d2; }
+  #stranski .cipiMap button.izbran { background: #0d47a1; border-color: #0d47a1; color: #fff; }
+  #stranski .cipiMap button .n { margin-left: 4px; opacity: .65; font-variant-numeric: tabular-nums; }
   #stranski .prazno { padding: 18px 14px; color: #8a94a3; text-align: center; font-size: 12px; }
   #stranski .mapa { padding: 2px 10px 0; font-size: 11px; color: #889; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   /* Drevo dokumenta (desni stolpec stranskega menija) in lastnosti izbranega objekta.
@@ -2211,9 +2267,11 @@ window.addEventListener('resize', nastaviSirine);
 // --- stranski meni, levi stolpec: odprti dokumenti, projekti (datoteke FCStd) --
 const stranski = $('stranski');
 function ikonaUkaza(ime) { const u = (stanje.ukazi && stanje.ukazi.hitriDostop || []).find(u => u.ime === ime); return u && u.ikona ? u.ikona : ''; }
+// oblikovalnika enkrat: toLocale…String z jezikom ustvari novega ob vsakem klicu (~1 ms), mreža datotek pa jih kliče več sto
+const URA_PROJEKTA = new Intl.DateTimeFormat('sl-SI', { hour: '2-digit', minute: '2-digit' }), DATUM_PROJEKTA = new Intl.DateTimeFormat('sl-SI');
 function datumProjekta(sekunde) {
   const d = new Date(sekunde * 1000), danes = new Date();
-  return d.toDateString() === danes.toDateString() ? d.toLocaleTimeString('sl-SI', { hour: '2-digit', minute: '2-digit' }) : d.toLocaleDateString('sl-SI');
+  return (d.toDateString() === danes.toDateString() ? URA_PROJEKTA : DATUM_PROJEKTA).format(d);
 }
 async function projektDejanje(telo) { try { await objavi('/projekt', telo); } catch (e) { pokaziNapako(e); } }
 // Sličica modela (render strani, shranjen pri strežniku; rezerva FreeCAD-ova iz FCStd, če je uporabna) ali ikona kocke,
@@ -2290,7 +2348,14 @@ function imeVnosa(besedilo, q) {
   else s.append(besedilo.slice(0, k), el('mark', '', besedilo.slice(k, k + q.length)), besedilo.slice(k + q.length));
   return s;
 }
-const odprtaDatoteka = (d, odprti) => odprti.find(o => o.pot && o.pot.toLowerCase() === d.pot.toLowerCase());
+// kazalo poti seznama odprtih (enkrat na seznam): mreža in razvrščanje »odprti na vrh« kličeta to tisočkrat, find čez 270
+// odprtih z dvema toLowerCase na primerjavo pa je stal pol sekunde na izris
+const kazaloOdprtih = new WeakMap();
+const odprtaDatoteka = (d, odprti) => {
+  let k = kazaloOdprtih.get(odprti);
+  if (!k) { k = new Map(); for (const o of odprti) if (o.pot && !k.has(o.pot.toLowerCase())) k.set(o.pot.toLowerCase(), o); kazaloOdprtih.set(odprti, k); }
+  return k.get(d.pot.toLowerCase());
+};
 // Od 2026-10-26 je ena vrstica za datoteko, odprto ali ne: odprta je obarvana, ima čip Odprt ter čipe in gumbe odprtega dokumenta.
 function vnosDatoteke(d, odprti, vProjektu) {
   const odprt = odprtaDatoteka(d, odprti);
@@ -2308,10 +2373,32 @@ function vnosDatoteke(d, odprti, vProjektu) {
   else if (odpiram && odpiram.pot === d.pot) { v.classList.add('odpiram'); pod.append(cipVnosa('odpiram', 'Odpiram …')); }
   b.append(pod); v.append(b);
   v.addEventListener('click', () => odpriDatoteko(d));
+  const dej = dejanjaDatoteke(d, odprt);
+  if (dej) v.append(dej);
+  return v;
+}
+// gumbi ob miški v vrstici in na ploščici datoteke: različice v oblaku, pri odprti še shema in zapri
+function dejanjaDatoteke(d, odprt) {
   const dej = el('div', 'dejanja');
   if (vOblaku(d.pot)) dej.append(gumbRazlicic(d.pot, d.ime));
   if (odprt) dodajDejanjaOdprtega(dej, odprt);
-  if (dej.childElementCount) v.append(dej);
+  return dej.childElementCount ? dej : null;
+}
+// Ploščica datoteke v mreži (od 2026-10-26): velika sličica z značko vrste, ime, pod njim po potrebi mapa (pri iskanju, pogledu Vse
+// in kosih male mape). Odprta ima zelen okvir in piko (oranžno = neshranjeno), aktivna modrega.
+function ploscicaDatoteke(d, odprti, mapa) {
+  const odprt = odprtaDatoteka(d, odprti);
+  const v = el('div', 'ploscica' + (odprt ? ' odprtaDatoteka' : '') + (odprt && odprt.aktiven ? ' aktiven' : ''));
+  v.title = d.ime + '\n' + d.pot + '\n' + (IMENA_VRST[d.vrsta || ''] || d.vrsta) + ' · ' + datumProjekta(d.spremenjeno)
+    + (odprt ? '\n(odprt' + (odprt.spremenjen ? ', neshranjene spremembe' : '') + ')' : '') + '\nKlik: ' + (odprt ? 'preklopi na dokument' : 'odpri');
+  v.append(okvirVnosa(d, 'Std_Open'));
+  v.append(imeVnosa(d.ime, dokumentiIskanje.trim().toLowerCase()));
+  if (mapa) v.append(el('span', 'mapaKosa', mapa));
+  if (odprt) v.append(el('span', 'pika' + (odprt.spremenjen ? ' neshranjeno' : '')));
+  else if (odpiram && odpiram.pot === d.pot) v.classList.add('odpiram');
+  v.addEventListener('click', () => odpriDatoteko(d));
+  const dej = dejanjaDatoteke(d, odprt);
+  if (dej) v.append(dej);
   return v;
 }
 let odpiram = null;   // {pot, casovnik}: datoteka, ki jo strežnik ravno odpira
@@ -2674,6 +2761,7 @@ function narisiOdprteDokumente() {
   // Od 2026-10-11 (od 2026-10-07 do tedaj je stolpec kazal samo odprte dokumente).
   let vseDatotek = 0, najdenih = 0;
   prvaNajdenaDatoteka = null;
+  if ((p.skupine || []).some(sk => (sk.datoteke || []).some(d => vProjektu(d.pot)))) vsebina.append(preklopPogleda());
   for (const sk of p.skupine || []) {
     const zaprte = (sk.datoteke || []).filter(d => vProjektu(d.pot));
     vseDatotek += zaprte.length;
@@ -2699,6 +2787,12 @@ function narisiOdprteDokumente() {
       m.datoteke.push(d);
     }
     const prestej = m => m.datoteke.length + [...m.mape.values()].reduce((v, x) => v + prestej(x), 0);
+    if (pogledDatotek !== 'seznam') {
+      narisiMrezo(r, koren, prestej, vidne, d => { const rel = d.projekt || ''; return predpona && (rel + '/').startsWith(predpona) ? rel.slice(predpona.length) : rel; },
+        sk.mapa + '|' + predpona, (!vsiProjekti && proj ? proj.split('/').pop() : sk.naslov) || 'Datoteke', vsiOdprti, q);
+      vsebina.append(r);
+      continue;
+    }
     const narisiMapo = (m, pot, globina) => {
       for (const [ime, pod] of [...m.mape].sort((x, y) => x[0].localeCompare(y[0], 'sl'))) {
         const kljuc = sk.mapa + '/' + predpona + pot + ime, odprt = !!q || odprtiProjekti.has(kljuc);
@@ -2742,6 +2836,110 @@ function narisiOdprteDokumente() {
 }
 let prvaNajdenaDatoteka = null;
 const odprtiProjekti = new Set((() => { try { return JSON.parse(localStorage.getItem('odprtiProjekti') || '[]'); } catch (e) { return []; } })());
+// Datoteke kot mreža sličic (od 2026-10-26, želja uporabnika »manj map, bolj slikovno«). Le prikaz: datoteke ostanejo v svojih
+// mapah, ker sestavi kažejo nanje s potmi. Pogled »Mape«: podmape so ploščice z mozaikom sličic, klik odpre mapo (drobtinice za
+// nazaj); »Vse«: vsi kosi v eni mreži, mape so čipi filtra; »Seznam«: prejšnje drevo zložljivih vrstic. Mape z največ MALA_MAPA
+// kosi nimajo svoje ploščice ali čipa, njihovi kosi so med kosi nadrejene mape. Iskanje vedno kaže zadetke vseh map v eni mreži.
+const MALA_MAPA = 2;
+const POGLEDI_DATOTEK = { mape: 'Mape', vse: 'Vse', seznam: 'Seznam' };
+let pogledDatotek = (() => { try { const v = localStorage.getItem('pogledDatotek'); return v in POGLEDI_DATOTEK ? v : 'mape'; } catch (e) { return 'mape'; } })();
+const mestoPogleda = new Map();   // koren drevesa (mapa Oblaka | predpona projekta) -> {mapa: odprta mapa v pogledu Mape, filter: čip v pogledu Vse}
+function preklopPogleda() {
+  const g = el('div', 'preklopPogleda');
+  for (const [k, napis] of Object.entries(POGLEDI_DATOTEK)) {
+    const b = el('button', k === pogledDatotek ? 'izbran' : '', napis); b.type = 'button';
+    b.title = { mape: 'Mape kot ploščice s sličicami; klik odpre mapo', vse: 'Vsi kosi projekta v eni mreži, mape kot filter', seznam: 'Drevo map kot seznam vrstic' }[k];
+    b.addEventListener('click', () => {
+      pogledDatotek = k;
+      try { localStorage.setItem('pogledDatotek', k); } catch (e) { /* zasebno okno */ }
+      narisiOdprteDokumente(); naVrhMreze();
+    });
+    g.append(b);
+  }
+  return g;
+}
+// po menjavi pogleda, mape ali čipa na vrh mreže (nad njo je lahko dolg seznam odprtih zunaj projekta)
+function naVrhMreze() {
+  const v = $('stranskiVsebina'), t = v.querySelector('.preklopPogleda');
+  v.scrollTop = t ? v.scrollTop + t.getBoundingClientRect().top - v.getBoundingClientRect().top - 10 : 0;
+}
+function narisiMrezo(r, koren, prestej, vidne, relPot, kljuc, imeKorena, vsiOdprti, q) {
+  if (!mestoPogleda.has(kljuc)) mestoPogleda.set(kljuc, { mapa: '', filter: '' });
+  const mesto = mestoPogleda.get(kljuc);
+  const vsePod = m => [...m.datoteke, ...[...m.mape.values()].flatMap(vsePod)];
+  const naVrh = seznam => odprtiNaVrhu ? [...seznam].sort((a, b) => !!odprtaDatoteka(b, vsiOdprti) - !!odprtaDatoteka(a, vsiOdprti)) : seznam;
+  const ponovno = () => { narisiOdprteDokumente(); naVrhMreze(); };
+  const mrezaKosov = (seznam, mapaKosa) => {
+    const g = el('div', 'mrezaKosov');
+    for (const d of naVrh(seznam)) {
+      if (!prvaNajdenaDatoteka) prvaNajdenaDatoteka = d;
+      g.append(ploscicaDatoteke(d, vsiOdprti, mapaKosa(d)));
+    }
+    return g;
+  };
+  const naslov = (besedilo, n) => { const t = el('div', 'naslovRazdelka', besedilo); t.append(el('span', 'stevilo', String(n))); return t; };
+  if (q) { r.append(mrezaKosov(vidne, relPot)); return; }   // zadetki iz vseh map, pod imenom mapa
+  if (pogledDatotek === 'vse') {
+    const velike = [...koren.mape].filter(([, m]) => prestej(m) > MALA_MAPA).sort((x, y) => x[0].localeCompare(y[0], 'sl'));
+    if (mesto.filter && !velike.some(([ime]) => ime === mesto.filter)) mesto.filter = '';
+    if (velike.length) {
+      const c = el('div', 'cipiMap');
+      const cip = (ime, napis, n) => {
+        const b = el('button', mesto.filter === ime ? 'izbran' : '', napis); b.type = 'button'; b.append(el('span', 'n', String(n)));
+        b.title = ime ? 'Samo kosi iz mape »' + ime + '« (s podmapami)' : 'Vsi kosi';
+        b.addEventListener('click', () => { mesto.filter = mesto.filter === ime ? '' : ime; ponovno(); });
+        c.append(b);
+      };
+      cip('', 'Vse', vidne.length);
+      for (const [ime, m] of velike) cip(ime, ime, prestej(m));
+      r.append(c);
+    }
+    const izbrane = mesto.filter ? vidne.filter(d => (relPot(d) + '/').startsWith(mesto.filter + '/')) : vidne;
+    r.append(mrezaKosov(izbrane, d => { const p = relPot(d); return mesto.filter ? p.slice(mesto.filter.length + 1) : p; }));
+    return;
+  }
+  // pogled Mape: v odprto mapo po delih poti; mapa, ki je ni več (premaknjena, preimenovana), vrne na koren
+  const deli = mesto.mapa.split('/').filter(Boolean);
+  let m = koren;
+  for (const [i, del] of deli.entries()) {
+    if (!m.mape.has(del)) { deli.length = i; mesto.mapa = deli.join('/'); break; }
+    m = m.mape.get(del);
+  }
+  if (deli.length) {
+    const dr = el('div', 'drobtinice');
+    const korak = (napis, pot) => {
+      const b = el('button', '', napis); b.type = 'button'; b.title = 'Nazaj v ' + napis;
+      b.addEventListener('click', () => { mesto.mapa = pot; ponovno(); });
+      dr.append(b, el('span', 'loc', '›'));
+    };
+    korak(imeKorena, '');
+    deli.slice(0, -1).forEach((del, i) => korak(del, deli.slice(0, i + 1).join('/')));
+    dr.append(el('span', 'trenutna', deli[deli.length - 1]));
+    r.append(dr);
+  }
+  const mape = [...m.mape].sort((x, y) => x[0].localeCompare(y[0], 'sl'));
+  const velike = mape.filter(([, pod]) => prestej(pod) > MALA_MAPA);
+  const kosi = [...m.datoteke.map(d => [d, '']), ...mape.filter(([, pod]) => prestej(pod) <= MALA_MAPA).flatMap(([ime, pod]) => vsePod(pod).map(d => [d, ime]))];
+  if (velike.length) {
+    if (kosi.length) r.append(naslov('Mape', velike.length));
+    const g = el('div', 'mrezaKosov');
+    for (const [ime, pod] of velike) {
+      const vse = vsePod(pod), odprtih = vse.filter(d => odprtaDatoteka(d, vsiOdprti)).length;
+      const b = el('button', 'ploscicaMape' + (odprtih ? ' imaOdprte' : '')); b.type = 'button';
+      b.title = ime + '\n' + prestej(pod) + ' kosov' + (odprtih ? ', odprtih ' + odprtih : '') + '\nKlik: odpri mapo';
+      const n = el('div', 'napisMape'); n.append(svgIkona('mapa', 13), el('span', 'ime', ime), el('span', 'stevilo', String(prestej(pod))));
+      b.append(mozaikProjekta(vse), n);
+      b.addEventListener('click', () => { mesto.mapa = [...deli, ime].join('/'); ponovno(); });
+      g.append(b);
+    }
+    r.append(g);
+  }
+  if (kosi.length) {
+    if (velike.length) r.append(naslov('Kosi', kosi.length));
+    const mapaKosa = new Map(kosi);
+    r.append(mrezaKosov(kosi.map(([d]) => d), d => mapaKosa.get(d)));
+  }
+}
 function vnosOdprtega(o, q) {
   const v = el('div', 'vnos' + (o.aktiven ? ' aktiven' : ''));
   v.title = o.oznaka + '\n' + (o.pot || 'še ni shranjen') + (o.spremenjen ? '\nNeshranjene spremembe' : '') + '\nKlik: preklopi na dokument';
