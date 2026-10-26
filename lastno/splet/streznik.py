@@ -110,6 +110,7 @@ from oblak import Oblak, obdelaj_zahtevo as oblak_zahteva, pot_slicice_revizije 
 import mcp_orodja  # noqa: E402  (orodja za AI prek MCP: GET /mcp/orodja, POST /mcp/orodje; most lastno/mcp)
 import pomocnik  # noqa: E402  (pomočnik AI v stranski plošči strani: GET/POST /pomocnik, isti katalog orodij)
 import toplota as toplota_modul  # noqa: E402  (5. stopnja Toplota: GET /toplota, /toplota/stanje, /toplota/slika; POST /toplota/*)
+import pomnilnik  # noqa: E402  (App.listDocuments brez puščanja v C++; opozorilo, ko proces ali sistem zmanjkuje pomnilnika)
 
 MAPA_OBLAK = os.path.join(os.path.expanduser("~"), "Oblak", "3D modeliranje")
 MAPE_PROJEKTOV = [os.path.normpath(MAPA_OBLAK)]
@@ -3575,6 +3576,7 @@ class Stanje:
             "napaka": self.napaka,
             "obrazec": self.obrazec is not None,
             "projektov": sum(len(s["datoteke"]) for s in json.loads(self._projekti)["skupine"]),
+            "pomnilnik": pomnilnik.stanje(),
             "zaseda": _zasedenost(),   # kaj glavna nit ravno dela (brskalnik ob čakanju na preklop dokumenta)
             "priprava": self.priprava(),
         }
@@ -3621,6 +3623,10 @@ class Stanje:
                 samodejno.korak(self, OBLAK)   # tiha obnova dokumentov in samodejno shranjevanje
             except Exception:  # noqa: BLE001
                 _log("samodejno: %s" % traceback.format_exc())
+        try:
+            pomnilnik.preveri(self.oddaj)   # vsakih 30 s; čez prag obvestilo v brskalnik (pomnilnik.py)
+        except Exception:  # noqa: BLE001
+            pass
         if IMA_OKNO and zdaj - self.zadnji_obrazec > 0.25:
             self.zadnji_obrazec = zdaj
             try:
