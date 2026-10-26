@@ -84,19 +84,27 @@ def _je_sestav(obj):
     return obj is not None and obj.TypeId == "Assembly::AssemblyObject"
 
 
-def oznaka_vozla(obj):
+def oznaka_vozla(obj, tarce=None):
     """Za drevo: {standardni, vBazi, sestav} za vozel, ki predstavlja kos v svoji datoteki (povezava na drug dokument
-    ali glavni objekt shranjenega dokumenta), sicer None."""
+    ali glavni objekt shranjenega dokumenta), sicer None. `tarce` (ime dokumenta -> tarca) je predpomnilnik ene gradnje
+    drevesa (drevo_dokumenta)."""
+    def tarca_dok(d):
+        if tarce is None:
+            return tarca(d)
+        if d.Name not in tarce:
+            tarce[d.Name] = tarca(d)
+        return tarce[d.Name]
+
     try:
         cilj = getattr(obj, "LinkedObject", None) if obj.TypeId == "App::Link" else None
         if isinstance(cilj, tuple):
             cilj = cilj[0]
         if cilj is not None and cilj.Document is not obj.Document:
             doc = cilj.Document
-            t = tarca(doc)
+            t = tarca_dok(doc)
         else:
             doc = obj.Document
-            t = tarca(doc)
+            t = tarca_dok(doc)
             if t is not obj:
                 return None
         if t is None or not doc.FileName:

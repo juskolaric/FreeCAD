@@ -92,7 +92,10 @@ def drevo_dokumenta(doc, ikona_uri=None, kljuc_oblike=None):
         return {"koreni": [], "vozli": {}}
     vozli = {}
     zahtevani = set()
-    koreni_kosa = [tarca(doc)] if doc.FileName else []   # glavni objekt dokumenta-kosa se označi kot standardni
+    # glavni objekt (tarca) po dokumentih za to gradnjo: stanovanje ima 512 povezav na 20 dokumentov in tarca vsakič
+    # pregleda vse objekte dokumenta (~5 ms); brez tega je drevo trajalo ~3,5 s ob vsaki spremembi (2026-10-26)
+    tarce = {doc.Name: tarca(doc)}
+    koreni_kosa = [tarce[doc.Name]] if doc.FileName else []   # glavni objekt dokumenta-kosa se označi kot standardni
     for obj in doc.Objects:
         otroci = [o.Name for o in _otroci(obj) if o.Document is doc]
         zahtevani.update(otroci)
@@ -123,7 +126,7 @@ def drevo_dokumenta(doc, ikona_uri=None, kljuc_oblike=None):
                 vozli[obj.Name]["napajalnik"] = True
                 vozli[obj.Name]["napaja"] = list(getattr(obj, "Napaja", []) or [])
         if cilj is not None or obj in koreni_kosa:
-            std = oznaka_vozla(obj)   # kos v svoji datoteki: standardni / v bazi (meni Standardni del)
+            std = oznaka_vozla(obj, tarce)   # kos v svoji datoteki: standardni / v bazi (meni Standardni del)
             if std is not None:
                 vozli[obj.Name]["standardni"] = std
     koreni = [o.Name for o in doc.Objects if o.Name not in zahtevani]
