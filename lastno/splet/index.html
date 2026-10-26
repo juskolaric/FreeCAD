@@ -561,6 +561,27 @@
               border-left: 1px solid var(--crta); }
   #pomocnik.skrit { display: none; }
   body.pomocnikOdprt #obrazec { right: 396px; }
+  /* Stolpec projektov čisto desno (od 2026-10-26, kot v Oblikovanju): klik izbere projekt levega stolpca; le v strojnem risanju */
+  #projektiDesno { flex: none; width: 200px; display: flex; flex-direction: column; min-height: 0; background: var(--plosca); border-left: 1px solid var(--crta); user-select: none; }
+  body.stopnjaZunaj #projektiDesno { display: none; }
+  body:not(.stopnjaZunaj) #obrazec, body:not(.stopnjaZunaj) #razlicice { right: 216px; }
+  body.pomocnikOdprt:not(.stopnjaZunaj) #obrazec { right: 596px; }
+  #projektiDesno h3 { margin: 0; padding: 12px 14px 8px; font-size: 11px; text-transform: uppercase; letter-spacing: .05em; color: var(--besedilo3); display: flex; align-items: center; gap: 6px; }
+  #projektiDesno h3 button { margin-left: auto; border: 0; background: none; color: var(--poudarek); cursor: pointer; font: inherit; font-size: 11px; font-weight: 600; text-transform: none; letter-spacing: 0; border-radius: 6px; padding: 1px 6px; }
+  #projektiDesno h3 button:hover { background: var(--lebdenje); }
+  #projektiDesno h3 button.izbran { background: var(--poudarekMehko); color: var(--poudarekTemen); }
+  #projektiDesnoSeznam { flex: 1 1 auto; overflow: auto; padding: 0 8px 10px; display: flex; flex-direction: column; gap: 2px; }
+  #projektiDesnoSeznam .skupina { margin: 8px 6px 2px; display: flex; align-items: center; gap: 5px; font-size: 11px; font-weight: 600; color: var(--besedilo2); }
+  #projektiDesnoSeznam .skupina svg { flex: none; color: var(--poudarek); }
+  #projektiDesnoSeznam .vrsta { display: flex; align-items: center; gap: 6px; padding: 5px 6px; border-radius: 8px; cursor: pointer; min-width: 0; font-size: 13px; }
+  #projektiDesnoSeznam .vrsta.vSkupini { padding-left: 14px; }
+  #projektiDesnoSeznam .vrsta:hover { background: var(--lebdenje); }
+  #projektiDesnoSeznam .vrsta.izbran { background: var(--poudarekMehko); color: var(--poudarekTemen); font-weight: 600; }
+  #projektiDesnoSeznam .vrsta .ime { flex: 1 1 auto; min-width: 0; white-space: normal; overflow-wrap: anywhere; line-height: 1.25; }
+  #projektiDesnoSeznam .vrsta .odprt { flex: none; width: 6px; height: 6px; border-radius: 50%; background: var(--poudarek); }
+  #projektiDesnoSeznam .vrsta .stevilo { flex: none; font-size: 11px; font-weight: 400; color: var(--besedilo3); font-variant-numeric: tabular-nums; }
+  #projektiDesnoSeznam .vrsta.izbran .stevilo { color: var(--poudarekTemen); }
+  #projektiDesnoSeznam .prazno { padding: 4px 8px; font-size: 12px; color: var(--besedilo3); line-height: 1.5; }
   #pomocnik header { display: flex; align-items: center; gap: 6px; padding: 8px 10px; border-bottom: 1px solid var(--crta); }
   #pomocnik header .naslov { font-weight: 600; margin-right: auto; }
   #pomocnik header select, #pomocnik header button { height: 26px; border: 1px solid var(--crta); background: var(--plosca);
@@ -1090,6 +1111,10 @@
       <button type="button" id="pomocnikPoslji">Pošlji</button>
     </div>
   </footer>
+</aside>
+<aside id="projektiDesno" aria-label="Projekti">
+  <h3>Projekti <button type="button" id="projektiDesnoVsi" title="Levi stolpec pokaže dokumente vseh projektov">Vsi</button></h3>
+  <div id="projektiDesnoSeznam"></div>
 </aside>
 </div>
 <!-- Vrstica različic (od 2026-10-13): kartice različic aktivnega dokumenta iz oblaka, kot v Oblikovanju; polni jo narisiTrakRazlicic -->
@@ -2523,6 +2548,41 @@ function narisiOknoProjektov(samoObSpremembi) {
 function odpriOknoProjektov() { $('projektiIskanje').value = ''; $('projektiOkno').classList.remove('skrit'); $('projektiVsebina').scrollTop = 0; narisiOknoProjektov(); $('projektiIskanje').focus(); }
 function zapriOknoProjektov() { zapriMeniSkupine(); $('projektiOkno').classList.add('skrit'); }
 function izberiProjekt(k) { izbraniProjekt = k; zapriOknoProjektov(); $('stranskiVsebina').scrollTop = 0; narisiOdprteDokumente(); }
+// Stolpec projektov čisto desno (od 2026-10-26, želja uporabnika »kot pri Oblikovanju«): vrstica = projekt s številom datotek,
+// pika = ima odprte dokumente, prikazani projekt je moder; skupine projektov so naslovi. Klik izbere projekt kot kartica v oknu.
+let kljucDesnihProjektov = '';
+function narisiDesneProjekte() {
+  const c = $('projektiDesnoSeznam'), proj = prikazaniProjekt(), vsi = proj === null || proj === '*';
+  const projekti = podatkiProjektov();
+  const kljuc = JSON.stringify([proj, projekti.map(v => [v.kljuc, v.skupina, v.odprtih, v.datoteke.length])]);
+  if (kljuc === kljucDesnihProjektov) return;
+  kljucDesnihProjektov = kljuc;
+  const odmik = c.scrollTop; c.innerHTML = '';
+  $('projektiDesnoVsi').classList.toggle('izbran', vsi);
+  const uredi = a => a.sort((x, y) => imeProjekta(x.kljuc).localeCompare(imeProjekta(y.kljuc), 'sl'));
+  const vrsta = (v, vSkupini) => {
+    const r = el('div', 'vrsta' + (vSkupini ? ' vSkupini' : '') + (!vsi && v.kljuc === proj ? ' izbran' : ''));
+    r.title = imeProjekta(v.kljuc) + ': ' + sklon(v.datoteke.length, 'datoteka', 'datoteki', 'datoteke', 'datotek')
+      + (v.odprtih ? ', ' + sklon(v.odprtih, 'odprt', 'odprta', 'odprti', 'odprtih') : '') + '\nKlik: pokaži dokumente tega projekta';
+    r.append(el('span', 'ime', imeProjekta(v.kljuc)));
+    if (v.odprtih) r.append(el('span', 'odprt'));
+    r.append(el('span', 'stevilo', String(v.datoteke.length)));
+    r.addEventListener('click', () => izberiProjekt(v.kljuc));
+    return r;
+  };
+  const poSkupinah = new Map();
+  for (const v of projekti) if (v.skupina) { if (!poSkupinah.has(v.skupina)) poSkupinah.set(v.skupina, []); poSkupinah.get(v.skupina).push(v); }
+  for (const s of [...poSkupinah.keys()].sort((a, b) => a.localeCompare(b, 'sl'))) {
+    const h = el('div', 'skupina'); h.append(ikonaMape(12), s); c.append(h);
+    for (const v of uredi(poSkupinah.get(s))) c.append(vrsta(v, true));
+  }
+  const brez = uredi(projekti.filter(v => !v.skupina));
+  if (brez.length && poSkupinah.size) c.append(el('div', 'skupina', 'Ostali'));
+  for (const v of brez) c.append(vrsta(v, false));
+  if (!projekti.length) c.append(el('div', 'prazno', 'Ni projektov (mapa 3D modeliranje je prazna ali je strežnik še ni prebral).'));
+  c.scrollTop = odmik;
+}
+$('projektiDesnoVsi').addEventListener('click', () => izberiProjekt('*'));
 $('dokumentiProjekt').addEventListener('click', odpriOknoProjektov);
 $('projektiVsi').addEventListener('click', () => izberiProjekt('*'));
 $('projektiZapri').addEventListener('click', zapriOknoProjektov);
@@ -2546,6 +2606,7 @@ function narisiOdprteDokumente() {
   const vsebina = $('stranskiVsebina'); vsebina.innerHTML = '';
   const proj = prikazaniProjekt(), vsiProjekti = proj === null || proj === '*';
   napisIzbirnikaProjekta(proj);
+  narisiDesneProjekte();
   const vProjektu = pot => { if (vsiProjekti) return true; const k = projektPoti(pot); return k === null || k === proj; };
   const vsiOdprti = p.odprti || [], odprti = vsiOdprti.filter(o => vProjektu(o.pot)), q = dokumentiIskanje.trim().toLowerCase();
   const vidni = q ? odprti.filter(o => String(o.oznaka || '').toLowerCase().includes(q)) : odprti;
