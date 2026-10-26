@@ -165,6 +165,17 @@ public:
     }
     void forceUpdate(bool enable = true) override;
 
+    /** @name Headless display mode
+     * When enabled, updateVisual() does not tessellate shapes for Coin: it only marks the visual as
+     * touched. Used by the web front end, which runs with a hidden main window and renders its own
+     * meshes; building Coin geometry for every restored object took most of the document open time.
+     * Disabling the mode builds the skipped visuals of all shown objects.
+     */
+    //@{
+    static void setNoDisplay(bool enable);
+    static bool isNoDisplay();
+    //@}
+
     bool allowOverride(const App::DocumentObject&) const override;
 
     void setFaceHighlightActive(bool active)
@@ -245,6 +256,7 @@ private:
     Gui::ViewProviderFaceTexture texture;
     // settings stuff
     int forceUpdateCount;
+    static bool noDisplay;
     static App::PropertyFloatConstraint::Constraints sizeRange;
     static App::PropertyFloatConstraint::Constraints tessRange;
     static App::PropertyQuantityConstraint::Constraints angDeflectionRange;

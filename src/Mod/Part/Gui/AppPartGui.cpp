@@ -104,10 +104,38 @@ public:
     Module()
         : Py::ExtensionModule<Module>("PartGui")
     {
+        add_varargs_method(
+            "setNoDisplay",
+            &Module::setNoDisplay,
+            "setNoDisplay(bool): headless display mode. When on, shapes are not tessellated for the 3D "
+            "view (used with a hidden main window); switching it off builds the skipped views."
+        );
+        add_varargs_method(
+            "isNoDisplay",
+            &Module::isNoDisplay,
+            "isNoDisplay() -> bool: whether the headless display mode is on."
+        );
         initialize("This module is the PartGui module.");  // register with Python
     }
 
 private:
+    Py::Object setNoDisplay(const Py::Tuple& args)
+    {
+        PyObject* enable {};
+        if (!PyArg_ParseTuple(args.ptr(), "O!", &PyBool_Type, &enable)) {
+            throw Py::Exception();
+        }
+        ViewProviderPartExt::setNoDisplay(PyObject_IsTrue(enable) != 0);
+        return Py::None();
+    }
+
+    Py::Object isNoDisplay(const Py::Tuple& args)
+    {
+        if (!PyArg_ParseTuple(args.ptr(), "")) {
+            throw Py::Exception();
+        }
+        return Py::Boolean(ViewProviderPartExt::isNoDisplay());
+    }
 };
 
 PyObject* initModule()

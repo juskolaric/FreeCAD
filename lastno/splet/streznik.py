@@ -1831,9 +1831,23 @@ def _sprozi_ukaz(ime, indeks):
         Gui.runCommand(ime, indeks)
 
 
+def _brez_prikaza(vklop):
+    """Ob skritem oknu FreeCAD ne gradi svojega 3D prikaza (PartGui.setNoDisplay, lastna gradnja od 2026-10-26): mreže za
+    Coin so bile ~70 % časa odpiranja dokumenta (stanovanje ~20 s, brez okna 2 s), brskalnik pa riše svoje. Ob prikazu
+    okna se prikaz zgradi vsem vidnim objektom. Starejša gradnja funkcije nima: tiho brez učinka."""
+    try:
+        import PartGui
+        if hasattr(PartGui, "setNoDisplay") and PartGui.isNoDisplay() != bool(vklop):
+            PartGui.setNoDisplay(bool(vklop))
+            _log("prikaz v oknu FreeCAD-a: %s" % ("izklopljen (skrito okno)" if vklop else "vklopljen"))
+    except Exception as e:  # noqa: BLE001
+        _log("prikaz v oknu FreeCAD-a: %r" % e)
+
+
 def _pokazi_okno():
     """Pokaže okno FreeCAD-a (in morebitno modalno okno) in ga postavi v ospredje ali vsaj utripne v opravilni vrstici."""
     from PySide6 import QtWidgets
+    _brez_prikaza(False)
     mw = Gui.getMainWindow()
     if not mw.isVisible() or mw.isMinimized():
         mw.showNormal()
@@ -1851,6 +1865,7 @@ def _skrij_okno():
     mw = Gui.getMainWindow()
     if mw.isVisible():
         mw.hide()
+    _brez_prikaza(True)
 
 
 def _nalozi_okolja():

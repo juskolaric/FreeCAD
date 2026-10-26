@@ -76,8 +76,10 @@
 #include <Base/TimeInfo.h>
 #include <Base/Tools.h>
 
+#include <Gui/Application.h>
 #include <Gui/BitmapFactory.h>
 #include <Gui/Control.h>
+#include <Gui/Document.h>
 #include <Gui/Selection/SoFCSelectionAction.h>
 #include <Gui/Selection/SoFCUnifiedSelection.h>
 #include <Gui/ViewParams.h>
@@ -104,6 +106,7 @@ PROPERTY_SOURCE(PartGui::ViewProviderPartExt, Gui::ViewProviderGeometryObject)
 //**************************************************************************
 // Construction/Destruction
 
+bool ViewProviderPartExt::noDisplay = false;
 App::PropertyFloatConstraint::Constraints ViewProviderPartExt::sizeRange = {1.0, 64.0, 1.0};
 App::PropertyFloatConstraint::Constraints ViewProviderPartExt::tessRange = {0.01, 100.0, 0.01};
 App::PropertyQuantityConstraint::Constraints ViewProviderPartExt::angDeflectionRange
@@ -1471,6 +1474,12 @@ void ViewProviderPartExt::setupCoinGeometry(
 
 void ViewProviderPartExt::updateVisual()
 {
+    if (noDisplay) {
+        // headless display mode: build the Coin geometry later, when the mode is switched off
+        VisualTouched = true;
+        return;
+    }
+
     TopoDS_Shape shape = getRenderedShape().getShape();
 
     if (!VisualTouched && lastRenderedShape.IsPartner(shape)) {
@@ -1532,6 +1541,40 @@ void ViewProviderPartExt::updateVisual()
     setHighlightedFaces(ShapeAppearance.getValues());
     setHighlightedEdges(LineColorArray.getValues());
     setHighlightedPoints(PointColorArray.getValue());
+}
+
+void ViewProviderPartExt::setNoDisplay(bool enable)
+{
+    if (noDisplay == enable) {
+        return;
+    }
+    noDisplay = enable;
+    if (enable || !Gui::Application::Instance) {
+        return;
+    }
+    // the visuals were skipped while the mode was on: build them for every shown object
+    for (auto doc : App::GetApplication().getDocuments()) {
+        auto gdoc = Gui::Application::Instance->getDocument(doc);
+        if (!gdoc) {
+            continue;
+        }
+        for (auto obj : doc->getObjects()) {
+            auto vp = dynamic_cast<ViewProviderPartExt*>(gdoc->getViewProvider(obj));
+            if (vp && vp->VisualTouched && (vp->isShow() || vp->isUpdateForced())) {
+                vp->updateVisual();
+                Base::ObjectStatusLocker<App::Property::Status, App::Property> guard(
+                    App::Property::NoModify,
+                    &vp->ShapeAppearance
+                );
+                vp->onChanged(&vp->ShapeAppearance);
+            }
+        }
+    }
+}
+
+bool ViewProviderPartExt::isNoDisplay()
+{
+    return noDisplay;
 }
 
 void ViewProviderPartExt::forceUpdate(bool enable)
