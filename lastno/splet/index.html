@@ -2307,15 +2307,7 @@ function vnosDatoteke(d, odprti, vProjektu) {
   if (odprt) { pod.append(cipVnosa('odprt', 'Odprt')); pod.append(...cipiOdprtega(odprt, true)); }
   else if (odpiram && odpiram.pot === d.pot) { v.classList.add('odpiram'); pod.append(cipVnosa('odpiram', 'Odpiram …')); }
   b.append(pod); v.append(b);
-  v.addEventListener('click', () => {
-    if (odprt) { zacniPreklop({ ime: odprt.ime, oznaka: odprt.oznaka, pot: d.pot }); projektDejanje({ dejanje: 'aktiviraj', ime: odprt.ime, pot: d.pot }); return; }
-    // Strežnik odpre datoteko na glavni niti in takoj odgovori; velik sestav s povezanimi deli se nalaga desetine
-    // sekund. Do novega seznama odprtih (ali največ 3 min) vrstica kaže »Odpiram …«.
-    if (odpiram) clearTimeout(odpiram.casovnik);
-    odpiram = { pot: d.pot, casovnik: setTimeout(() => { odpiram = null; narisiOdprteDokumente(); }, 180000) };
-    zacniPreklop({ pot: d.pot, oznaka: d.ime });
-    projektDejanje({ dejanje: 'odpri', pot: d.pot });
-  });
+  v.addEventListener('click', () => odpriDatoteko(d));
   const dej = el('div', 'dejanja');
   if (vOblaku(d.pot)) dej.append(gumbRazlicic(d.pot, d.ime));
   if (odprt) dodajDejanjaOdprtega(dej, odprt);
@@ -2323,6 +2315,24 @@ function vnosDatoteke(d, odprti, vProjektu) {
   return v;
 }
 let odpiram = null;   // {pot, casovnik}: datoteka, ki jo strežnik ravno odpira
+// Odprta datoteka postane aktivna, zaprto strežnik odpre (vrstica datoteke, Enter v iskanju, glavni sestav projekta).
+function odpriDatoteko(d) {
+  const odprt = odprtaDatoteka(d, (stanje.projekti && stanje.projekti.odprti) || []);
+  if (odprt) { zacniPreklop({ ime: odprt.ime, oznaka: odprt.oznaka, pot: d.pot }); projektDejanje({ dejanje: 'aktiviraj', ime: odprt.ime, pot: d.pot }); return; }
+  // Strežnik odpre datoteko na glavni niti in takoj odgovori; velik sestav s povezanimi deli se nalaga desetine
+  // sekund. Do novega seznama odprtih (ali največ 3 min) vrstica kaže »Odpiram …«.
+  if (odpiram) clearTimeout(odpiram.casovnik);
+  odpiram = { pot: d.pot, casovnik: setTimeout(() => { odpiram = null; narisiOdprteDokumente(); }, 180000) };
+  zacniPreklop({ pot: d.pot, oznaka: d.ime });
+  projektDejanje({ dejanje: 'odpri', pot: d.pot });
+}
+// Glavni sestav projekta (od 2026-10-26): sestav z največjim dosegom (strežnik ga izračuna iz povezav v datotekah, tudi skozi
+// podsestave), nato z največ povezavami, nato največja datoteka. null, če projekt nima sestava.
+function glavniSestav(datoteke) {
+  const sestavi = datoteke.filter(d => d.vrsta === 'sestav');
+  sestavi.sort((a, b) => (b.doseg || 0) - (a.doseg || 0) || (b.povezav || 0) - (a.povezav || 0) || (b.velikost || 0) - (a.velikost || 0));
+  return sestavi[0] || null;
+}
 // Preklop dokumenta (2026-10-19): od klika na dokument ali datoteko do izrisa modela okno sredi pogleda šteje sekunde in pove,
 // na kaj FreeCAD čaka (/stanje, polje zaseda: mreženje kosa, orodje AI druge seje …). Preklop na predpomnjen model se konča
 // prej, kot se okno pokaže (0,4 s). Konec: naloziModel nariše ta dokument (ali po 5 min).
@@ -2583,13 +2593,22 @@ function narisiDesneProjekte() {
   $('projektiDesnoVsi').classList.toggle('izbran', vsi);
   const uredi = a => a.sort((x, y) => imeProjekta(x.kljuc).localeCompare(imeProjekta(y.kljuc), 'sl'));
   const vrsta = (v, vSkupini) => {
+    // knjižnica standardnih delov nima glavnega sestava (njeni sestavi so posamezni kupljeni kosi)
     const r = el('div', 'vrsta' + (vSkupini ? ' vSkupini' : '') + (!vsi && v.kljuc === proj ? ' izbran' : ''));
+    const glavni = v.kljuc === PROJEKT_KNJIZNICE ? null : glavniSestav(v.datoteke);
     r.title = imeProjekta(v.kljuc) + ': ' + sklon(v.datoteke.length, 'datoteka', 'datoteki', 'datoteke', 'datotek')
-      + (v.odprtih ? ', ' + sklon(v.odprtih, 'odprt', 'odprta', 'odprti', 'odprtih') : '') + '\nKlik: pokaži dokumente tega projekta';
+      + (v.odprtih ? ', ' + sklon(v.odprtih, 'odprt', 'odprta', 'odprti', 'odprtih') : '') + '\nKlik: pokaži dokumente tega projekta'
+      + (glavni ? ' in odpri glavni sestav »' + glavni.ime + '«' : '');
     r.append(el('span', 'ime', imeProjekta(v.kljuc)));
     if (v.odprtih) r.append(el('span', 'odprt'));
     r.append(el('span', 'stevilo', String(v.datoteke.length)));
-    r.addEventListener('click', () => izberiProjekt(v.kljuc));
+    // projekt, ki ni projekt aktivnega dokumenta: še odpri (ali aktiviraj) glavni sestav; delo v istem projektu ostane
+    r.addEventListener('click', () => {
+      const pot = aktivniDokumentPot(), akt = pot ? projektPoti(pot) : null;
+      const zdaj = glavni && podatkiProjektov().find(x => x.kljuc === v.kljuc), g = zdaj ? glavniSestav(zdaj.datoteke) : glavni;   // vrstica je lahko starejša od seznama
+      izberiProjekt(v.kljuc);
+      if (g && akt !== v.kljuc) odpriDatoteko(g);
+    });
     return r;
   };
   const poSkupinah = new Map();
@@ -2783,11 +2802,7 @@ $('dokumentiIskanje').addEventListener('keydown', e => {
     const o = prviNajdeniDokument; zacniPreklop({ ime: o.ime, oznaka: o.oznaka, pot: o.pot });
     projektDejanje({ dejanje: 'aktiviraj', ime: o.ime });
   }
-  else if (e.key === 'Enter' && prvaNajdenaDatoteka) {
-    const d = prvaNajdenaDatoteka, o = odprtaDatoteka(d, (stanje.projekti && stanje.projekti.odprti) || []);
-    if (o) { zacniPreklop({ ime: o.ime, oznaka: o.oznaka, pot: d.pot }); projektDejanje({ dejanje: 'aktiviraj', ime: o.ime, pot: d.pot }); }
-    else projektDejanje({ dejanje: 'odpri', pot: d.pot });
-  }
+  else if (e.key === 'Enter' && prvaNajdenaDatoteka) odpriDatoteko(prvaNajdenaDatoteka);
 });
 
 // --- oblak: različice datotek (PDM) --------------------------------------------

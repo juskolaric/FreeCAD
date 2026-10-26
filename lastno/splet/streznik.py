@@ -3001,7 +3001,8 @@ def _lastnosti_fcstd(pot, st):
     kljuc = (os.path.normcase(pot), int(st.st_mtime), st.st_size)
     r = _LASTNOSTI_FCSTD.get(kljuc)
     if r is None:
-        r = {"vrsta": "", "teles": 0, "povezav": 0, "slicica": False, "verzija": 0}
+        r = {"vrsta": "", "teles": 0, "povezav": 0, "slicica": False, "verzija": 0, "povezane": []}
+        povezane = set()   # datoteke, na katere kažejo povezave (XLink file="…FCStd"); za glavni sestav projekta
         try:
             with zipfile.ZipFile(pot) as z:
                 imena = z.namelist()
@@ -3024,12 +3025,15 @@ def _lastnosti_fcstd(pot, st):
                                         r["verzija"] = int(str(e.get("value", "0")).strip() or 0)
                                     except ValueError:
                                         pass
+                                elif e.tag == "XLink" and str(e.get("file", "")).lower().endswith(".fcstd"):
+                                    povezane.add(e.get("file"))
                                 continue
                             if e.tag == "Object" and e.get("type"):
                                 tipi.append(e.get("type"))
                             if e.tag in ("Object", "Property"):
                                 e.clear()
                     r.update(_vrsta_iz_tipov(tipi))
+                    r["povezane"] = sorted(povezane)
         except Exception:  # noqa: BLE001
             _log("lastnosti %s: %s" % (pot, traceback.format_exc().splitlines()[-1]))
         _LASTNOSTI_FCSTD[kljuc] = r
@@ -3159,8 +3163,31 @@ def _projekti_v_mapah():
                     if d is not None:
                         d["projekt"] = "" if koren == mapa else os.path.relpath(koren, mapa).replace("\\", "/")
                         datoteke.append(d)
+        _dosegi_sestavov(datoteke)
         skupine.append({"mapa": _pot(mapa), "naslov": os.path.basename(mapa), "datoteke": datoteke})
     return skupine
+
+
+def _dosegi_sestavov(datoteke):
+    """Sestavu doda »doseg«: koliko datotek zajame prek povezav, tudi skozi podsestave. Glavni sestav projekta je tisti z
+    največjim dosegom (stran ga odpre ob kliku na projekt, od 2026-10-26); izračun je iz lastnosti FCStd v predpomnilniku,
+    brez odpiranja datotek. Seznam povezav gre le v izračun, ne v odgovor."""
+    sosedi = {}
+    for d in datoteke:
+        mapa = os.path.dirname(d["pot"])
+        sosedi[os.path.normcase(os.path.normpath(d["pot"]))] = [
+            os.path.normcase(os.path.normpath(os.path.join(mapa, p))) for p in d.pop("povezane", [])]
+    for d in datoteke:
+        if d.get("vrsta") != "sestav":
+            continue
+        zacetek = os.path.normcase(os.path.normpath(d["pot"]))
+        videne, sklad = {zacetek}, [zacetek]
+        while sklad:
+            for s in sosedi.get(sklad.pop(), ()):
+                if s not in videne:
+                    videne.add(s)
+                    sklad.append(s)
+        d["doseg"] = len(videne) - 1
 
 
 def _spremenjen(doc):
