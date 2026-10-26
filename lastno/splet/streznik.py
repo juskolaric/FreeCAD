@@ -64,6 +64,7 @@ RELATIVNI_ROB = 0.00025
 PRORACUN_TOCK = 150000       # na objekt: gostejša mreža (npr. uvožen hladilnik s 4200 ploskvami) se naredi grobje
 KOT_UKRIVLJENIH = 0.2        # rad, kotni odklon mreže ploskev BSpline (kabli, uvoženi kosi); glej _predmrezi_ukrivljene
 MIROVANJE_OGREVANJA = 3.0    # s brez zahtev iz brskalnika, preden strežnik vnaprej pripravlja posnetke (Stanje.ogrej)
+GRADNJA_REZINA = 0.25        # s gradnje posnetka na obhod glavne niti; vmes se obdelajo kliki (Stanje.zgradi)
 
 
 _NATANCNOST_OBJEKTOV = {}    # polno ime objekta -> (diagonala, toleranca, odmik robov): glej _natancnost
@@ -3452,6 +3453,7 @@ class Stanje:
         self.kljuc = threading.Lock()
         self._posnetek = b'{"dokument":"","verzija":0,"objekti":[]}'
         self._gradnja = None               # zadnja gradnja posnetka po objektih (zgradi): vrstni red, verzije, drevo
+        self._v_teku = None                # nedokončana gradnja posnetka (zgradi po rezinah) ali None
         self._posnetek_cel = None          # (verzija, bajti) celotnega posnetka, zlepljenega ob prvi zahtevi (leno)
         self._ukazi = b'{"delovnaOkolja":[],"hitriDostop":[]}'
         self.imena_ukazov = []
@@ -3559,7 +3561,16 @@ class Stanje:
             "obrazec": self.obrazec is not None,
             "projektov": sum(len(s["datoteke"]) for s in json.loads(self._projekti)["skupine"]),
             "zaseda": _zasedenost(),   # kaj glavna nit ravno dela (brskalnik ob čakanju na preklop dokumenta)
+            "priprava": self.priprava(),
         }
+
+    def priprava(self):
+        """Napredek nedokončane gradnje posnetka (brskalnik ob preklopu dokumenta: »pripravljam 120/589«) ali None."""
+        t = getattr(self, "_v_teku", None)
+        if t is None:
+            return None
+        return {"dokument": t["oznaka"], "narejeno": t["i"], "vseh": len(t["imena"]),
+                "s": round(time.time() - t["zacetek"], 1)}
 
     # -- glavna nit --
     def obdelaj(self):
@@ -3616,10 +3627,14 @@ class Stanje:
                     self.odtis_videza = odtis
             except Exception:  # noqa: BLE001
                 _log("videz: %s" % traceback.format_exc())
-        if self.umazano and zdaj - self.zadnja_gradnja > 0.3:
+        if getattr(self, "_v_teku", None) is not None or (self.umazano and zdaj - self.zadnja_gradnja > 0.3):
             prej = _zaseda("priprava pogleda dokumenta")
             try:
-                self.zgradi()
+                self.zgradi(GRADNJA_REZINA)
+            except Exception:  # noqa: BLE001
+                self._v_teku = None
+                self.napaka = traceback.format_exc()
+                _log("posnetek: %s" % self.napaka)
             finally:
                 _GLAVNA[0] = prej
         if zdaj - self.zadnji_projekti > 2.0:
@@ -3635,7 +3650,7 @@ class Stanje:
                 self.preveri_okolje()
             except Exception:  # noqa: BLE001
                 self.napaka = traceback.format_exc()
-        if not self.umazano and time.time() - self.zadnja_zahteva > MIROVANJE_OGREVANJA:
+        if not self.umazano and getattr(self, "_v_teku", None) is None and time.time() - self.zadnja_zahteva > MIROVANJE_OGREVANJA:
             try:
                 self.ogrej()
             except Exception:  # noqa: BLE001
@@ -3700,35 +3715,59 @@ class Stanje:
                 yield lambda d=ime_dok, o=obj.Name: objekt(d, o)
             yield lambda d=ime_dok: drevo(d)
 
-    def zgradi(self):
+    def zgradi(self, rezina=None):
         """Posnetek aktivnega dokumenta po objektih: vsak objekt nosi številko posnetka, pri kateri se je njegov JSON
         nazadnje zamenjal (isti niz iz predpomnilnika = nespremenjen), da brskalnik z /model?od= dobi le razliko.
-        Celota se ne lepi tu, ampak šele v posnetek() na zahtevo."""
-        zacetek = time.time()
+        Celota se ne lepi tu, ampak šele v posnetek() na zahtevo.
+
+        Z `rezina` (sekund) gradnja teče po kosih: ko rezina poteče, vrne False in nadaljuje v naslednjem obhodu glavne
+        niti, vmes pa se obdelajo zahteve brskalnika. Prvi pogled stanovanja (589 objektov) se je mrežil 95 s v enem
+        kosu in klik na drug dokument je čakal do konca (2026-10-26). Ob zamenjavi aktivnega dokumenta se nedokončana
+        gradnja zavrže; že zmreženi objekti ostanejo v _PREDPOMNILNIK, preostale v mirovanju pripravi ogrevanje.
+        Vrne True, ko je posnetek objavljen."""
         doc = App.ActiveDocument
         ime_doc = doc.Name if doc is not None else ""
+        t = getattr(self, "_v_teku", None)
+        if t is not None and t["ime"] != ime_doc:
+            _log("posnetek: priprava »%s« prekinjena pri %d/%d objektih (aktiven je »%s«)"
+                 % (t["oznaka"], t["i"], len(t["imena"]), doc.Label if doc is not None else ""))
+            t = None
+        if t is None:
+            self.umazano = False   # sprememba med gradnjo sproži novo gradnjo (iz predpomnilnika) po koncu te
+            t = {"ime": ime_doc, "oznaka": doc.Label if doc is not None else "", "zacetek": time.time(),
+                 "imena": [o.Name for o in _vidni_objekti(doc)] if doc is not None else [], "i": 0,
+                 "verzija": self.verzija + 1, "objekti": {}, "vrstniRed": [], "zadetki": 0, "spremenjeni": 0, "bajtov": 0}
+            self._v_teku = t
         prejsnja = getattr(self, "_gradnja", None)
         isti_dokument = prejsnja is not None and prejsnja["ime"] == ime_doc
         stari = prejsnja["objekti"] if isti_dokument else {}
-        verzija = self.verzija + 1
-        objekti, vrstni_red = {}, []
-        zadetki = spremenjeni = bajtov = 0
-        if doc is not None:
-            for obj in _vidni_objekti(doc):
-                try:
-                    posnetek, zadetek = _geometrija_predpomnjena(doc, obj)
-                    zadetki += zadetek
-                except Exception:  # noqa: BLE001
-                    _log("objekt %s preskočen: %s" % (obj.Name, traceback.format_exc()))
-                    continue
-                star = stari.get(obj.Name)
-                if star is not None and star[1] is posnetek:
-                    objekti[obj.Name] = star
-                else:
-                    objekti[obj.Name] = (verzija, posnetek)
-                    spremenjeni += 1
-                vrstni_red.append(obj.Name)
-                bajtov += len(posnetek)
+        verzija = t["verzija"]
+        objekti, vrstni_red = t["objekti"], t["vrstniRed"]
+        konec = None if rezina is None else time.time() + rezina
+        while t["i"] < len(t["imena"]):
+            if konec is not None and time.time() > konec:
+                return False
+            ime = t["imena"][t["i"]]
+            t["i"] += 1
+            obj = doc.getObject(ime)
+            if obj is None:
+                continue   # izbrisan med gradnjo
+            try:
+                posnetek, zadetek = _geometrija_predpomnjena(doc, obj)
+                t["zadetki"] += zadetek
+            except Exception:  # noqa: BLE001
+                _log("objekt %s preskočen: %s" % (obj.Name, traceback.format_exc()))
+                continue
+            star = stari.get(obj.Name)
+            if star is not None and star[1] is posnetek:
+                objekti[obj.Name] = star
+            else:
+                objekti[obj.Name] = (verzija, posnetek)
+                t["spremenjeni"] += 1
+            vrstni_red.append(obj.Name)
+            t["bajtov"] += len(posnetek)
+        self._v_teku = None
+        zacetek, zadetki, spremenjeni, bajtov = t["zacetek"], t["zadetki"], t["spremenjeni"], t["bajtov"]
         try:
             drevo = drevo_dokumenta(doc, _ikona_uri, _kljuc_oblike)
         except Exception:  # noqa: BLE001
@@ -3741,7 +3780,6 @@ class Stanje:
             "vrstniRed": vrstni_red, "objekti": objekti, "drevo": json.dumps(drevo, separators=(",", ":")),
         }
         self._posnetek_cel = None
-        self.umazano = False
         self.zadnja_gradnja = time.time()
         # posnetki drugih odprtih dokumentov (sestavi, ki ta dokument vsebujejo) so morda zastareli: ogrevanje jih v mirovanju
         # zgradi vnaprej, da preklop nanje ne čaka na mreženje (2026-10-19)
@@ -3749,6 +3787,7 @@ class Stanje:
         self.oddaj("model", {"verzija": self.verzija})
         _log("posnetek %d: %d objektov (%d iz predpomnilnika, %d spremenjenih), %.1f kB, %.2f s"
              % (self.verzija, len(objekti), zadetki, spremenjeni, bajtov / 1024.0, time.time() - zacetek))
+        return True
 
     def zgradi_ukaze(self):
         self.nalozena = nalozena_okolja()

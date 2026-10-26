@@ -2335,14 +2335,18 @@ async function osveziPreklop() {
   if (s > 300) { koncajPreklop(); return; }
   const okno = $('preklop');
   okno.querySelector('.naslov').textContent = 'Odpiram »' + p.oznaka + '«';
-  okno.querySelector('.faza').textContent = 'Čakam na FreeCAD · ' + Math.round(s) + ' s';
+  // strežnik gradi pogled po kosih (Stanje.zgradi po rezinah, 2026-10-26): napredek priprave tega dokumenta
+  const pr = p.priprava && p.priprava.dokument === p.oznaka ? p.priprava : null;
+  okno.querySelector('.faza').textContent = pr
+    ? 'Pripravljam pogled · ' + pr.narejeno + ' / ' + pr.vseh + ' kosov · ' + Math.round(s) + ' s – lahko klikneš drug dokument'
+    : 'Čakam na FreeCAD · ' + Math.round(s) + ' s';
   const z = p.zaseda, tuje = z && /^(orodje AI|ukaz|skripta)/.test(z.kaj);
   okno.querySelector('.zaseda').textContent = z && z.kaj && z.s >= 1
     ? (tuje ? 'FreeCAD je zaseden: ' : 'FreeCAD: ') + z.kaj + ' (' + Math.round(z.s) + ' s)' + (tuje ? ' – klik pride na vrsto, ko konča' : '') : '';
   if (s < 0.9) return;
   try {
     const st = await (await fetch('/stanje', { cache: 'no-store' })).json();
-    if (preklop === p) p.zaseda = st.zaseda || null;
+    if (preklop === p) { p.zaseda = st.zaseda || null; p.priprava = st.priprava || null; }
   } catch (e) { /* strežnik zaseden ali nedosegljiv: ostane zadnje */ }
 }
 function narisiProjekte(p) {
