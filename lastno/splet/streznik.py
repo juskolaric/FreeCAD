@@ -1371,11 +1371,18 @@ def _geometrija_predpomnjena(doc, obj):
     """Posnetek objekta kot JSON niz iz predpomnilnika, če se ni nič spremenilo; sicer ga zgradi in shrani.
     Vrne (json, zadetek). Hranimo že serializiran JSON, ker je serializacija celega posnetka (več MB) stala
     skoraj pol sekunde na vsako gradnjo. Ponovna gradnja objekta, ki je že bil v predpomnilniku, gre v dnevnik
-    s potjo do spremenjenega dela ključa (mreženje velikega sestava traja več sekund na glavni niti)."""
+    s potjo do spremenjenega dela ključa (mreženje velikega sestava traja več sekund na glavni niti).
+    Za predpomnilnikom v pomnilniku je še trajni na disku (_mreza_z_diska, _mrezo_na_disk)."""
     kljuc = _geometrija_kljuc(obj)
     vnos = _PREDPOMNILNIK.get((doc.Name, obj.Name))
     if vnos is not None and vnos[0] == kljuc:
+        if _MREZE_NA_DISKU.get((doc.Name, obj.Name)) != kljuc:   # npr. dokument je bil ob mreženju neshranjen
+            _mrezo_na_disk(doc, obj, kljuc, vnos[1])
         return vnos[1], True
+    posnetek = _mreza_z_diska(doc, obj, kljuc)
+    if posnetek is not None:
+        _PREDPOMNILNIK[(doc.Name, obj.Name)] = (kljuc, posnetek)
+        return posnetek, True
     zacetek = time.time()
     prej = _zaseda("mrežim »%s« (%s)" % (obj.Label, doc.Label))
     try:
@@ -1383,10 +1390,189 @@ def _geometrija_predpomnjena(doc, obj):
     finally:
         _GLAVNA[0] = prej
     _PREDPOMNILNIK[(doc.Name, obj.Name)] = (kljuc, posnetek)
+    _mrezo_na_disk(doc, obj, kljuc, posnetek)
     if vnos is not None:
         _log("posnetek: »%s« znova, %.1f s, %.0f kB (ključ: %s)"
              % (obj.Label, time.time() - zacetek, len(posnetek) / 1024.0, _razlika_kljuca(vnos[0], kljuc)))
     return posnetek, False
+
+
+# ---------------------------------------------------------------------------
+# Trajni predpomnilnik posnetkov na disku (2026-10-26). Predpomnilnik v pomnilniku (_PREDPOMNILNIK) ob ponovnem zagonu
+# izgine, ključ pa vsebuje Shape.hashCode(), ki med zagoni ni stabilen: prvi pogled stanovanja (589 objektov) se je
+# po vsakem zagonu mrežil ~50 s. Trajni ključ namesto oblike vsebuje žig datotek, iz katerih oblika pride (pot, čas
+# spremembe, velikost dokumenta in vseh dokumentov, od katerih je odvisen), polna imena objektov in vse ostalo iz
+# ključa v pomnilniku (lege, oznaka, videz). Objekt, katerega dokument (ali dokument, od katerega je odvisen) ima
+# neshranjene spremembe, trajnega ključa nima: oblika v pomnilniku ni več ta iz datoteke. Ključ vsebuje še odtis kode,
+# ki posnetek gradi (_odtis_kode_mrez), da sprememba mreženja ne pusti starih posnetkov. Zapis teče v ločeni niti
+# (stiskanje zlib, brez FreeCAD API-ja); mapa build/splet-mreze (zunaj gita), nad MREZE_DISK_MEJA se brišejo najdlje
+# nerabljeni.
+MAPA_MREZ = os.environ.get("SPLET_MREZE_MAPA") or os.path.join(os.path.dirname(os.path.dirname(MAPA)), "build", "splet-mreze")
+MREZE_DISK_MEJA = 4 * 1024 ** 3      # bajtov stisnjenih posnetkov
+_MREZE_NA_DISKU = {}                 # (dokument, objekt) -> ključ v pomnilniku, za katerega je posnetek že na disku
+_MREZE_DISK = {"branj": 0, "zapisov": 0, "odtis": None, "kode": None}
+_MREZE_PISALEC = queue.Queue()
+
+
+class _NiTrajno(Exception):
+    """Oblika objekta ni ta iz shranjene datoteke (neshranjene spremembe, nov dokument): brez trajnega ključa."""
+
+
+def _zig_dokumenta(doc):
+    """Žig datotek, iz katerih pride oblika objektov dokumenta: (pot, čas spremembe, velikost) za dokument in vse
+    dokumente, od katerih je odvisen (povezave). _NiTrajno, ko kateri ni shranjen ali ima neshranjene spremembe."""
+    zig = []
+    for d in doc.getDependentDocuments():   # vključno z doc
+        if not d.FileName or _spremenjen(d) or getattr(d, "Partial", False):
+            raise _NiTrajno()
+        st = os.stat(d.FileName)
+        zig.append((os.path.normcase(os.path.abspath(d.FileName)), st.st_mtime_ns, st.st_size))
+    return tuple(sorted(zig))
+
+
+def _trajni_kljuc_oblike(obj, globina=0):
+    """Kot _kljuc_oblike, a list namesto Shape.hashCode() nosi polno ime objekta in žig njegovih datotek."""
+    if globina > 8:
+        raise _NiTrajno()
+    try:
+        povezan = obj.getLinkedObject(True)
+    except Exception:  # noqa: BLE001
+        povezan = obj
+    if povezan is not None and povezan is not obj:
+        return ("L", _trajni_kljuc_oblike(povezan, globina + 1),
+                _lega_kljuc(obj.Placement) if hasattr(obj, "Placement") else None)
+    if hasattr(obj, "LinkedObject") and int(getattr(obj, "ElementCount", 0) or 0) > 0:
+        cilj = obj.LinkedObject
+        if isinstance(cilj, tuple):
+            cilj = cilj[0]
+        if cilj is not None and cilj is not obj:
+            lege = tuple(_lega_kljuc(p) for p in (getattr(obj, "PlacementList", None) or []))
+            korak = getattr(cilj, "Korak", None)
+            return ("A", _trajni_kljuc_oblike(cilj, globina + 1), _lega_kljuc(obj.Placement), int(obj.ElementCount),
+                    lege, float(korak) if korak is not None else None)
+    if obj.isDerivedFrom("App::DocumentObjectGroup"):
+        return ("G", tuple(_trajni_kljuc_oblike(o, globina + 1) for o in obj.Group))
+    if obj.isDerivedFrom("App::Part"):
+        return ("P", tuple(_trajni_kljuc_oblike(o, globina + 1) for o in obj.Group if hasattr(o, "Shape")),
+                _lega_kljuc(obj.Placement))
+    return ("F", obj.FullName, _zig_dokumenta(obj.Document), _lega_kljuc(obj.Shape.Placement))
+
+
+def _odtis_kode(koda):
+    """Odtis kode funkcije brez številk vrstic (sprememba drugje v datoteki ga ne spremeni)."""
+    konst = tuple(_odtis_kode(c) if hasattr(c, "co_code") else repr(c) for c in koda.co_consts)
+    return (koda.co_code, koda.co_names, konst)
+
+
+def _odtis_kode_mrez():
+    """Odtis vsega, kar določa posnetek objekta: koda mreženja, konstante natančnosti, videz.py, ploscice.py,
+    različica FreeCAD-a. Izračuna se znova le, ko se katera funkcija zamenja (vroča zamenjava kode)."""
+    import hashlib
+    imena = ("_geometrija", "_geometrija_cele_oblike", "_geometrija_iz_listov", "_mreza_lista", "_stevilo_tock_lista",
+             "_rob_info", "_rob_info_lista", "_dodaj_ploscice", "_natancnost", "_predmrezi_ukrivljene", "_telesa_ploskev",
+             "_listi_s_potjo", "_barve", "_prosojnost", "_barva_robov", "_z3")
+    fn = tuple(f for f in (globals().get(i) for i in imena) if f is not None)
+    moduli = tuple(m for m in (globals().get("videz"), globals().get("ploscice")) if m is not None)
+    identiteta = tuple(id(f.__code__) for f in fn) + tuple(id(m) for m in moduli)
+    if _MREZE_DISK["kode"] != identiteta:
+        h = hashlib.sha1()
+        for f in fn:
+            h.update(repr(_odtis_kode(f.__code__)).encode("utf-8"))
+        for modul in moduli:
+            with open(modul.__file__, "rb") as dat:
+                h.update(dat.read())
+        h.update(repr((TOLERANCA_PLOSKEV, ODMIK_ROBOV, RELATIVNA_PLOSKEV, RELATIVNI_ROB, PRORACUN_TOCK,
+                       KOT_UKRIVLJENIH, App.Version()[:4])).encode("utf-8"))
+        _MREZE_DISK["odtis"], _MREZE_DISK["kode"] = h.hexdigest(), identiteta
+    return _MREZE_DISK["odtis"]
+
+
+def _pot_mreze(obj, kljuc):
+    """Pot datoteke posnetka na disku ali None, ko objekt trajnega ključa nima."""
+    import hashlib
+    try:
+        trajni = (_odtis_kode_mrez(), obj.FullName, _trajni_kljuc_oblike(obj)) + tuple(kljuc[1:])
+    except _NiTrajno:
+        return None
+    except Exception:  # noqa: BLE001
+        return None
+    ime = hashlib.sha1(repr(trajni).encode("utf-8")).hexdigest()
+    return os.path.join(MAPA_MREZ, ime[:2], ime + ".json.z")
+
+
+def _mreza_z_diska(doc, obj, kljuc):
+    """Posnetek objekta z diska (JSON niz) ali None."""
+    pot = _pot_mreze(obj, kljuc)
+    if pot is None or not os.path.isfile(pot):
+        return None
+    import zlib
+    try:
+        with open(pot, "rb") as f:
+            posnetek = zlib.decompress(f.read()).decode("utf-8")
+        os.utime(pot)   # najdlje nerabljeni se brišejo prvi (_pocisti_mreze)
+    except Exception as e:  # noqa: BLE001
+        _log("mreže na disku: branje %s: %r" % (pot, e))
+        return None
+    _MREZE_NA_DISKU[(doc.Name, obj.Name)] = kljuc
+    _MREZE_DISK["branj"] += 1
+    return posnetek
+
+
+def _mrezo_na_disk(doc, obj, kljuc, posnetek):
+    """Posnetek objekta da v vrsto za zapis na disk (nit _pisalec_mrez); brez trajnega ključa nič. Zapomni si ključ tudi
+    takrat, da se trajni ključ neshranjenega dokumenta ne računa ob vsaki gradnji (shranjevanje zapomnjeno počisti)."""
+    _MREZE_NA_DISKU[(doc.Name, obj.Name)] = kljuc
+    pot = _pot_mreze(obj, kljuc)
+    if pot is not None and not os.path.isfile(pot):
+        _MREZE_PISALEC.put((pot, posnetek))
+
+
+def _pocisti_mreze():
+    """Nad MREZE_DISK_MEJA zbriše najdlje nerabljene posnetke (do 80 % meje). Nit pisalca."""
+    datoteke = []
+    for koren, _, imena in os.walk(MAPA_MREZ):
+        for ime in imena:
+            p = os.path.join(koren, ime)
+            try:
+                st = os.stat(p)
+            except OSError:
+                continue
+            datoteke.append((st.st_mtime, st.st_size, p))
+    skupaj = sum(d[1] for d in datoteke)
+    if skupaj <= MREZE_DISK_MEJA:
+        return
+    datoteke.sort()
+    for _, velikost, p in datoteke:
+        if skupaj <= 0.8 * MREZE_DISK_MEJA:
+            break
+        try:
+            os.remove(p)
+            skupaj -= velikost
+        except OSError:
+            pass
+    _log("mreže na disku: počiščeno na %.1f GB" % (skupaj / 1024.0 ** 3))
+
+
+def _pisalec_mrez():
+    """Nit: stisne in zapiše posnetke iz _MREZE_PISALEC (zlib sprosti GIL); ob zagonu in vsakih 500 zapisov počisti."""
+    import zlib
+    try:
+        _pocisti_mreze()
+    except Exception as e:  # noqa: BLE001
+        _log("mreže na disku: čiščenje: %r" % e)
+    while True:
+        pot, posnetek = _MREZE_PISALEC.get()
+        try:
+            os.makedirs(os.path.dirname(pot), exist_ok=True)
+            zacasna = pot + ".%d.tmp" % threading.get_ident()
+            with open(zacasna, "wb") as f:
+                f.write(zlib.compress(posnetek.encode("utf-8"), 1))
+            os.replace(zacasna, pot)
+            _MREZE_DISK["zapisov"] += 1
+            if _MREZE_DISK["zapisov"] % 500 == 0:
+                _pocisti_mreze()
+        except Exception as e:  # noqa: BLE001
+            _log("mreže na disku: zapis %s: %r" % (pot, e))
 
 
 # Kaj glavna nit ravno dela (opis, začetek): nit strežnika to vrne v /stanje (polje zaseda), brskalnik pa ob čakanju na
@@ -3757,7 +3943,8 @@ class Stanje:
             self.umazano = False   # sprememba med gradnjo sproži novo gradnjo (iz predpomnilnika) po koncu te
             t = {"ime": ime_doc, "oznaka": doc.Label if doc is not None else "", "zacetek": time.time(),
                  "imena": [o.Name for o in _vidni_objekti(doc)] if doc is not None else [], "i": 0,
-                 "verzija": self.verzija + 1, "objekti": {}, "vrstniRed": [], "zadetki": 0, "spremenjeni": 0, "bajtov": 0}
+                 "verzija": self.verzija + 1, "objekti": {}, "vrstniRed": [], "zadetki": 0, "spremenjeni": 0, "bajtov": 0,
+                 "z_diska": _MREZE_DISK["branj"]}
             self._v_teku = t
         prejsnja = getattr(self, "_gradnja", None)
         isti_dokument = prejsnja is not None and prejsnja["ime"] == ime_doc
@@ -3806,8 +3993,10 @@ class Stanje:
         # zgradi vnaprej, da preklop nanje ne čaka na mreženje (2026-10-19)
         self.ogrevanje_odtis = None
         self.oddaj("model", {"verzija": self.verzija})
-        _log("posnetek %d: %d objektov (%d iz predpomnilnika, %d spremenjenih), %.1f kB, %.2f s"
-             % (self.verzija, len(objekti), zadetki, spremenjeni, bajtov / 1024.0, time.time() - zacetek))
+        z_diska = _MREZE_DISK["branj"] - t.get("z_diska", _MREZE_DISK["branj"])
+        _log("posnetek %d: %d objektov (%d iz predpomnilnika%s, %d spremenjenih), %.1f kB, %.2f s"
+             % (self.verzija, len(objekti), zadetki, (", od tega %d z diska" % z_diska) if z_diska else "", spremenjeni,
+                bajtov / 1024.0, time.time() - zacetek))
         return True
 
     def zgradi_ukaze(self):
@@ -4260,6 +4449,7 @@ class OpazovalecDokumenta:
         # PDM (oblak.py): po shranjevanju datoteke iz mape oblaka brskalnik vpraša »Kaj si spremenil?«;
         # komentar se zapiše k reviziji, ki jo bo oblaku poslal odjemalec oblaka.
         STANJE.zadnji_projekti = 0.0
+        _MREZE_NA_DISKU.clear()   # nov žig datoteke: posnetki tega in odvisnih dokumentov gredo na disk pod novim ključem
         if getattr(STANJE, "tiho_shranjevanje", False):
             return   # premik v bazo standardnih delov shrani več sestavov naenkrat; vsebina se ni spremenila
         try:
@@ -5023,6 +5213,7 @@ def zazeni():
     nit = threading.Thread(target=streznik.serve_forever, name="splet-streznik", daemon=True)
     nit.start()
     threading.Thread(target=_oblikovanje_nadzor, name="oblikovanje-nadzor", daemon=True).start()   # Blender po nedejavnosti ugasne
+    threading.Thread(target=_pisalec_mrez, name="mreze-na-disk", daemon=True).start()   # trajni predpomnilnik posnetkov
     _log("strežnik teče na %s (okno: %s)" % (naslov, "da" if IMA_OKNO else "ne"))
     _zapisi_povezavo()
 
