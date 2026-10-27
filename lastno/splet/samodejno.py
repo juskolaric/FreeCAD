@@ -203,6 +203,8 @@ def korak(stanje, oblak=None):
             continue
         if _ovira(stanje, doc, gdoc):
             continue
+        if not os.path.exists(doc.FileName):
+            continue   # datoteke ni več (projekt izbrisan ali umaknjen): ne zapiši je nazaj; zapre jo _zapri_izbrisane
         disk = _mtime(doc.FileName)
         if disk is not None and s["mtime"] is not None and abs(disk - s["mtime"]) > 1:
             if not s["javljeno"]:

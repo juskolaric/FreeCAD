@@ -693,7 +693,12 @@ FreeCAD je motor, vmesnik in grafika nastajata v brskalniku (plan, korak 8 napre
   Spremenjen dokument z datoteko se tiho shrani 8 s po zadnji spremembi (najkasneje 90 s po prvi); ne med urejanjem,
   modalnim oknom, nalaganjem, pri ogledih različic, delno naloženih in datotekah, ki jih je medtem spremenil kdo drug
   (obvestilo). Obnovljen dokument, katerega datoteka je novejša od obnovitvene kopije, se ne shranjuje sam. Izklop:
-  `SPLET_SAMODEJNO_SHRANJEVANJE=0`. Po selitvi mape pixi okolje kaže na staro pot v `.pixi/envs/default/qt6.conf` in
+  `SPLET_SAMODEJNO_SHRANJEVANJE=0`. **Izbrisani projekti** (od 2026-10-27, `_zapri_izbrisane` v `streznik.py`, vsaki 2 s ob
+  seznamu projektov): dokument, katerega datoteke 10 s ni na disku (mapa projekta izbrisana ali umaknjena v arhiv), se zapre sam;
+  neshranjene spremembe gredo prej kot kopija v `%LOCALAPPDATA%/FreeCAD-splet/izbrisani`, vsi se zaprejo naenkrat z
+  `Modified = False` (sestavi ob zaprtju dela dobijo oznako spremenjeno). Samodejno shranjevanje manjkajoče datoteke ne zapiše
+  nazaj (mapa bi nastala znova), skupine projektov brez mape se ne kažejo (vnos v datoteki ostane). Vroča zamenjava
+  `Stanje.obdelaj` potrebuje še ponovno vezavo `_CASOVNIK.timeout` (vezan je na staro metodo). Po selitvi mape pixi okolje kaže na staro pot v `.pixi/envs/default/qt6.conf` in
   `Library/bin/qt6.conf` (»no Qt platform plugin«): popravi poti ali `pixi install`.
 - **Delno naloženi dokumenti** (od 2026-10-17, `lastno/splet/delno.py`): FreeCAD datoteke, ki jih odpre šele povezava
   (App::Link) iz sestava, naloži le delno (`Document.Partial`, samo objekti, ki jih povezava potrebuje). Takega dokumenta

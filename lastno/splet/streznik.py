@@ -3275,7 +3275,9 @@ def _skupine_projektov():
             _log("skupine projektov: %r" % e)
             skupine = {}
         _SKUPINE_PREDPOMNILNIK.update(mtime=mtime, skupine=skupine)
-    return dict(_SKUPINE_PREDPOMNILNIK["skupine"])
+    # Projekt, katerega mape ni več (izbrisan ali umaknjen v arhiv), se ne kaže; vnos v datoteki ostane, če se mapa vrne.
+    return {k: v for k, v in _SKUPINE_PREDPOMNILNIK["skupine"].items()
+            if os.sep in k or "/" in k or os.path.isdir(os.path.join(MAPA_OBLAK, k))}
 
 
 def _zapisi_skupine(skupine):
@@ -3874,6 +3876,8 @@ class Stanje:
         if zdaj - self.zadnji_projekti > 2.0:
             self.zadnji_projekti = zdaj
             try:
+                if _zapri_izbrisane(self):
+                    self.umazano = True
                 self.preveri_projekte()
             except Exception:  # noqa: BLE001
                 self.napaka = traceback.format_exc()
@@ -5105,6 +5109,65 @@ def _zapri_dvojnike():
     for ime in imena:
         _log("zapiram dvojnik ali vzorec: %s" % ime)
         App.closeDocument(ime)
+    return len(imena)
+
+
+# Dokumenti, katerih datoteke ni več na disku (projekt izbrisan ali umaknjen v arhiv): ime -> čas, ko je prvič manjkala.
+MAPA_IZBRISANIH = os.path.join(os.environ.get("LOCALAPPDATA") or os.path.expanduser("~"), "FreeCAD-splet", "izbrisani")
+IZBRISAN_PO = 10.0   # datoteka mora manjkati toliko sekund (oblak jo ob prenosu za hip zamenja)
+_MANJKA = {}
+
+
+def _zapri_izbrisane(stanje):
+    """Zapre odprte dokumente, katerih datoteka že IZBRISAN_PO sekund ne obstaja (mapa projekta izbrisana ali
+    umaknjena). Brez tega jih seznam še kaže kot projekt, samodejno shranjevanje pa bi jih zapisalo nazaj na disk.
+    Dokument z neshranjenimi spremembami se prej shrani kot kopija v MAPA_IZBRISANIH. Zapre vse naenkrat in brez
+    vprašanj: ob zapiranju dela se sestavi, ki nanj kažejo, označijo kot spremenjeni. Vrne število zaprtih."""
+    dokumenti = App.listDocuments()
+    zdaj = time.time()
+    manjkajo = []
+    for ime, d in dokumenti.items():
+        pot = d.FileName
+        if not pot or getattr(d, "Restoring", False) or os.path.exists(pot):
+            _MANJKA.pop(ime, None)
+            continue
+        if zdaj - _MANJKA.setdefault(ime, zdaj) >= IZBRISAN_PO:
+            manjkajo.append(d)
+    for ime in list(_MANJKA):
+        if ime not in dokumenti:
+            _MANJKA.pop(ime, None)
+    if not manjkajo or stanje.skica:
+        return 0
+    imena = [d.Name for d in manjkajo]
+    kopije = []
+    for d in manjkajo:
+        gd = Gui.getDocument(d.Name) if IMA_OKNO else None
+        if gd is not None and gd.Modified:
+            try:
+                os.makedirs(MAPA_IZBRISANIH, exist_ok=True)
+                kopija = os.path.join(MAPA_IZBRISANIH, "%s %s.FCStd" % (
+                    os.path.splitext(os.path.basename(d.FileName))[0], time.strftime("%Y%m%d-%H%M%S")))
+                d.saveCopy(kopija)
+                kopije.append(kopija)
+            except Exception as e:  # noqa: BLE001
+                _log("izbrisan %s ostane odprt, kopija ni uspela: %r" % (d.Name, e))
+                imena.remove(d.Name)
+    if App.ActiveDocument is not None and App.ActiveDocument.Name in imena:
+        ostali = [n for n in dokumenti if n not in imena]
+        if ostali:
+            App.setActiveDocument(ostali[0])
+    mape = sorted({os.path.dirname(d.FileName) for d in manjkajo if d.Name in imena})
+    for ime in imena:
+        if ime in App.listDocuments():
+            if IMA_OKNO and Gui.getDocument(ime) is not None:
+                Gui.getDocument(ime).Modified = False
+            App.closeDocument(ime)
+        _MANJKA.pop(ime, None)
+    _log("zaprti dokumenti izbrisanih datotek (%d): %s; kopije sprememb: %s" % (len(imena), "; ".join(mape), kopije or "-"))
+    sporocilo = "Zaprtih %d dokumentov, katerih datotek ni več na disku." % len(imena)
+    if kopije:
+        sporocilo += " Neshranjene spremembe so v %s." % MAPA_IZBRISANIH
+    stanje.oddaj("obvestilo", {"sporocilo": sporocilo, "slabo": bool(kopije)})
     return len(imena)
 
 
