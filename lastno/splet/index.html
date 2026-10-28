@@ -351,6 +351,16 @@
   #dokumentiGlava .vrsticaIskanja .iskanje { flex: 1 1 auto; min-width: 0; }
   #dokumentiGlava #dokumentiFilter { height: 28px; width: 28px; }
   #dokumentiGlava #dokumentiFilter.vklopljen { color: var(--poudarek); background: #dcebfc; }
+  /* gumb »vsi odprti« (od 2026-10-28): seznam ne kaže več odprtih zunaj projekta, ampak jih ta gumb pokaže vse v plošči pod glavo */
+  #dokumentiOdprti { flex: none; display: inline-flex; align-items: center; gap: 4px; height: 28px; padding: 0 7px; border: 1px solid var(--crta);
+    border-radius: 8px; background: #fff; color: var(--besedilo2); font: inherit; font-size: 12px; font-weight: 600; cursor: pointer; font-variant-numeric: tabular-nums; }
+  #dokumentiOdprti:hover { background: var(--lebdenje); border-color: var(--crtaMocna); }
+  #dokumentiOdprti[aria-expanded="true"] { color: var(--poudarek); background: #dcebfc; border-color: #b7d4f5; }
+  #dokumentiOdprti:focus-visible { outline: none; box-shadow: var(--obroc); }
+  #dokumentiStolpec { position: relative; }
+  #odprtiPlosca { position: absolute; z-index: 30; left: 6px; right: 6px; top: 46px; max-height: min(70vh, calc(100% - 56px)); overflow-y: auto;
+    background: #fff; border: 1px solid var(--crta); border-radius: 12px; box-shadow: var(--senca2); padding: 4px 0 6px; scrollbar-width: thin; }
+  #odprtiPlosca.skrit { display: none; }
   #drevoVsebina { flex: 1 1 auto; min-width: 0; overflow-y: auto; padding: 6px 0 10px; outline: none; scrollbar-width: thin; }
   #drevoVsebina .vozel { position: relative; display: flex; align-items: center; gap: 6px; margin: 1px 6px; padding: 3px 4px 3px 0;
     min-height: 26px; cursor: pointer; border-radius: 8px; transition: background-color .08s; }
@@ -1058,8 +1068,9 @@
       <div id="dokumentiStolpec">
         <div id="dokumentiGlava">
           <div class="naslov" style="display: none"><span class="napis">Dokumenti</span><button type="button" id="dokumentiProjekt" title="Projekt, katerega dokumenti so prikazani; klik odpre vse projekte"><span class="delovni"></span><span class="ime"></span><svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M3 4.5 6 7.5 9 4.5"/></svg></button><span class="stevilo" id="dokumentiStevilo"></span></div>
-          <div class="vrsticaIskanja"><label class="iskanje"><span id="dokumentiLupa"></span><input id="dokumentiIskanje" type="search" placeholder="Išči med dokumenti …" autocomplete="off" spellcheck="false"><span class="stevec" id="dokumentiStevec"></span></label><button type="button" class="ikonaGumb" id="dokumentiFilter"></button></div>
+          <div class="vrsticaIskanja"><label class="iskanje"><span id="dokumentiLupa"></span><input id="dokumentiIskanje" type="search" placeholder="Išči med dokumenti …" autocomplete="off" spellcheck="false"><span class="stevec" id="dokumentiStevec"></span></label><button type="button" class="ikonaGumb" id="dokumentiFilter"></button><button type="button" id="dokumentiOdprti" aria-expanded="false"></button></div>
         </div>
+        <div id="odprtiPlosca" class="skrit"></div>
         <div id="stranskiVsebina"><div class="prazno">Nalagam …</div></div>
       </div>
       <div class="locilnik" id="locilnikStolpcev" title="Povleci: širina seznama dokumentov"></div>
@@ -2736,27 +2747,15 @@ function narisiOdprteDokumente() {
   napisIzbirnikaProjekta(proj);
   narisiDesneProjekte();
   const vProjektu = pot => { if (vsiProjekti) return true; const k = projektPoti(pot); return k === null || k === proj; };
-  // Od 2026-10-26 odprti dokument z datoteko v Oblaku ni več v posebnem seznamu, ampak je obarvana vrstica med datotekami;
-  // zgoraj ostanejo samo odprti brez take datoteke (še neshranjeni, ogled različice, datoteka od drugod).
+  // Od 2026-10-26 odprti dokument z datoteko v Oblaku ni več v posebnem seznamu, ampak je obarvana vrstica med datotekami.
+  // Od 2026-10-28 (želja uporabnika) tudi odprtih brez take datoteke (še neshranjeni, ogled različice, datoteka od drugod) ni več
+  // nad datotekami: vse odprte dokumente pokaže gumb v glavi (#dokumentiOdprti, plošča #odprtiPlosca).
   const vsiOdprti = p.odprti || [], q = dokumentiIskanje.trim().toLowerCase();
-  const potiDatotek = new Set((p.skupine || []).flatMap(sk => (sk.datoteke || []).map(d => d.pot.toLowerCase())));
   const odprtiVProjektu = vsiOdprti.filter(o => vProjektu(o.pot));
-  const odprti = odprtiVProjektu.filter(o => !(o.pot && potiDatotek.has(o.pot.toLowerCase())));
-  const vidni = q ? odprti.filter(o => String(o.oznaka || '').toLowerCase().includes(q)) : odprti;
   $('dokumentiStevilo').textContent = odprtiVProjektu.length ? String(odprtiVProjektu.length) : '';
   $('dokumentiStevilo').title = 'Odprtih dokumentov: ' + odprtiVProjektu.length;
-
-  const r1 = el('div', 'razdelek');
-  // zgoraj sestavi, spodaj deli (vsaka skupina s svojim naslovom, ko so odprte obe vrste)
-  const sestavi = vidni.filter(o => o.vrsta === 'sestav'), deli = vidni.filter(o => o.vrsta !== 'sestav');
-  prviNajdeniDokument = (sestavi.length ? sestavi : deli)[0] || null;
-  if (vidni.length) {
-    const n = el('div', 'naslovRazdelka', 'Odprti zunaj projekta'); n.append(el('span', 'stevilo', String(vidni.length)));
-    n.title = 'Odprti dokumenti brez datoteke v Oblaku: še neshranjeni, ogled različice ali datoteka iz druge mape';
-    r1.append(n);
-    for (const o of [...sestavi, ...deli]) r1.append(vnosOdprtega(o, q));
-    vsebina.append(r1);
-  }
+  prviNajdeniDokument = null;
+  narisiPlosceOdprtih();
   // Pod njimi vse datoteke FCStd iz Oblaka (3D modeliranje) kot drevo map; odprte so obarvane in imajo čip Odprt.
   // Od 2026-10-11 (od 2026-10-07 do tedaj je stolpec kazal samo odprte dokumente).
   let vseDatotek = 0, najdenih = 0;
@@ -2819,14 +2818,13 @@ function narisiOdprteDokumente() {
     narisiMapo(koren, '', 0);
     vsebina.append(r);
   }
-  $('dokumentiStevec').textContent = q ? (vidni.length + najdenih) + ' / ' + (odprti.length + vseDatotek) : '';
-  if (!odprti.length && !vseDatotek) vsebina.append(el('div', 'prazno', vsiProjekti ? 'Ni dokumentov.' : 'V tem projektu ni dokumentov.'));
-  else if (!vidni.length && !najdenih) vsebina.append(el('div', 'prazno', 'Ni zadetkov za »' + dokumentiIskanje.trim() + '«.'));
+  $('dokumentiStevec').textContent = q ? najdenih + ' / ' + vseDatotek : '';
+  if (!vseDatotek) vsebina.append(el('div', 'prazno', vsiProjekti ? 'Ni datotek.' : 'V tem projektu ni datotek.'));
+  else if (!najdenih) vsebina.append(el('div', 'prazno', 'Ni zadetkov za »' + dokumentiIskanje.trim() + '«.'));
   // iskanje v enem projektu: koliko zadetkov je v drugih projektih (klik pokaže vse projekte)
   if (q && !vsiProjekti) {
     const zadetek = (ime, pot) => String(ime || '').toLowerCase().includes(q) && !vProjektu(pot);
-    const drugje = vsiOdprti.filter(o => !(o.pot && potiDatotek.has(o.pot.toLowerCase())) && zadetek(o.oznaka, o.pot)).length
-      + (p.skupine || []).reduce((v, sk) => v + (sk.datoteke || []).filter(d => zadetek(d.ime + ' ' + (d.projekt || ''), d.pot)).length, 0);
+    const drugje = (p.skupine || []).reduce((v, sk) => v + (sk.datoteke || []).filter(d => zadetek(d.ime + ' ' + (d.projekt || ''), d.pot)).length, 0);
     if (drugje) {
       const b = el('button', 'vDrugih', 'Zadetki v drugih projektih: ' + drugje + ' – pokaži vse projekte'); b.type = 'button';
       b.addEventListener('click', () => { izbraniProjekt = '*'; narisiOdprteDokumente(); });
@@ -2992,6 +2990,43 @@ $('dokumentiFilter').addEventListener('click', () => {
   try { localStorage.setItem('odprtiNaVrhu', odprtiNaVrhu ? '1' : '0'); } catch (e) { /* zasebno okno */ }
   napisFiltraDokumentov(); narisiOdprteDokumente();
 });
+// Gumb »vsi odprti« (od 2026-10-28): število vseh odprtih dokumentov (vseh projektov); klik odpre ploščo z njimi pod glavo
+// stolpca. Zgoraj sestavi z največ podsestavi (nato povezav), spodaj deli od največjega do najmanjšega (vrstni red od 2026-10-19).
+function narisiPlosceOdprtih() {
+  const odprti = (stanje.projekti && stanje.projekti.odprti) || [], g = $('dokumentiOdprti'), pl = $('odprtiPlosca');
+  g.replaceChildren(svgIkona('del', 14), String(odprti.length));
+  g.title = 'Odprti dokumenti: ' + odprti.length + ' (vsi projekti). Klik pokaže seznam.';
+  if (pl.classList.contains('skrit')) return;
+  const odmik = pl.scrollTop; pl.replaceChildren();
+  const poImenu = (a, b) => String(a.oznaka || '').localeCompare(String(b.oznaka || ''), 'sl');
+  const najdaljsa = o => o.mere ? Math.max(...o.mere) : 0;   // najdaljša stranica (ta je tudi v čipu)
+  const sestavi = odprti.filter(o => o.vrsta === 'sestav')
+    .sort((a, b) => (b.podsestavov || 0) - (a.podsestavov || 0) || (b.povezav || 0) - (a.povezav || 0) || poImenu(a, b));
+  const deli = odprti.filter(o => o.vrsta !== 'sestav')
+    .sort((a, b) => najdaljsa(b) - najdaljsa(a) || (b.velikost || 0) - (a.velikost || 0) || poImenu(a, b));
+  for (const [naslov, seznam] of [['Sestavi', sestavi], ['Deli', deli]]) {
+    if (!seznam.length) continue;
+    const n = el('div', 'naslovRazdelka', naslov); n.append(el('span', 'stevilo', String(seznam.length))); pl.append(n);
+    for (const o of seznam) pl.append(vnosOdprtega(o, ''));
+  }
+  if (!odprti.length) pl.append(el('div', 'prazno', 'Ni odprtih dokumentov.'));
+  pl.scrollTop = odmik;
+}
+function preklopiPlosceOdprtih(prikazi) {
+  const pl = $('odprtiPlosca');
+  prikazi = prikazi === undefined ? pl.classList.contains('skrit') : prikazi;
+  pl.classList.toggle('skrit', !prikazi); $('dokumentiOdprti').setAttribute('aria-expanded', String(prikazi));
+  if (prikazi) { pl.scrollTop = 0; narisiPlosceOdprtih(); }
+}
+$('dokumentiOdprti').addEventListener('click', () => preklopiPlosceOdprtih());
+// izbira dokumenta ploščo zapre (gumbi dejanj, npr. Zapri, je ne), prav tako klik drugam in Esc
+$('odprtiPlosca').addEventListener('click', e => { if (e.target.closest('.vnos') && !e.target.closest('.dejanja')) preklopiPlosceOdprtih(false); });
+document.addEventListener('pointerdown', e => {
+  if (!$('odprtiPlosca').classList.contains('skrit') && !e.target.closest('#odprtiPlosca, #dokumentiOdprti')) preklopiPlosceOdprtih(false);
+}, true);
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape' && !$('odprtiPlosca').classList.contains('skrit')) { preklopiPlosceOdprtih(false); e.stopPropagation(); }
+}, true);
 $('dokumentiIskanje').addEventListener('input', e => { dokumentiIskanje = e.target.value; $('stranskiVsebina').scrollTop = 0; narisiOdprteDokumente(); });
 $('dokumentiIskanje').addEventListener('keydown', e => {
   e.stopPropagation();   // tipke iskanja niso bližnjice pogleda
