@@ -2877,8 +2877,22 @@ function narisiMrezo(r, koren, prestej, vidne, relPot, kljuc, imeKorena, vsiOdpr
   };
   const naslov = (besedilo, n) => { const t = el('div', 'naslovRazdelka', besedilo); t.append(el('span', 'stevilo', String(n))); return t; };
   if (q) { r.append(mrezaKosov(vidne, relPot)); return; }   // zadetki iz vseh map, pod imenom mapa
+  // v projektu s sestavi Mape in Vse kažeta le sestave in dele, ki niso v nobenem sestavu projekta (želja uporabnika
+  // 2026-10-28); glavni sestavi (največji doseg) prvi. Ostalo pokaže gumb pod mrežo (mesto.vsiKosi).
+  const jeSestav = d => d.vrsta === 'sestav';
+  const poSestavih = (a, b) => jeSestav(b) - jeSestav(a) || (b.doseg || 0) - (a.doseg || 0);
+  const gumbVsehKosov = (skritih, napis) => {
+    const b = el('button', 'vDrugih', mesto.vsiKosi ? 'Samo sestavi'
+      : napis + (skritih ? ' še ' + skritih + (skritih === 1 ? ' del' : skritih === 2 ? ' dela' : skritih < 5 ? ' dele' : ' delov') + ' iz sestavov' : ''));
+    b.type = 'button';
+    b.addEventListener('click', () => { mesto.vsiKosi = !mesto.vsiKosi; narisiOdprteDokumente(); });
+    return b;
+  };
   if (pogledDatotek === 'vse') {
-    const velike = [...koren.mape].filter(([, m]) => prestej(m) > MALA_MAPA).sort((x, y) => x[0].localeCompare(y[0], 'sl'));
+    const imaSestave = vidne.some(jeSestav), skritih = imaSestave ? vidne.filter(d => !jeSestav(d) && d.vSestavu).length : 0;
+    if (skritih && !mesto.vsiKosi) vidne = vidne.filter(d => jeSestav(d) || !d.vSestavu).sort(poSestavih);
+    const vMapi = (d, ime) => (relPot(d) + '/').startsWith(ime + '/');
+    const velike = [...koren.mape].filter(([ime, m]) => prestej(m) > MALA_MAPA && vidne.some(d => vMapi(d, ime))).sort((x, y) => x[0].localeCompare(y[0], 'sl'));
     if (mesto.filter && !velike.some(([ime]) => ime === mesto.filter)) mesto.filter = '';
     if (velike.length) {
       const c = el('div', 'cipiMap');
@@ -2889,11 +2903,12 @@ function narisiMrezo(r, koren, prestej, vidne, relPot, kljuc, imeKorena, vsiOdpr
         c.append(b);
       };
       cip('', 'Vse', vidne.length);
-      for (const [ime, m] of velike) cip(ime, ime, prestej(m));
+      for (const [ime] of velike) cip(ime, ime, vidne.filter(d => vMapi(d, ime)).length);
       r.append(c);
     }
-    const izbrane = mesto.filter ? vidne.filter(d => (relPot(d) + '/').startsWith(mesto.filter + '/')) : vidne;
+    const izbrane = mesto.filter ? vidne.filter(d => vMapi(d, mesto.filter)) : vidne;
     r.append(mrezaKosov(izbrane, d => { const p = relPot(d); return mesto.filter ? p.slice(mesto.filter.length + 1) : p; }));
+    if (skritih) r.append(gumbVsehKosov(skritih, 'Pokaži'));
     return;
   }
   // pogled Mape: v odprto mapo po delih poti; mapa, ki je ni več (premaknjena, preimenovana), vrne na koren
@@ -2918,13 +2933,11 @@ function narisiMrezo(r, koren, prestej, vidne, relPot, kljuc, imeKorena, vsiOdpr
   const mape = [...m.mape].sort((x, y) => x[0].localeCompare(y[0], 'sl'));
   const vseVelike = mape.filter(([, pod]) => prestej(pod) > MALA_MAPA);
   const vsiKosi = [...m.datoteke.map(d => [d, '']), ...mape.filter(([, pod]) => prestej(pod) <= MALA_MAPA).flatMap(([ime, pod]) => vsePod(pod).map(d => [d, ime]))];
-  // v mapi s sestavi brez podmap vsi sestavi iz cele mape in deli, ki niso v nobenem sestavu projekta (želja uporabnika
-  // 2026-10-28); glavni sestavi (največji doseg) prvi, pod imenom podmapa. Mape in dele iz sestavov pokaže gumb pod mrežo.
-  const jeSestav = d => d.vrsta === 'sestav';
+  // v mapi s sestavi brez podmap vsi sestavi iz cele mape in deli zunaj sestavov, pod imenom podmapa
   const zPotmi = (mm, pot) => [...mm.datoteke.map(d => [d, pot]), ...[...mm.mape].flatMap(([ime, pod]) => zPotmi(pod, pot ? pot + '/' + ime : ime))];
   const vseVMapi = zPotmi(m, '');
   const izbrani = vseVMapi.some(([d]) => jeSestav(d)) ? vseVMapi.filter(([d]) => jeSestav(d) || !d.vSestavu)
-    .sort((a, b) => jeSestav(b[0]) - jeSestav(a[0]) || (b[0].doseg || 0) - (a[0].doseg || 0)) : null;
+    .sort((a, b) => poSestavih(a[0], b[0])) : null;
   const skritih = izbrani ? vseVMapi.length - izbrani.length : 0;
   const skrij = !!izbrani && !mesto.vsiKosi;
   const velike = skrij ? [] : vseVelike;
@@ -2949,13 +2962,7 @@ function narisiMrezo(r, koren, prestej, vidne, relPot, kljuc, imeKorena, vsiOdpr
     const mapaKosa = new Map(kosi);
     r.append(mrezaKosov(kosi.map(([d]) => d), d => mapaKosa.get(d)));
   }
-  if (izbrani && (skritih || vseVelike.length)) {
-    const b = el('button', 'vDrugih', mesto.vsiKosi ? 'Samo sestavi'
-      : 'Pokaži mape' + (skritih ? ' in še ' + skritih + (skritih === 1 ? ' del' : skritih === 2 ? ' dela' : skritih < 5 ? ' dele' : ' delov') + ' iz sestavov' : ''));
-    b.type = 'button';
-    b.addEventListener('click', () => { mesto.vsiKosi = !mesto.vsiKosi; narisiOdprteDokumente(); });
-    r.append(b);
-  }
+  if (izbrani && (skritih || vseVelike.length)) r.append(gumbVsehKosov(skritih, skritih ? 'Pokaži mape in' : 'Pokaži mape'));
 }
 function vnosOdprtega(o, q) {
   const v = el('div', 'vnos' + (o.aktiven ? ' aktiven' : ''));
