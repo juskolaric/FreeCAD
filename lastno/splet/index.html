@@ -2916,8 +2916,19 @@ function narisiMrezo(r, koren, prestej, vidne, relPot, kljuc, imeKorena, vsiOdpr
     r.append(dr);
   }
   const mape = [...m.mape].sort((x, y) => x[0].localeCompare(y[0], 'sl'));
-  const velike = mape.filter(([, pod]) => prestej(pod) > MALA_MAPA);
-  const kosi = [...m.datoteke.map(d => [d, '']), ...mape.filter(([, pod]) => prestej(pod) <= MALA_MAPA).flatMap(([ime, pod]) => vsePod(pod).map(d => [d, ime]))];
+  const vseVelike = mape.filter(([, pod]) => prestej(pod) > MALA_MAPA);
+  const vsiKosi = [...m.datoteke.map(d => [d, '']), ...mape.filter(([, pod]) => prestej(pod) <= MALA_MAPA).flatMap(([ime, pod]) => vsePod(pod).map(d => [d, ime]))];
+  // v mapi s sestavi le sestavi in deli, ki niso v nobenem sestavu projekta (želja uporabnika 2026-10-28): mape brez sestavov
+  // (Deli) se skrijejo, njihovi deli zunaj sestavov gredo med kose; ostalo pokaže gumb pod mrežo
+  const jeSestav = d => d.vrsta === 'sestav';
+  const brezSestavov = vsePod(m).some(jeSestav) ? vseVelike.filter(([, pod]) => !vsePod(pod).some(jeSestav)) : [];
+  const izbrani = (brezSestavov.length || vsiKosi.some(([d]) => jeSestav(d)) ? [...vsiKosi, ...brezSestavov.flatMap(([ime, pod]) => vsePod(pod).map(d => [d, ime]))] : [])
+    .filter(([d]) => jeSestav(d) || !d.vSestavu);
+  const skritih = brezSestavov.length || vsiKosi.some(([d]) => jeSestav(d))
+    ? vsiKosi.length + brezSestavov.reduce((v, [, pod]) => v + vsePod(pod).length, 0) - izbrani.length : 0;
+  const skrij = skritih > 0 && !mesto.vsiKosi;
+  const velike = skrij ? vseVelike.filter(x => !brezSestavov.includes(x)) : vseVelike;
+  const kosi = skrij ? izbrani : vsiKosi;
   if (velike.length) {
     if (kosi.length) r.append(naslov('Mape', velike.length));
     const g = el('div', 'mrezaKosov');
@@ -2933,20 +2944,17 @@ function narisiMrezo(r, koren, prestej, vidne, relPot, kljuc, imeKorena, vsiOdpr
     r.append(g);
   }
   if (kosi.length) {
-    // med kosi mape, ki ima sestave, le sestavi in deli, ki niso v nobenem sestavu projekta (želja uporabnika 2026-10-28);
-    // deli iz sestavov so za gumbom pod mrežo
-    const sestavi = kosi.filter(([d]) => d.vrsta === 'sestav' || !d.vSestavu);
-    const skritih = kosi.some(([d]) => d.vrsta === 'sestav') ? kosi.length - sestavi.length : 0;
-    const prikazani = skritih && !mesto.vsiKosi ? sestavi : kosi;
-    if (velike.length || skritih) r.append(naslov('Kosi', prikazani.length));
+    if (velike.length || skritih) r.append(naslov('Kosi', kosi.length));
     const mapaKosa = new Map(kosi);
-    r.append(mrezaKosov(prikazani.map(([d]) => d), d => mapaKosa.get(d)));
-    if (skritih) {
-      const b = el('button', 'vDrugih', mesto.vsiKosi ? 'Skrij dele' : 'Pokaži še ' + skritih + (skritih === 1 ? ' del' : skritih === 2 ? ' dela' : skritih < 5 ? ' dele' : ' delov'));
-      b.type = 'button';
-      b.addEventListener('click', () => { mesto.vsiKosi = !mesto.vsiKosi; narisiOdprteDokumente(); });
-      r.append(b);
-    }
+    r.append(mrezaKosov(kosi.map(([d]) => d), d => mapaKosa.get(d)));
+  }
+  if (skritih) {
+    const b = el('button', 'vDrugih', mesto.vsiKosi ? 'Skrij dele, ki so v sestavih'
+      : 'Pokaži še ' + skritih + (skritih === 1 ? ' del' : skritih === 2 ? ' dela' : skritih < 5 ? ' dele' : ' delov') + ' iz sestavov'
+        + (brezSestavov.length ? ' (mapa ' + brezSestavov.map(([ime]) => ime).join(', ') + ')' : ''));
+    b.type = 'button';
+    b.addEventListener('click', () => { mesto.vsiKosi = !mesto.vsiKosi; narisiOdprteDokumente(); });
+    r.append(b);
   }
 }
 function vnosOdprtega(o, q) {
