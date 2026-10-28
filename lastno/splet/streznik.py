@@ -3171,12 +3171,18 @@ def _projekti_v_mapah():
 def _dosegi_sestavov(datoteke):
     """Sestavu doda »doseg«: koliko datotek zajame prek povezav, tudi skozi podsestave. Glavni sestav projekta je tisti z
     največjim dosegom (stran ga odpre ob kliku na projekt, od 2026-10-26); izračun je iz lastnosti FCStd v predpomnilniku,
-    brez odpiranja datotek. Seznam povezav gre le v izračun, ne v odgovor."""
+    brez odpiranja datotek. Seznam povezav gre le v izračun, ne v odgovor. Datoteka, na katero kaže kakšen sestav
+    projekta, dobi »vSestavu« (stran med kosi projekta kaže le sestave in dele, ki niso v nobenem sestavu)."""
     sosedi = {}
     for d in datoteke:
         mapa = os.path.dirname(d["pot"])
         sosedi[os.path.normcase(os.path.normpath(d["pot"]))] = [
             os.path.normcase(os.path.normpath(os.path.join(mapa, p))) for p in d.pop("povezane", [])]
+    uporabljene = {s for d in datoteke if d.get("vrsta") == "sestav"
+                   for s in sosedi[os.path.normcase(os.path.normpath(d["pot"]))]}
+    for d in datoteke:
+        if os.path.normcase(os.path.normpath(d["pot"])) in uporabljene:
+            d["vSestavu"] = True
     for d in datoteke:
         if d.get("vrsta") != "sestav":
             continue
