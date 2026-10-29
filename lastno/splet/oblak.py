@@ -101,6 +101,8 @@ class Oblak:
         self._vrsta = vrsta          # vrsta zahtev za glavno nit (STANJE.vrsta) ali None
         self._oddaj = oddaj          # oddaja dogodkov SSE (STANJE.oddaj) ali None
         self.kljuc = threading.Lock()
+        self._kljuc_prostorov = threading.Lock()
+        self._zaklepi_hkrati = threading.Semaphore(3)   # samodejni zaklepi ob odprtju: največ 3 klici v oblak hkrati
         self.seja = self._preberi_sejo()
         self._odjemalec = self._preberi_odjemalca()
         self._prostori = []
@@ -150,7 +152,30 @@ class Oblak:
                                 or os.path.join(os.path.expanduser("~"), "Oblak"))
 
     def prijavljen(self):
-        return bool(self.seja.get("refresh_token"))
+        return bool(self._samodejna_seja().get("refresh_token"))
+
+    def _samodejna_seja(self):
+        """Prijava brez vpisa gesla (2026-10-29, želja uporabnika): ko seja v pomnilniku ni, jo prebere z diska (lahko
+        se je prijavil drug primerek), sicer vzame prijavo odjemalca Oblak na tem računalniku (isti uporabnik; osvežitev
+        žetona v oblaku žetona ne zamenja, zato odjemalca ne odjavi). S prijavo odjemalca se seja na disk ne zapiše."""
+        with self.kljuc:
+            if self.seja.get("refresh_token"):
+                return self.seja
+            s = self._preberi_sejo()
+            if s.get("refresh_token"):
+                self.seja = s
+                return s
+            try:
+                with open(NASTAVITVE_ODJEMALCA, encoding="utf-8") as f:
+                    n = json.load(f)
+            except (OSError, ValueError):
+                n = {}
+            if n.get("refresh_token") and n.get("api") and not os.environ.get("SPLET_OBLAK_API"):
+                self.seja = {"api": n["api"].rstrip("/"), "refresh_token": n["refresh_token"],
+                             "email": n.get("email", ""), "ime": "", "odjemalec": True}
+                self._prostori_cas = 0.0
+                self._log("oblak: samodejno prijavljen s prijavo odjemalca Oblak (%s)" % self.seja["email"])
+            return self.seja
 
     def stanje(self):
         return {
@@ -188,31 +213,46 @@ class Oblak:
             raise NapakaOblaka(e.code, napaka.get("error", "napaka"), napaka.get("message") or besedilo or str(e))
         except urllib.error.URLError as e:
             raise NapakaOblaka(503, "nedosegljiv", "Oblak ni dosegljiv (%s): %s" % (self.api(), e.reason))
+        except OSError as e:  # časovna omejitev, prekinjena povezava
+            raise NapakaOblaka(503, "nedosegljiv", "Oblak ni odgovoril (%s): %s" % (self.api(), e))
         if surovo:
             return odgovor
-        with odgovor:
-            besedilo = odgovor.read().decode("utf-8")
+        try:
+            with odgovor:
+                besedilo = odgovor.read().decode("utf-8")
+        except OSError as e:
+            raise NapakaOblaka(503, "nedosegljiv", "Oblak ni odgovoril (%s): %s" % (self.api(), e))
         return json.loads(besedilo) if besedilo else {}
 
     def _zeton(self):
         """Dostopni žeton (15 min); po poteku ga osveži z osvežitvenim."""
-        with self.kljuc:
-            if not self.seja.get("refresh_token"):
-                raise NapakaOblaka(401, "neprijavljen", "V oblak nisi prijavljen")
-            if self.seja.get("dostop") and self.seja.get("velja_do", 0) - 30 > time.time():
-                return self.seja["dostop"]
-            try:
-                r = self._zahteva("POST", "/v1/auth/refresh", {"refresh_token": self.seja["refresh_token"]})
-            except NapakaOblaka as e:
-                if e.status in (401, 403):
+        for _poskus in range(2):
+            self._samodejna_seja()
+            with self.kljuc:
+                if not self.seja.get("refresh_token"):
+                    raise NapakaOblaka(401, "neprijavljen", "V oblak nisi prijavljen (tudi odjemalec Oblak ni prijavljen)")
+                if self.seja.get("dostop") and self.seja.get("velja_do", 0) - 30 > time.time():
+                    return self.seja["dostop"]
+                odjemalec = bool(self.seja.get("odjemalec"))
+                try:
+                    r = self._zahteva("POST", "/v1/auth/refresh", {"refresh_token": self.seja["refresh_token"]})
+                except NapakaOblaka as e:
+                    if e.status not in (401, 403):
+                        raise
+                    # Lastna seja je preklicana: pobriši jo (le, če je na disku še ista) in poskusi s prijavo odjemalca.
+                    if not odjemalec and self._preberi_sejo().get("refresh_token") == self.seja.get("refresh_token"):
+                        self.seja = {}
+                        self._zapisi_sejo()
                     self.seja = {}
+                    if odjemalec:
+                        raise NapakaOblaka(401, "neprijavljen", "Prijava odjemalca Oblak je potekla; prijavi se v odjemalcu")
+                    continue
+                self.seja["dostop"] = r["access_token"]
+                self.seja["velja_do"] = time.time() + float(r.get("expires_in", 900))
+                if not odjemalec:
                     self._zapisi_sejo()
-                    raise NapakaOblaka(401, "neprijavljen", "Prijava v oblak je potekla; prijavi se znova")
-                raise
-            self.seja["dostop"] = r["access_token"]
-            self.seja["velja_do"] = time.time() + float(r.get("expires_in", 900))
-            self._zapisi_sejo()
-            return self.seja["dostop"]
+                return self.seja["dostop"]
+        raise NapakaOblaka(401, "neprijavljen", "Prijava v oblak je potekla; prijavi se znova")
 
     def _klic(self, metoda, pot, telo=None, poizvedba=None, surovo=False, timeout=60):
         return self._zahteva(metoda, pot, telo, poizvedba, self._zeton(), surovo, timeout)
@@ -236,8 +276,12 @@ class Oblak:
     def _samodejni_zaklep(self, lokalna_pot):
         ime = os.path.basename(lokalna_pot)
         try:
-            r = self.zakleni(lokalna_pot)
-        except NapakaOblaka as e:
+            with self._zaklepi_hkrati:
+                r = self.zakleni(lokalna_pot)
+        except Exception as e:  # noqa: BLE001 - nit v ozadju ne sme pasti s sledjo v dnevnik
+            if not isinstance(e, NapakaOblaka):
+                self._log("oblak: zaklep %s: nepričakovano %r" % (ime, e))
+                return
             self._log("oblak: zaklep %s: %s" % (ime, e))
             self._osvezi_seznam()
             return
@@ -367,7 +411,8 @@ class Oblak:
 
     def odjava(self):
         try:
-            if self.prijavljen():
+            # S prijavo odjemalca Oblak se ne odjavljamo v oblaku: logout bi preklical napravo odjemalca.
+            if self.seja.get("refresh_token") and not self.seja.get("odjemalec"):
                 self._klic("POST", "/v1/auth/logout")
         except NapakaOblaka:
             pass
@@ -379,6 +424,13 @@ class Oblak:
 
     # ------------------------------------------------------------------ preslikava poti
     def prostori(self, osvezi=False):
+        # En klic naenkrat: ob prijavi seznam odprtih dokumentov sproži zaklep za vsakega (deset in več niti hkrati).
+        with self._kljuc_prostorov:
+            if osvezi and time.time() - self._prostori_cas < 2.0:
+                osvezi = False   # druga nit ga je pravkar osvežila
+            return self._prostori_brez_zaklepa(osvezi)
+
+    def _prostori_brez_zaklepa(self, osvezi):
         if osvezi or time.time() - self._prostori_cas > CAS_PROSTOROV:
             jaz = self._klic("GET", "/v1/me")
             self._prostori = jaz.get("namespaces") or []
@@ -626,11 +678,45 @@ class Oblak:
             self._oddaj("oblak", {"vrsta": vrsta, "pot": pot, "sporocilo": sporocilo})
 
     def obnovi(self, lokalna_pot, rev):
+        """Povrni lokalno (od 2026-10-29): vsebina revizije zamenja datoteko na disku, v oblak jo kot novo revizijo
+        pošlje odjemalec Oblak. Obnova na strežniku (/v1/obnovi) bi s prijavo odjemalca nastala kot njegova sprememba
+        in je odjemalec ne bi prenesel na disk."""
         prostor, pot = self.razresi(lokalna_pot)
-        rezultat = self._klic("POST", "/v1/obnovi", {"namespace_id": prostor["id"], "path": pot, "rev": rev})
-        if not rezultat.get("unchanged"):
-            self._pocakaj_odjemalca(lokalna_pot)
-        return rezultat
+        z = self._klic("GET", "/v1/zgodovina", poizvedba={"namespace_id": prostor["id"], "path": pot})
+        r = next((x for x in z.get("revisions") or [] if x.get("rev_id") == rev), None)
+        if r is None:
+            raise NapakaOblaka(404, "ni-razlicice", "Te različice datoteka nima")
+        if r.get("content_hash") and os.path.isfile(lokalna_pot) and self._vsebinski_hash(lokalna_pot) == r["content_hash"]:
+            return {"ok": True, "unchanged": True}
+        # Začasna datoteka zunaj mape oblaka (odjemalec bi jo sicer poslal), na istem disku za os.replace.
+        os.makedirs(MAPA_RAZLICIC, exist_ok=True)
+        zacasna = os.path.join(MAPA_RAZLICIC, "_obnova_%s" % os.path.basename(lokalna_pot))
+        odgovor = self._klic("GET", "/v1/content", poizvedba={"ns": prostor["id"], "node": z["node_id"], "rev": rev, "dl": "1"},
+                             surovo=True)
+        with odgovor, open(zacasna, "wb") as f:
+            while True:
+                kos = odgovor.read(1 << 20)
+                if not kos:
+                    break
+                f.write(kos)
+        for poskus in range(5):
+            try:
+                os.replace(zacasna, lokalna_pot)
+                break
+            except PermissionError:
+                if poskus == 4:
+                    os.remove(zacasna)
+                    raise NapakaOblaka(409, "zaklenjena", "Datoteke »%s« ni bilo mogoče zamenjati (odprta v drugem programu)"
+                                       % os.path.basename(lokalna_pot))
+                time.sleep(1.0)
+        self._log("oblak: %s povrnjena na revizijo %s (lokalno)" % (os.path.basename(lokalna_pot), rev))
+        if self._vrsta is not None:
+            self._vrsta.put(("projekt", {"dejanje": "osvezi", "pot": lokalna_pot}, None))
+        if self._oddaj is not None:
+            self._oddaj("oblak", {"vrsta": "osvezeno", "pot": lokalna_pot,
+                                  "sporocilo": "»%s« je povrnjena; odjemalec Oblak jo pošlje kot novo različico."
+                                  % os.path.basename(lokalna_pot)})
+        return {"ok": True, "lokalno": True}
 
     def _pocakaj_odjemalca(self, lokalna_pot):
         """Obnova nastane v oblaku; lokalno datoteko posodobi odjemalec oblaka. Ko se spremeni, FreeCAD dokument

@@ -609,7 +609,12 @@ FreeCAD je motor, vmesnik in grafika nastajata v brskalniku (plan, korak 8 napre
   iz mape odjemalca oblaka (privzeto iz `%APPDATA%\Oblak\nastavitve.json`: `folder`, `api`; prepis `SPLET_OBLAK_MAPA`,
   `SPLET_OBLAK_API`) je gumb ⟲, ki odpre ploščo z različicami: prijava v oblak (strežnik se prijavi kot **lastna**
   naprava »FreeCAD (splet)« — žetona odjemalca za Windows ne uporabljamo, ker bi oblak spremembe štel za njegove in jih
-  odjemalec ne bi prenesel; seja v `%LOCALAPPDATA%/FreeCAD-splet/oblak.json`), seznam (`GET /oblak/zgodovina?pot=`),
+  odjemalec ne bi prenesel; seja v `%LOCALAPPDATA%/FreeCAD-splet/oblak.json`). **Samodejna prijava** (od 2026-10-29, želja
+  uporabnika »brez prijave«, `Oblak._samodejna_seja`): brez lastne seje strežnik vzame osvežitveni žeton odjemalca Oblak iz
+  `%APPDATA%/Oblak/nastavitve.json` (osvežitev ga v oblaku ne zamenja; na disk se ne zapiše; odjava z njim ne kliče logout, ker bi
+  preklicala napravo odjemalca). Zato **Povrni teče lokalno**: vsebina revizije zamenja datoteko na disku (začasno v mapi različic),
+  novo revizijo pošlje odjemalec. Samodejni zaklepi ob odprtju: največ 3 klici hkrati, `/v1/me` enkrat naenkrat (ob ~100 odprtih
+  dokumentih je oblak sicer odgovarjal s časovno omejitvijo). Seznam (`GET /oblak/zgodovina?pot=`),
   Odpri (`POST /oblak/odpri {pot, rev}`: prenos v `%LOCALAPPDATA%/FreeCAD-splet/razlicice/` in odprtje kot
   »ime · različica N«, oznaka »ogled različice«; Label se ne nastavlja, ker bi dokument označil kot spremenjen), Povrni
   (`POST /oblak/obnovi {pot, rev}`: nova revizija v oblaku; strežnik nato do 3 min opazuje lokalno datoteko, ki jo

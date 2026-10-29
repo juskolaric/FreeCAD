@@ -3195,9 +3195,9 @@ async function pokaziRazlicice(pot, ime) {
       if (!r.current) {
         const povrni = el('button', 'glavni', 'Povrni'); povrni.type = 'button'; povrni.title = 'Naredi novo, trenutno različico z vsebino te';
         povrni.addEventListener('click', async () => {
-          if (!confirm('Povrnem različico #' + r.st + ' z dne ' + datumRazlicice(r.at) + '?\n\nTrenutna vsebina ostane v zgodovini kot starejša različica. Lokalno datoteko bo posodobil odjemalec oblaka, odprt dokument brez neshranjenih sprememb se osveži sam.')) return;
+          if (!confirm('Povrnem različico #' + r.st + ' z dne ' + datumRazlicice(r.at) + '?\n\nTrenutna vsebina ostane v zgodovini kot starejša različica. Datoteka na disku se zamenja takoj, v oblak jo pošlje odjemalec Oblak; odprt dokument brez neshranjenih sprememb se osveži sam.')) return;
           povrni.disabled = true;
-          try { const o = await oblakKlic('POST', '/oblak/obnovi', { pot, rev: r.rev_id }); obvesti(o.unchanged ? 'Ta različica je že trenutna.' : 'Različica #' + r.st + ' je povrnjena v oblaku; čakam, da odjemalec oblaka posodobi datoteko.'); pokaziRazlicice(pot, ime); }
+          try { const o = await oblakKlic('POST', '/oblak/obnovi', { pot, rev: r.rev_id }); obvesti(o.unchanged ? 'Ta različica je že trenutna.' : 'Različica #' + r.st + ' je povrnjena; odjemalec Oblak jo pošlje kot novo različico.'); pokaziRazlicice(pot, ime); }
           catch (e) { obvesti(e.message, true); povrni.disabled = false; }
         });
         g.append(povrni);
@@ -3316,10 +3316,10 @@ async function odpriRazlicico(o, r) {
   catch (e) { obvesti(e.message, true); }
 }
 async function povrniRazlicico(o, r) {
-  if (!confirm('Povrnem različico #' + r.st + ' z dne ' + datumRazlicice(r.at) + '?\n\nTrenutna vsebina ostane v zgodovini kot starejša različica. Lokalno datoteko bo posodobil odjemalec oblaka, odprt dokument brez neshranjenih sprememb se osveži sam.')) return;
+  if (!confirm('Povrnem različico #' + r.st + ' z dne ' + datumRazlicice(r.at) + '?\n\nTrenutna vsebina ostane v zgodovini kot starejša različica. Datoteka na disku se zamenja takoj, v oblak jo pošlje odjemalec Oblak; odprt dokument brez neshranjenih sprememb se osveži sam.')) return;
   try {
     const d = await oblakKlic('POST', '/oblak/obnovi', { pot: o.pot, rev: r.rev_id });
-    obvesti(d.unchanged ? 'Ta različica je že trenutna.' : 'Različica #' + r.st + ' je povrnjena v oblaku; čakam, da odjemalec oblaka posodobi datoteko.');
+    obvesti(d.unchanged ? 'Ta različica je že trenutna.' : 'Različica #' + r.st + ' je povrnjena; odjemalec Oblak jo pošlje kot novo različico.');
   } catch (e) { obvesti(e.message, true); }
   osveziTrakRazlicic(true);
   if (stanje.razlicice) pokaziRazlicice(stanje.razlicice.pot, stanje.razlicice.ime);
