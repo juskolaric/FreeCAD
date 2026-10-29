@@ -110,12 +110,97 @@ def zagotovi():
     raise M.Napaka("Strežnik Free 3D se ni zagnal (dnevnik: %s)." % dnevnik)
 
 
+def _mm_ss(t):
+    t = float(t or 0)
+    return "%d:%02d" % (int(t) // 60, int(t) % 60)
+
+
 def _vrstica(s):
     besedilo = s.get("opomba") if s.get("izvor") != "claude" else s.get("sporocilo")
-    return "%s · %s%s · %s / %s · %s%s" % (
+    return "%s · %s%s · %s / %s · %s%s%s" % (
         s["id"], s.get("stanje"), " (od AI)" if s.get("izvor") == "claude" else "", s.get("projekt"),
         s.get("dokument") or "-", s.get("ustvarjeno", "").replace("T", " "),
+        (" · video " + _mm_ss(s["video"].get("trajanje"))) if s.get("video") else "",
         (" · " + besedilo.replace("\n", " ")[:120]) if besedilo else "")
+
+
+# ---------------------------------------------------------------------------------------------------------------
+# Video skice (od 2026-10-29): iPad med risanjem posname zaslon in glas; strežnik skic po prejemu v ozadju požene
+# Free 3D/streznik/obdelaj_video.py (prepis faster-whisper + sličice ob koncu povedi) v <mapa skice>/video-<posneto>/.
+
+def _obdelaj_video(mapa, *argumenti, cakaj=300):
+    skripta = os.path.join(_mapa_free3d(), "streznik", "obdelaj_video.py")
+    py = M.S._tiskaj_python() or ""
+    if py.lower().endswith("pythonw.exe") and os.path.isfile(py[:-5] + ".exe"):
+        py = py[:-5] + ".exe"
+    if not py or not os.path.isfile(skripta):
+        raise M.Napaka("Obdelave videa ni (Python ali %s manjka)." % skripta)
+    okolje = {k: v for k, v in os.environ.items() if k not in ("PYTHONHOME", "PYTHONPATH", "PYTHONNOUSERSITE")}
+    r = subprocess.run([py, skripta, mapa] + list(argumenti), env=okolje, capture_output=True, timeout=cakaj,
+                       stdin=subprocess.DEVNULL, creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+    return r.stdout.decode("utf-8", "replace")
+
+
+def _stanje_obdelave(izhod):
+    try:
+        with open(os.path.join(izhod, "stanje.json"), encoding="utf-8") as f:
+            return json.load(f)
+    except (OSError, ValueError):
+        return {}
+
+
+def _video(s, a):
+    """Besedilo o videu (trajanje, velikost, pot, prepis govora) in sličice [(mime, bajti)]."""
+    v = s["video"]
+    mapa = s.get("mapa") or ""
+    pot = os.path.join(mapa, v.get("datoteka") or "video.mp4")
+    izhod = os.path.join(mapa, v.get("obdelava") or "video-obdelava")
+    trajanje = float(v.get("trajanje") or 0)
+    mb = (v.get("velikost") or 0) / 1e6
+    vrstice = ["Video (posnetek zaslona iPada med risanjem, z glasom uporabnika): %s, %.1f MB%s · %s" % (
+        _mm_ss(trajanje), mb, (" (%.1f MB/min)" % (mb * 60 / trajanje)) if trajanje else "", pot)]
+    stanje = _stanje_obdelave(izhod)
+    if stanje.get("stanje") != "koncano" and mapa:
+        kljucavnica = os.path.join(izhod, "obdelava.lock")
+        if os.path.isfile(kljucavnica) and time.time() - os.path.getmtime(kljucavnica) < 20 * 60:
+            for _ in range(150):                    # strežnik skic obdelavo že poganja (prepis traja nekaj sekund)
+                time.sleep(1)
+                stanje = _stanje_obdelave(izhod)
+                if stanje.get("stanje") in ("koncano", "napaka"):
+                    break
+        else:
+            _obdelaj_video(mapa)
+            stanje = _stanje_obdelave(izhod)
+    slike = []
+    if stanje.get("stanje") != "koncano":
+        vrstice.append("Obdelava videa še ni končana (%s); poskusi znova čez minuto ali poglej %s." % (
+            stanje.get("napaka") or stanje.get("stanje") or "ni začeta", izhod))
+        return vrstice, slike
+    povedi = stanje.get("prepis") or []
+    if povedi:
+        vrstice.append("Prepis govora (Whisper, samodejno, lahko ima napake v strokovnih izrazih):")
+        vrstice += ["  [%s–%s] %s" % (_mm_ss(p["od"]), _mm_ss(p["do"]), p["besedilo"]) for p in povedi]
+    elif stanje.get("napaka_prepisa"):
+        vrstice.append("Prepisa ni (%s); zvok je v videu." % stanje["napaka_prepisa"])
+    else:
+        vrstice.append("V videu ni govora.")
+    slicice = stanje.get("slicice") or []
+    if a.get("cas"):
+        casi = [c for c in str(a["cas"]).replace(" ", ",").split(",") if c.strip()]
+        try:
+            slicice = json.loads(_obdelaj_video(mapa, "--cas", ";".join(casi), cakaj=120)).get("slicice", [])
+        except ValueError:
+            raise M.Napaka("Sličic ob časih %s ni bilo mogoče izvleči." % ", ".join(casi))
+    for sl in slicice:
+        try:
+            with open(os.path.join(izhod, sl["datoteka"]), "rb") as f:
+                slike.append(("image/jpeg", f.read()))
+        except OSError:
+            pass
+    if slicice:
+        vrstice.append("Sličice videa (po risbi) ob: %s%s. Druge čase: pokazi s cas (npr. \"0:12, 0:40\")." % (
+            ", ".join(_mm_ss(sl["cas"]) for sl in slicice), "" if a.get("cas") else " (konci povedi, zadnja = končno stanje)"))
+    return vrstice, slike
 
 
 def _poslji(a):
@@ -138,7 +223,7 @@ def _poslji(a):
                                                   ("; odgovor na " + telo["odgovor_na"]) if telo["odgovor_na"] else "")
 
 
-@M.orodje("skice", naslov="Skice z iPada", nit="streznik", lastnosti={
+@M.orodje("skice", naslov="Skice z iPada", nit="streznik", cakaj=400, lastnosti={
     "akcija": {"type": "string", "enum": ["seznam", "pokazi", "poslji", "stanje"],
                "description": "seznam (privzeto) | pokazi: risba in opomba uporabnika | poslji: posnetek zaslona na "
                               "iPad | stanje: nastavi stanje skice"},
@@ -148,12 +233,17 @@ def _poslji(a):
     "sporocilo": {"type": "string", "description": "poslji: kratko besedilo za uporabnika na iPadu (kaj si popravil)"},
     "odgovor_na": {"type": "string", "description": "poslji: id skice, na katero odgovarjaš (ta postane rešena)"},
     "izvirnik": {"type": "boolean", "description": "pokazi: vrni tudi posnetek brez risbe"},
+    "video": {"type": "boolean", "description": "pokazi: prepis govora in sličice videa, če ga skica ima (privzeto da)"},
+    "cas": {"type": "string", "description": "pokazi: sličice videa ob teh časih (s ali m:ss, ločeno z vejico) "
+                                             "namesto samodejnih"},
     "izvor": {"type": "string", "enum": ["claude", "uporabnik"], "description": "poslji: kdo pošilja (gumb Na iPad: uporabnik)"},
 }, opis="""
 Skice z iPada (aplikacija Free 3D): uporabnik pošlje posnetek pogleda na iPad (gumb »Na iPad« v Strojnem risanju), po
 njem riše s Pencilom (puščice, krogi, opombe) in ga pošlje nazaj. `seznam` pokaže skice, `pokazi` vrne označeno sliko,
 opombo, dokument in kamero (stanje »poslana« = čaka nate). Popravi model, nato `poslji` z odgovor_na in sporocilo (nov
-posnetek zaslona gre na iPad v pregled, izvirnik postane rešen). Ko uporabnik reče »poglej skice«, začni s `pokazi`.""")
+posnetek zaslona gre na iPad v pregled, izvirnik postane rešen). Ko uporabnik reče »poglej skice«, začni s `pokazi`.
+Skica ima lahko video (uporabnik med risanjem snema zaslon in govori): `pokazi` takrat doda prepis govora s časi in
+sličice ob koncu povedi; govor je glavno navodilo, risba ga dopolni. Druge trenutke videa vrne `cas`.""")
 def t_skice(a):
     akcija = a.get("akcija") or "seznam"
     if akcija == "poslji":
@@ -195,6 +285,10 @@ def t_skice(a):
             "Slike: " + " + ".join("risba čez posnetek" if i == "oznaceno.jpg" else "posnetek" for i in imena),
             ("Odgovor: " + s["odgovor"]) if s.get("odgovor") else "",
         ]))
+        if s.get("video") and "video.mp4" in s.get("datoteke", []) and a.get("video") is not False:
+            vrstice, sl = _video(s, a)
+            besedilo += "\n" + "\n".join(vrstice)
+            slike += sl
         return {"besedilo": besedilo, "slike": slike}
     if akcija == "stanje":
         if not a.get("id") or a.get("stanje") not in STANJA:
