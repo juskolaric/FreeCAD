@@ -2,9 +2,9 @@
 """Samodejno shranjevanje in tiha obnova dokumentov (od 2026-10-11, želja uporabnika).
 
 - **Obnova dokumentov**: FreeCAD-ovo okno »Obnovitev dokumenta« (po nasilnem koncu prejšnjega primerka) se ne pokaže
-  več v brskalniku: strežnik obnovo izvede sam (`accept()` dvakrat: obnovi, nato Konec). Obnovljen dokument, katerega
-  datoteka na disku je novejša od obnovitvene kopije, se samodejno ne shranjuje (sicer bi starejša vsebina prepisala
-  novejšo); strežnik to javi z obvestilom.
+  v brskalniku in **ne odpre dokumentov** (od 2026-10-29, želja uporabnika: ob zagonu se odprejo le dokumenti, ki jih
+  izbere sam). Strežnik obnovitvene kopije premakne v `%LOCALAPPDATA%/FreeCAD-splet/obnova/<čas>/` (s `PREBERI.txt`)
+  in okno zapre; kopije, novejše od datoteke na disku, javi z obvestilom. Do 28. 10. je obnovo izvedel sam (`accept()`).
 - **Samodejno shranjevanje**: vsak spremenjen dokument z datoteko se shrani, ko MIROVANJE sekund ni nove spremembe
   ali najkasneje NAJDLJE sekund po prvi neshranjeni spremembi. Ne shranjuje med urejanjem (opravilo, skica v
   brskalniku), med odprtim modalnim oknom, med nalaganjem, delno naloženih dokumentov, ogledov različic iz oblaka in
@@ -58,42 +58,70 @@ def _modalno():
 
 
 # ---------------------------------------------------------------------------
-# Tiha obnova
+# Obnova brez odpiranja (od 2026-10-29)
 
-def obnovi_tiho(stanje):
-    """Če čaka FreeCAD-ovo okno »Obnovitev dokumenta«, obnovo izvede in okno zapre. Vrne True, če je kaj naredil."""
+def _podatki_kopije(mapa):
+    """Oznaka, izvirna pot in ali ima obnovitvena kopija v `mapa` spremembe, ki jih na disku ni."""
+    oznaka, pot = os.path.basename(mapa), ""
+    try:
+        import xml.etree.ElementTree as ET
+        koren = ET.parse(os.path.join(mapa, "fc_recovery_file.xml")).getroot()
+        oznaka = koren.findtext("Label") or oznaka
+        pot = koren.findtext("FileName") or ""
+    except Exception:  # noqa: BLE001
+        pass
+    kopija = os.path.join(mapa, "fc_recovery_file.fcstd")
+    t_kopija, t_disk = _mtime(kopija), _mtime(pot) if pot else None
+    novejsa = bool(t_kopija is not None and os.path.getsize(kopija) > 0 and (t_disk is None or t_kopija > t_disk + 1))
+    return oznaka, pot, novejsa
+
+
+def umakni_obnovo(stanje):
+    """Če čaka FreeCAD-ovo okno »Obnovitev dokumenta«, dokumentov ne odpre: obnovitvene kopije prejšnjih (nasilno
+    končanih) primerkov premakne v FreeCAD-splet/obnova/<čas>/ in okno zapre. Ob zagonu se tako odprejo le dokumenti,
+    ki jih uporabnik izbere sam (želja uporabnika 2026-10-29; prej se je odprlo ~150 dokumentov in zagon je trajal
+    minute). Samodejno shranjevanje (8 s) skrbi, da kopije redko vsebujejo kaj, česar na disku ni; tiste, ki
+    vsebujejo, javi z obvestilom. Vrne True, če je kaj naredil."""
     okno = _modalno()
     if okno is None or okno.metaObject().className() != "Gui::Dialog::DocumentRecovery":
         return False
-    prej = set(App.listDocuments())
-    _log("obnova dokumentov po nasilnem koncu: obnavljam brez vprašanja")
+    import shutil
+    from PySide6 import QtWidgets
+    cilj = os.path.join(os.environ.get("LOCALAPPDATA", ""), "FreeCAD-splet", "obnova", time.strftime("%Y-%m-%d_%H%M%S"))
+    umaknjeni, novejsi = [], []
     try:
-        okno.accept()      # 1. klic: obnovi vse, gumb postane »Konec«
-        if okno.isVisible():
-            okno.accept()  # 2. klic: zapre okno
+        drevo = okno.findChild(QtWidgets.QTreeWidget)
+        mape = set()
+        for i in range(drevo.topLevelItemCount() if drevo is not None else 0):
+            projekt = drevo.topLevelItem(i).toolTip(1)   # pot do fc_recovery_file.fcstd ali Document.xml v mapi kopije
+            if projekt:
+                mape.add(os.path.dirname(os.path.normpath(projekt)))
+        for mapa in sorted(mape):
+            if not os.path.isdir(mapa):
+                continue
+            oznaka, pot, novejsa = _podatki_kopije(mapa)
+            os.makedirs(cilj, exist_ok=True)
+            shutil.move(mapa, os.path.join(cilj, os.path.basename(mapa)))
+            umaknjeni.append("%s\t%s\t%s\t%s" % (os.path.basename(mapa), oznaka, pot,
+                                                 "NOVEJŠA OD DISKA" if novejsa else "enaka ali starejša"))
+            if novejsa:
+                novejsi.append(oznaka)
+        if umaknjeni:
+            with open(os.path.join(cilj, "PREBERI.txt"), "w", encoding="utf-8") as f:
+                f.write("Obnovitvene kopije FreeCAD-a po nasilnem koncu, umaknjene ob zagonu %s (dokumenti se niso\n"
+                        "odprli sami). Vsaka mapa ima fc_recovery_file.fcstd = običajna datoteka FCStd; odpri jo, če rabiš\n"
+                        "spremembe, ki jih na disku ni (vrstice NOVEJŠA OD DISKA).\n\nmapa\toznaka\tizvirna pot\tstanje\n"
+                        % time.strftime("%d. %m. %Y %H:%M"))
+                f.write("\n".join(umaknjeni) + "\n")
     except Exception:  # noqa: BLE001
-        _log("obnova ni uspela: %s" % traceback.format_exc())
-        return True
-    novi = [d for ime, d in App.listDocuments().items() if ime not in prej]
-    for d in novi:
-        oznaci_obnovljenega(stanje, d)
-    if novi:
-        stanje.oddaj("obvestilo", {"sporocilo": "Obnovljeni dokumenti po nepričakovanem koncu: %s." %
-                                   ", ".join(d.Label for d in novi)})
+        _log("umik obnovitvenih kopij ni uspel: %s" % traceback.format_exc())
+    okno.reject()   # okno zapre brez obnove; česar ni bilo mogoče umakniti, ostane v predpomnilniku za naslednji zagon
+    _log("prejšnji primerek se je končal nasilno: dokumentov ne odpiram, %d kopij umaknjenih v %s" % (len(umaknjeni), cilj))
+    if novejsi:
+        stanje.oddaj("obvestilo", {"sporocilo": "FreeCAD se je zadnjič končal nepričakovano. Dokumentov ne odpiram samih; "
+                                   "neshranjene spremembe so imeli: %s. Kopije so v %s." % (", ".join(novejsi), cilj),
+                                   "slabo": True})
     return True
-
-
-def oznaci_obnovljenega(stanje, doc):
-    """Obnovljen dokument: če je datoteka na disku novejša od obnovitvene kopije, ga samodejno ne shranjuj."""
-    if not doc.FileName:
-        return
-    kopija = os.path.join(doc.TransientDir or "", "fc_recovery_file.fcstd")
-    t_kopija, t_disk = _mtime(kopija), _mtime(doc.FileName)
-    if t_kopija is not None and t_disk is not None and t_disk > t_kopija + 1:
-        _brez[doc.Name] = "datoteka na disku je novejša od obnovljene kopije"
-        _log("%s: %s; samodejno shranjevanje izklopljeno za ta dokument" % (doc.Label, _brez[doc.Name]))
-        stanje.oddaj("obvestilo", {"sporocilo": "»%s«: datoteka na disku je novejša od obnovljene kopije. Ne shranjujem "
-                                   "je samodejno; shrani ročno, če želiš obdržati obnovljeno." % doc.Label, "slabo": True})
 
 
 # ---------------------------------------------------------------------------
@@ -154,7 +182,7 @@ def korak(stanje, oblak=None):
     global _zadnji
     if Gui is None:
         return
-    if obnovi_tiho(stanje):   # vsak klic: okno obnove ne sme priti do brskalnika (obrazec se zajame na 0,25 s)
+    if umakni_obnovo(stanje):   # vsak klic: okno obnove ne sme priti do brskalnika (obrazec se zajame na 0,25 s)
         return
     zdaj = time.time()
     if zdaj - _zadnji < PREGLED:
