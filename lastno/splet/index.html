@@ -2424,13 +2424,6 @@ function odpriDatoteko(d) {
   zacniPreklop({ pot: d.pot, oznaka: d.ime });
   projektDejanje({ dejanje: 'odpri', pot: d.pot });
 }
-// Glavni sestav projekta (od 2026-10-26): sestav z največjim dosegom (strežnik ga izračuna iz povezav v datotekah, tudi skozi
-// podsestave), nato z največ povezavami, nato največja datoteka. null, če projekt nima sestava.
-function glavniSestav(datoteke) {
-  const sestavi = datoteke.filter(d => d.vrsta === 'sestav');
-  sestavi.sort((a, b) => (b.doseg || 0) - (a.doseg || 0) || (b.povezav || 0) - (a.povezav || 0) || (b.velikost || 0) - (a.velikost || 0));
-  return sestavi[0] || null;
-}
 // Preklop dokumenta (2026-10-19): od klika na dokument ali datoteko do izrisa modela okno sredi pogleda šteje sekunde in pove,
 // na kaj FreeCAD čaka (/stanje, polje zaseda: mreženje kosa, orodje AI druge seje …). Preklop na predpomnjen model se konča
 // prej, kot se okno pokaže (0,4 s). Konec: naloziModel nariše ta dokument (ali po 5 min).
@@ -2691,22 +2684,15 @@ function narisiDesneProjekte() {
   $('projektiDesnoVsi').classList.toggle('izbran', vsi);
   const uredi = a => a.sort((x, y) => imeProjekta(x.kljuc).localeCompare(imeProjekta(y.kljuc), 'sl'));
   const vrsta = (v, vSkupini) => {
-    // knjižnica standardnih delov nima glavnega sestava (njeni sestavi so posamezni kupljeni kosi)
     const r = el('div', 'vrsta' + (vSkupini ? ' vSkupini' : '') + (!vsi && v.kljuc === proj ? ' izbran' : ''));
-    const glavni = v.kljuc === PROJEKT_KNJIZNICE ? null : glavniSestav(v.datoteke);
     r.title = imeProjekta(v.kljuc) + ': ' + sklon(v.datoteke.length, 'datoteka', 'datoteki', 'datoteke', 'datotek')
-      + (v.odprtih ? ', ' + sklon(v.odprtih, 'odprt', 'odprta', 'odprti', 'odprtih') : '') + '\nKlik: pokaži dokumente tega projekta'
-      + (glavni ? ' in odpri glavni sestav »' + glavni.ime + '«' : '');
+      + (v.odprtih ? ', ' + sklon(v.odprtih, 'odprt', 'odprta', 'odprti', 'odprtih') : '') + '\nKlik: pokaži datoteke tega projekta';
     r.append(el('span', 'ime', imeProjekta(v.kljuc)));
     if (v.odprtih) r.append(el('span', 'odprt'));
     r.append(el('span', 'stevilo', String(v.datoteke.length)));
-    // projekt, ki ni projekt aktivnega dokumenta: še odpri (ali aktiviraj) glavni sestav; delo v istem projektu ostane
-    r.addEventListener('click', () => {
-      const pot = aktivniDokumentPot(), akt = pot ? projektPoti(pot) : null;
-      const zdaj = glavni && podatkiProjektov().find(x => x.kljuc === v.kljuc), g = zdaj ? glavniSestav(zdaj.datoteke) : glavni;   // vrstica je lahko starejša od seznama
-      izberiProjekt(v.kljuc);
-      if (g && akt !== v.kljuc) odpriDatoteko(g);
-    });
+    // Od 2026-10-29 (želja uporabnika) klik na projekt ničesar ne odpre: glavni sestav je naložil vse povezane dele
+    // (pri Slim A ~100 datotek naenkrat). Odpre se le datoteka, na katero uporabnik klikne.
+    r.addEventListener('click', () => izberiProjekt(v.kljuc));
     return r;
   };
   const poSkupinah = new Map();
