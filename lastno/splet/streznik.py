@@ -3034,6 +3034,10 @@ def _lastnosti_fcstd(pot, st):
                                 e.clear()
                     r.update(_vrsta_iz_tipov(tipi))
                     r["povezane"] = sorted(povezane)
+                    if r["vrsta"] == "sestav":
+                        # sestav iz skritega okna shrani sličico brez delov (le znak pritrjenega spoja, rdeča
+                        # ključavnica), ki jo _uporabna_slicica ne prepozna; sestave zato vedno izriše stran (2026-10-29)
+                        r["slicica"] = False
         except Exception:  # noqa: BLE001
             _log("lastnosti %s: %s" % (pot, traceback.format_exc().splitlines()[-1]))
         _LASTNOSTI_FCSTD[kljuc] = r
@@ -3119,6 +3123,8 @@ def _slicica_fcstd(pot):
         except OSError:
             pass
     try:
+        if not _lastnosti_fcstd(pot, os.stat(pot))["slicica"]:   # sestav ali neuporabna vgrajena sličica
+            return None
         with zipfile.ZipFile(pot) as z:
             png = z.read("thumbnails/Thumbnail.png")
         return png if _uporabna_slicica(png) else None
