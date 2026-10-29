@@ -4,7 +4,10 @@
 - **Obnova dokumentov**: FreeCAD-ovo okno »Obnovitev dokumenta« (po nasilnem koncu prejšnjega primerka) se ne pokaže
   v brskalniku in **ne odpre dokumentov** (od 2026-10-29, želja uporabnika: ob zagonu se odprejo le dokumenti, ki jih
   izbere sam). Strežnik obnovitvene kopije premakne v `%LOCALAPPDATA%/FreeCAD-splet/obnova/<čas>/` (s `PREBERI.txt`)
-  in okno zapre; kopije, novejše od datoteke na disku, javi z obvestilom. Do 28. 10. je obnovo izvedel sam (`accept()`).
+  in okno zapre; kopije dokumentov, ki so imeli neshranjene spremembe (seznam `neshranjeno.json`, ki ga strežnik
+  zapisuje sproti), javi z obvestilom. Do 28. 10. je obnovo izvedel sam (`accept()`).
+  FreeCAD-ov opis »Original project file is corrupted« v dnevniku je napaka FreeCAD-a (`isValidProject` odpira zip le po
+  imenu datoteke brez mape, zato pade pri vsaki datoteki), ne poškodovana datoteka.
 - **Samodejno shranjevanje**: vsak spremenjen dokument z datoteko se shrani, ko MIROVANJE sekund ni nove spremembe
   ali najkasneje NAJDLJE sekund po prvi neshranjeni spremembi. Ne shranjuje med urejanjem (opravilo, skica v
   brskalniku), med odprtim modalnim oknom, med nalaganjem, delno naloženih dokumentov, ogledov različic iz oblaka in
@@ -36,6 +39,56 @@ PONOVI_PO = 300.0    # s po neuspelem shranjevanju
 _zadnji = 0.0
 _sledi = {}          # ime dokumenta -> {"odtis", "prva", "zadnja", "mtime", "pot", "napaka_do", "javljeno"}
 _brez = {}           # ime dokumenta -> razlog, zakaj se ne shranjuje samodejno
+
+# Kateri dokumenti so imeli neshranjene spremembe (Gui Modified), sproti zapisano na disk. Ob nasilnem koncu je to
+# edini zanesljiv vir: FreeCAD-ov AutoSaver piše obnovitveno kopijo tudi dokumentu, ki je bil le preračunan (posnetek,
+# drevo), zato je kopija skoraj vedno novejša od datoteke (29. 10. 2026: 173 od 192 kopij »novejših«, spremembe ni imel
+# skoraj noben). Seznam prejšnjega primerka se prebere ob uvozu, preden ga ta primerek prepiše.
+NESHRANJENO = os.path.join(os.environ.get("LOCALAPPDATA", ""), "FreeCAD-splet", "neshranjeno.json")
+_neshranjeno_zapisano = None
+
+
+def _preberi_neshranjeno():
+    try:
+        import json
+        with open(NESHRANJENO, encoding="utf-8") as f:
+            podatki = json.load(f)
+        return {"poti": {os.path.normcase(os.path.normpath(p)) for p in podatki.get("poti", [])},
+                "oznake": set(podatki.get("oznake", []))}
+    except Exception:  # noqa: BLE001
+        return None
+
+
+_prejsnje_neshranjeno = _preberi_neshranjeno()
+
+
+def _zapisi_neshranjeno(dokumenti):
+    """Zapiše poti (in oznake neshranjenih dokumentov brez datoteke) z neshranjenimi spremembami, le ob spremembi."""
+    global _neshranjeno_zapisano
+    poti, oznake = [], []
+    for ime, doc in dokumenti.items():
+        try:
+            gdoc = Gui.getDocument(ime)
+            if gdoc is None or not gdoc.Modified:
+                continue
+        except Exception:  # noqa: BLE001
+            continue
+        if doc.FileName:
+            poti.append(doc.FileName)
+        else:
+            oznake.append(doc.Label)
+    vsebina = {"poti": sorted(poti), "oznake": sorted(oznake)}
+    if vsebina == _neshranjeno_zapisano:
+        return
+    try:
+        import json
+        os.makedirs(os.path.dirname(NESHRANJENO), exist_ok=True)
+        with open(NESHRANJENO + ".delno", "w", encoding="utf-8") as f:
+            json.dump(dict(vsebina, cas=time.strftime("%Y-%m-%d %H:%M:%S"), pid=os.getpid()), f, ensure_ascii=False)
+        os.replace(NESHRANJENO + ".delno", NESHRANJENO)
+        _neshranjeno_zapisano = vsebina
+    except Exception as e:  # noqa: BLE001
+        _log("seznam neshranjenih ni zapisan: %r" % e)
 
 
 def _log(besedilo):
@@ -71,9 +124,15 @@ def _podatki_kopije(mapa):
     except Exception:  # noqa: BLE001
         pass
     kopija = os.path.join(mapa, "fc_recovery_file.fcstd")
-    t_kopija, t_disk = _mtime(kopija), _mtime(pot) if pot else None
-    novejsa = bool(t_kopija is not None and os.path.getsize(kopija) > 0 and (t_disk is None or t_kopija > t_disk + 1))
-    return oznaka, pot, novejsa
+    t_kopija = _mtime(kopija)
+    if t_kopija is None or os.path.getsize(kopija) == 0:
+        return oznaka, pot, False
+    if _prejsnje_neshranjeno is not None:   # seznam prejšnjega primerka: le dokumenti, ki so res imeli spremembe
+        if pot:
+            return oznaka, pot, os.path.normcase(os.path.normpath(pot)) in _prejsnje_neshranjeno["poti"]
+        return oznaka, pot, oznaka in _prejsnje_neshranjeno["oznake"]
+    t_disk = _mtime(pot) if pot else None   # brez seznama (prvi zagon s to kodo): po času, z lažnimi zadetki
+    return oznaka, pot, bool(t_disk is None or t_kopija > t_disk + 1)
 
 
 def umakni_obnovo(stanje):
@@ -118,9 +177,10 @@ def umakni_obnovo(stanje):
     okno.reject()   # okno zapre brez obnove; česar ni bilo mogoče umakniti, ostane v predpomnilniku za naslednji zagon
     _log("prejšnji primerek se je končal nasilno: dokumentov ne odpiram, %d kopij umaknjenih v %s" % (len(umaknjeni), cilj))
     if novejsi:
+        imena = ", ".join(novejsi[:10]) + (" in še %d" % (len(novejsi) - 10) if len(novejsi) > 10 else "")
         stanje.oddaj("obvestilo", {"sporocilo": "FreeCAD se je zadnjič končal nepričakovano. Dokumentov ne odpiram samih; "
-                                   "neshranjene spremembe so imeli: %s. Kopije so v %s." % (", ".join(novejsi), cilj),
-                                   "slabo": True})
+                                   "neshranjene spremembe so imeli: %s. Kopije so v %s (seznam v PREBERI.txt)."
+                                   % (imena, cilj), "slabo": True})
     return True
 
 
@@ -188,11 +248,12 @@ def korak(stanje, oblak=None):
     if zdaj - _zadnji < PREGLED:
         return
     _zadnji = zdaj
+    dokumenti = App.listDocuments()
+    _zapisi_neshranjeno(dokumenti)
     if not VKLOPLJENO:
         return
     if oblak is not None:
         stanje._oblak = oblak
-    dokumenti = App.listDocuments()
     for ime in list(_sledi):
         if ime not in dokumenti:
             _sledi.pop(ime, None)
