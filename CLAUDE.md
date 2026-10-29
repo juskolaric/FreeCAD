@@ -552,6 +552,12 @@ FreeCAD je motor, vmesnik in grafika nastajata v brskalniku (plan, korak 8 napre
   okna nastane prazna ali sivo odrezana (vsebina ob robu), take se ne strežejo; prazen render strežnik zavrne (400) in ga ne hrani.
   Datoteke, shranjene iz skritega okna, imajo pogosto `Thumbnail.png` z **0 bajti**: ta ni uporabna (do 2026-10-09 je napaka pri
   branju veljala za »uporabno«, zato stran zanje ni izrisala sličice). Če se sličica v brskalniku ne naloži, jo stran izriše sama.
+  **Sličice vnaprej** (od 2026-10-29, želja uporabnika »predogledi vedno vidni, brez odpiranja«): `izrisiSliciceDatotek` v ozadju
+  izriše vse **zaprte** datoteke projektov brez sličice ali z zastarelo (`slicicaStara` v `/projekti`: datoteka > 60 s novejša od
+  renderja) — najprej prikazani projekt, nato najnovejše; `GET /posnetek?pot=` zaprto datoteko iz seznama projektov (`znana`, prej
+  le knjižnica) odpre skrito, zgradi posnetek in jo zapre skupaj z dokumenti, ki jih je odprl sestav. Strežnik odpre šele, ko 5 s ni
+  bilo ukaza v glavni vrsti (`zadnja_zahteva`; vsi zavihki in seje AI), sicer 503 in stran poskusi čez 20 s. Časi: deli 0,3 s,
+  sestavi 2–13 s, KOMBI (DJ DarMar) 31 s odpiranja. Datoteke iz skript (uvoz STEP v skrit dokument) tako dobijo sličico same.
   Brez sličice stran pokaže ikono kocke (`IKONA_KOCKE`; črtkana = dokument še ni shranjen)
   in oznako vrste **Sestav** / **Del** (`vrsta` v `/projekti`: `_vrsta_iz_tipov` po tipih objektov, za datoteke iz
   `Document.xml` v FCStd, za odprte dokumente iz `TypeId`; sestav = Assembly, App::Link ali več App::Part, del = telesa).

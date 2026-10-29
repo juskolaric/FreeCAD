@@ -3131,7 +3131,14 @@ def _shrani_slicico(pot, png):
     zacasna = _pot_slicice(pot) + ".tmp"
     with open(zacasna, "wb") as f:
         f.write(png)
-    os.replace(zacasna, _pot_slicice(pot))
+    for poskus in range(10):   # sličico lahko za hip drži bralec (GET /slicica) ali protivirusni pregled (2026-10-29: 500 pri vrsti)
+        try:
+            os.replace(zacasna, _pot_slicice(pot))
+            return
+        except PermissionError:
+            if poskus == 9:
+                raise
+            time.sleep(0.2)
 
 
 def _datoteka_projekta(pot):
@@ -3143,6 +3150,8 @@ def _datoteka_projekta(pot):
          "velikost": st.st_size, "spremenjeno": int(st.st_mtime)}
     d.update(_lastnosti_fcstd(pot, st))
     render = _shranjena_slicica(pot)
+    # zastarel render: datoteko je za sliko spremenil kdo drug (skripta, druga seja); stran ga v ozadju izriše znova
+    d["slicicaStara"] = render > 0 and int(st.st_mtime) > render + 60
     d["slicica"] = d["slicica"] or render > 0
     d["slicicaV"] = max(render, int(st.st_mtime))
     return d
@@ -4396,15 +4405,45 @@ class Stanje:
                 odgovor["rezultat"] = _zgradba_dokumenta(doc)
         elif ukaz == "posnetek":
             doc = App.listDocuments().get(podatki.get("ime", ""))
+            pot, odprl, prej_odprti = podatki.get("pot", ""), False, set()
+            if doc is None and pot:
+                # Sličica kosa iz knjižnice (2026-10-28) ali datoteke projekta brez sličice (2026-10-29): zaprta datoteka se
+                # odpre skrito samo za posnetek in nato zapre, skupaj z dokumenti, ki jih je sestav pri tem odprl (povezave);
+                # aktivni dokument ostane isti (openDocument in closeDocument ga sicer zamenjata).
+                doc = next((d for d in App.listDocuments().values() if _ista_pot(d.FileName, pot)), None)
+                if doc is None and (_v_bazi(pot) or podatki.get("znana")) and os.path.isfile(pot):
+                    prej = App.ActiveDocument
+                    prej_odprti = set(App.listDocuments())
+                    t0 = time.time()
+                    doc, odprl = App.openDocument(pot, True), True
+                    _log("sličica: odprto skrito %s (%.1f s)" % (pot, time.time() - t0))
             if doc is not None and odgovor is not None:
-                objekti = []
-                for obj in _vidni_objekti(doc):
-                    try:
-                        objekti.append(_geometrija_predpomnjena(doc, obj)[0])
-                    except Exception:  # noqa: BLE001
-                        pass
-                odgovor["rezultat"] = ('{"dokument":%s,"objekti":[%s]}' % (
-                    json.dumps(doc.Label), ",".join(objekti))).encode("utf-8")
+                try:
+                    objekti = []
+                    vidni = list(_vidni_objekti(doc))
+                    if not vidni and pot:
+                        # kos iz baze, shranjen z vsem skritim (vijaki KAMM): za sličico vzemi trdna telesa, ki niso vsebniki
+                        vidni = [o for o in doc.Objects if hasattr(o, "Shape") and not _je_izhodisce(o)
+                                 and not (o.isDerivedFrom("App::Part") or o.isDerivedFrom("PartDesign::Body")
+                                          or o.isDerivedFrom("App::DocumentObjectGroup"))
+                                 and not o.Shape.isNull() and o.Shape.Solids]
+                    for obj in vidni:
+                        try:
+                            objekti.append(_geometrija_predpomnjena(doc, obj)[0])
+                        except Exception:  # noqa: BLE001
+                            pass
+                    odgovor["rezultat"] = ('{"dokument":%s,"objekti":[%s]}' % (
+                        json.dumps(doc.Label), ",".join(objekti))).encode("utf-8")
+                finally:
+                    if odprl:
+                        App.closeDocument(doc.Name)
+                        for ime in [n for n in App.listDocuments() if n not in prej_odprti]:
+                            try:   # dokumenti, ki jih je odprl sestav (povezave); nespremenjeni, zato brez vprašanja
+                                App.closeDocument(ime)
+                            except Exception as e:  # noqa: BLE001
+                                _log("sličica: %s ni zaprt: %r" % (ime, e))
+                        if prej is not None and prej.Name in App.listDocuments():
+                            App.setActiveDocument(prej.Name)
         elif ukaz == "python":
             # Koda iz brskalnika ali iz izvedi.py; izpis in spremenljivka "rezultat" gresta v odgovor.
             import contextlib
@@ -4620,7 +4659,19 @@ class Zahteva(http.server.BaseHTTPRequestHandler):
             import urllib.parse
             q = urllib.parse.parse_qs(self.path.partition("?")[2])
             odgovor = {"konec": threading.Event(), "izpis": "", "napaka": "", "rezultat": None}
-            STANJE.vrsta_ozadje.put(("posnetek", {"ime": (q.get("ime") or [""])[0]}, odgovor))
+            iskana = (q.get("pot") or [""])[0]
+            # zaprto datoteko glavna nit odpre skrito le, če je iz knjižnice ali iz seznama projektov (2026-10-29: sličice vnaprej)
+            znana = bool(iskana) and iskana.lower().endswith(".fcstd") and os.path.isfile(iskana) and self._znana_datoteka(iskana)
+            if znana:
+                # odpiranje zaprte datoteke lahko glavno nit zasede za sekunde: le v mirovanju vseh zavihkov in sej AI
+                # (zadnja_zahteva = zadnji ukaz glavne vrste); brskalnik ob 503 poskusi znova pozneje
+                rok = time.time() + 45
+                while time.time() - STANJE.zadnja_zahteva < 5:
+                    if time.time() > rok:
+                        self._odgovor(b'{"napaka":"zaseden"}', koda=503)
+                        return
+                    time.sleep(0.5)
+            STANJE.vrsta_ozadje.put(("posnetek", {"ime": (q.get("ime") or [""])[0], "pot": iskana, "znana": znana}, odgovor))
             if not odgovor["konec"].wait(60) or odgovor["rezultat"] is None:
                 self._odgovor(b'{"napaka":"ni posnetka"}', koda=404)
             else:

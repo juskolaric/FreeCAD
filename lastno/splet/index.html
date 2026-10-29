@@ -4951,6 +4951,54 @@ async function izrisiSliciceDokumentov() {
       } catch (e) { console.warn('sličica dokumenta', o.oznaka, e); }
     }
   } finally { sliciceDokumentovTece = false; }
+  izrisiSliciceDatotek().catch(e => console.warn(e));
+}
+// Sličice vnaprej (od 2026-10-29, želja uporabnika »predogledi naj bodo vedno vidni, brez odpiranja«): zaprte datoteke vseh
+// projektov brez sličice ali z zastarelo (datoteko je za sliko spremenila skripta ali druga seja; `slicicaStara`) stran po
+// vrsti izriše v ozadju — najprej trenutni projekt, nato najnovejše; ena naenkrat, ko uporabnik na tej strani 4 s miruje,
+// strežnik pa zaprto datoteko odpre (skrito, GET /posnetek?pot=, vrsta ozadja) šele, ko 5 s ni bilo nobenega ukaza (vsi zavihki
+// in seje AI; sicer 503 in nov poskus), zgradi posnetek in jo zapre; render se shrani trajno (POST /slicica).
+const sliciceDatotekPoskus = new Set();   // pot|spremenjeno: v tej seji strani že poskušeno
+let sliciceDatotekTece = false;
+async function izrisiSliciceDatotek() {
+  if (sliciceDatotekTece || sliciceDokumentovTece || skica.posnetek) return;
+  sliciceDatotekTece = true;
+  try {
+    for (;;) {
+      const p = stanje.projekti || {}, odprte = new Set((p.odprti || []).map(o => (o.pot || '').toLowerCase()));
+      const kljuc = d => d.pot + '|' + (d.spremenjeno || 0);
+      const kandidati = (p.skupine || []).flatMap(sk => sk.datoteke || []).filter(d => d.pot
+        && (!d.slicica || d.slicicaStara || slicicaNeNalozi.has(d.pot)) && !odprte.has(d.pot.toLowerCase()) && !sliciceDatotekPoskus.has(kljuc(d)));
+      if (!kandidati.length) break;
+      // najprej trenutni projekt, nato najnovejše datoteke (to, s čimer se dela, npr. pravkar uvožene)
+      const projekt = prikazaniProjekt();
+      kandidati.sort((a, b) => (b.spremenjeno || 0) - (a.spremenjeno || 0));
+      const d = kandidati.find(d => projekt && projekt !== '*' && projektPoti(d.pot) === projekt) || kandidati[0];
+      sliciceDatotekPoskus.add(kljuc(d));
+      await pocakajMir();
+      await new Promise(r => setTimeout(r, 600));   // premor med datotekami
+      if (sliciceDokumentovTece || skica.posnetek) { sliciceDatotekPoskus.delete(kljuc(d)); break; }   // odprti dokumenti imajo prednost; nadaljuje se ob naslednjem seznamu
+      try {
+        const t0 = performance.now();
+        const r = await fetch('/posnetek?pot=' + encodeURIComponent(d.pot), { cache: 'no-store' });
+        if (r.status === 503) {   // FreeCAD dela (drug zavihek, seja AI): ista datoteka čez 20 s
+          sliciceDatotekPoskus.delete(kljuc(d)); setTimeout(() => izrisiSliciceDatotek().catch(e => console.warn(e)), 20000); break;
+        }
+        if (!r.ok) continue;
+        const model = await r.json();
+        if (!model.objekti || !model.objekti.length) continue;
+        const smer = typeof smerSlicice === 'function' ? smerSlicice(d.pot) : null;   // smer po dokumentu (Meta SlicicaPogled), sicer izometrija
+        const skupina = new THREE.Group();
+        for (const ob of model.objekti) skupina.add(zgradiObjekt(ob).skupina);
+        const platno = await izrisiIzometrijo(null, VELIKOST_SLICICE, skupina, smer);
+        skupina.traverse(n => { if (n.geometry) n.geometry.dispose(); });
+        if (platno) {
+          await objavi('/slicica', { pot: d.pot, png: platno.toDataURL('image/png') }); slicicaNeNalozi.delete(d.pot);
+          console.info('sličica vnaprej', d.ime, Math.round(performance.now() - t0) + ' ms');
+        }
+      } catch (e) { console.warn('sličica datoteke', d.ime, e); }
+    }
+  } finally { sliciceDatotekTece = false; }
 }
 
 const VELIKOST_SLICICE_VOZLA = 40;
