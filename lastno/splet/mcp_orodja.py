@@ -531,10 +531,13 @@ PRAVILA = r"""
 - Gibljiv podsestav: Assembly::AssemblyLink z Rigid = False. Povezave ne dajaj v vsebnik z lego.
 
 ## Pločevina
-- Pred modeliranjem preberi lastno/raziskava/plocevina.md (v repozitoriju FreeCAD). Lastna parametrična objekta
+- Pred modeliranjem preberi lastno/raziskava/plocevina.md (v repozitoriju FreeCAD), zlasti §3a. Lastna parametrična objekta
   TeloVPlocevino in Razgrnitev (lastno/plocevina/lastna_plocevina.py) iščeta ploskve geometrijsko; SheetMetal objekti s
   shranjenimi imeni (Face4, Edge14) se ob spremembi mer pokvarijo.
-- Lastnosti ne poimenuj `Debelina` (baza standardnih delov po njej prepozna pločevino).
+- **Vsak kos: najprej material in debelina.** Odprtina V, notranji polmer in K sledijo iz tabele Amada
+  (lastno/plocevina/plocevina_materiali.py: `parametri`, `opis`, `mere_plocevine`); objekta imata `Material` in `Samodejno`.
+  Polmera ne ugibaj (ne 0, ne 1 T, ne 0,8 »ostri«), K ne prepisuj iz drugega kosa; vrednost delavnice vpiši ročno.
+- Lastnosti ne poimenuj `Debelina` (baza standardnih delov po njej prepozna pločevino); izjema je objekt »Mere« pločevine.
 
 ## Videz, elektro, kabli
 - Videz kosa: `splet` POST /videz {dejanje: "nastavi", ime, videz}; prednastavitve vrne {dejanje: "seznam"}.
@@ -662,10 +665,13 @@ PREDLOGE = [
                  "Oblak/3D modeliranje/{projekt}/."},
     {"name": "plocevina", "description": "Kos iz pločevine z razgrnitvijo (DXF).",
      "arguments": [{"name": "opis", "description": "kos, debelina, material", "required": True}],
-     "besedilo": "Naredi kos iz pločevine: {opis}.\nNajprej preberi lastno/raziskava/plocevina.md v repozitoriju "
-                 "FreeCAD (C:/Users/Uporabnik/Desktop/Apps/FreeCAD). Uporabi lastna objekta TeloVPlocevino in "
-                 "Razgrnitev (lastno/plocevina/lastna_plocevina.py), ne SheetMetal z imeni ploskev. Preveri z `slika` "
-                 "in `izmeri`; razgrnitev naj bo skrita. Lastnosti ne imenuj Debelina."},
+     "besedilo": "Naredi kos iz pločevine: {opis}.\nNajprej preberi lastno/raziskava/plocevina.md (§3a) v repozitoriju "
+                 "FreeCAD (CAD in 3D/FreeCAD). Določi material in debelino; parametre vzemi iz tabele: `python` "
+                 "`import plocevina_materiali as pm; pm.opis(material, T)` (V, notranji polmer, K, najkrajši krak, klin) "
+                 "in jih vpiši na objekt »Mere« (`pm.mere_plocevine(mere, material, T)`), upogibi in razgrnitev naj se "
+                 "vežejo nanj z izrazi. Uporabi lastna objekta TeloVPlocevino in Razgrnitev (lastno/plocevina/"
+                 "lastna_plocevina.py; Material + Samodejno), ne SheetMetal z imeni ploskev. Preveri z `slika` in "
+                 "`izmeri`; razgrnitev naj bo skrita. Lastnosti ne imenuj Debelina (razen na objektu Mere)."},
     {"name": "sestav", "description": "Sestav iz shranjenih kosov s spoji.",
      "arguments": [{"name": "kosi", "description": "kateri kosi in kako so povezani", "required": True}],
      "besedilo": "Sestavi: {kosi}.\nOkolje Assembly: kosi kot App::Link na shranjene dokumente, en kos pritrjen "
@@ -696,7 +702,8 @@ PREDLOGE = [
 
 @orodje("stanje", naslov="Stanje FreeCAD-a", nit="streznik", samo_branje=True, opis="""
 Stanje spletnega FreeCAD-a: aktivni dokument, odprti in neshranjeni dokumenti, izbira, okolje, odprt obrazec,
-urejanje skice, zadnja napaka strežnika, opravila v teku, zavihki brskalnika, plošča tiskalnikov. Začni tukaj.""")
+urejanje skice, zadnja napaka strežnika, opravila v teku, zavihki brskalnika, plošča tiskalnikov, pomnilnik procesa
+(opozorilo nad pragom). Začni tukaj.""")
 def t_stanje(a):
     st = S.STANJE.stanje()
     try:
@@ -749,6 +756,13 @@ def t_stanje(a):
         pass
     try:
         v.append(S.oblikovanje_povzetek())   # Blender v ozadju: teče, minute mirovanja, prag ugasnitve, zaseden
+    except Exception:  # noqa: BLE001
+        pass
+    try:
+        import pomnilnik   # zasebni pomnilnik procesa, zavezani pomnilnik sistema, disk; opozorila čez prag
+        vrstica = pomnilnik.povzetek_vrstica(st.get("pomnilnik"))
+        if vrstica:
+            v.append(vrstica)
     except Exception:  # noqa: BLE001
         pass
     if st.get("napaka"):
@@ -2085,7 +2099,7 @@ def izris_mreze(objekti, smer, velikost, samo=None):
     desno /= np.linalg.norm(desno)
     gor = np.cross(nazaj, desno)
     R = np.stack([desno, gor, nazaj])
-    tri, barve, robovi = [], [], []
+    tri, barve, robovi, rob_barve = [], [], [], []
     for o in objekti:
         if samo and o.get("ime") not in samo:
             continue
@@ -2101,11 +2115,14 @@ def izris_mreze(objekti, smer, velikost, samo=None):
         rt = np.array(o.get("robTocke") or [], float).reshape(-1, 2, 3)
         if len(rt):
             robovi.append(rt)
+            rb = o.get("robBarva")   # robovi v barvi kosa (LineColor), sicer temno sivi
+            rob_barve.append(np.tile(np.array(rb if rb else [0.157, 0.173, 0.204]), (len(rt), 1)))
     if not tri:
         raise Napaka("Ni geometrije za izris (prazen dokument ali skriti objekti).")
     tri = np.concatenate(tri) @ R.T
     barve = np.concatenate(barve)
     robovi = (np.concatenate(robovi) @ R.T) if robovi else np.zeros((0, 2, 3))
+    rob_rgb = np.clip(np.concatenate(rob_barve) * 255, 0, 255).astype(int).tolist() if rob_barve else []
     n = np.cross(tri[:, 1] - tri[:, 0], tri[:, 2] - tri[:, 0])
     dol = np.linalg.norm(n, axis=1)
     ok = dol > 1e-12
@@ -2158,7 +2175,7 @@ def izris_mreze(objekti, smer, velikost, samo=None):
             d.polygon([tuple(p) for p in zt[k]], fill=b, outline=b)
         else:
             r = zr[k - n_tri]
-            d.line([tuple(r[0]), tuple(r[1])], fill=(40, 44, 52), width=debelina)
+            d.line([tuple(r[0]), tuple(r[1])], fill=tuple(rob_rgb[k - n_tri]), width=debelina)
     img = img.resize((velikost, velikost), Image.LANCZOS)
     izhod = io.BytesIO()
     img.save(izhod, "JPEG", quality=88)

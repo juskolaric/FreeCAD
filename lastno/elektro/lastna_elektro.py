@@ -32,6 +32,13 @@ def _mm(x):
     return float(getattr(x, "Value", x))
 
 
+def _nastavljiva(obj, ime):
+    """Mera, ki jo povezava v sestavu nastavi zase (App::Link z LinkCopyOnChange = Tracking): v bazi je en kos, sestav
+    ima pri vsaki povezavi svojo dolžino (FreeCAD naredi zasebno kopijo kosa v sestavu, ostale lastnosti sledijo izvirniku)."""
+    if "CopyOnChange" not in obj.getPropertyStatus(ime):
+        obj.setPropertyStatus(ime, "CopyOnChange")
+
+
 def _kvader(x0, x1, y0, y1, z0, z1):
     return Part.makeBox(x1 - x0, y1 - y0, z1 - z0, V(x0, y0, z0))
 
@@ -78,6 +85,7 @@ class Kanal:
         _lastnost(obj, "App::PropertyBool", "Pokrov", "Kanal", "Nariši tudi pokrov", True)
         _lastnost(obj, "App::PropertyLength", "DebelinaPokrova", "Kanal", "Debelina plošče pokrova", 1.5)
         _lastnost(obj, "App::PropertyLength", "JezicekPokrova", "Kanal", "Višina jezička pokrova v kanalu", 5.0)
+        _nastavljiva(obj, "Dolzina")
 
     def onDocumentRestored(self, obj):
         self._lastnosti(obj)
@@ -128,6 +136,7 @@ class DinLetev:
         _lastnost(obj, "App::PropertyLength", "SirinaReze", "Letev", "Širina montažne reže", 6.2)
         _lastnost(obj, "App::PropertyLength", "DolzinaReze", "Letev", "Dolžina montažne reže", 18.0)
         _lastnost(obj, "App::PropertyLength", "KorakRez", "Letev", "Korak montažnih rež", 25.0)
+        _nastavljiva(obj, "Dolzina")
 
     def onDocumentRestored(self, obj):
         self._lastnosti(obj)

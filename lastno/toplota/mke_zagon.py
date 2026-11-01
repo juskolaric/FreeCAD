@@ -108,19 +108,22 @@ def zmrezi(frag, mke):
         xyz_vse = np.asarray(coords, dtype=float).reshape(-1, 3)
         preslikava = np.full(int(tags.max()) + 1, -1, dtype=np.int64)
         preslikava[tags] = np.arange(len(tags))
-        tipi, elem_tags, node_tags = gmsh.model.mesh.getElements(3)
-        tets = []
-        for tip, nt in zip(tipi, node_tags):
-            if tip == 4:   # 4-vozliščni tetraeder
-                tets.append(preslikava[np.asarray(nt, dtype=np.int64).reshape(-1, 4)])
+        tets, telo = [], []
+        for _d, oznaka in gmsh.model.getEntities(3):   # po telesih (Boolean Fragments), da je razvrstitev po telesu
+            tipi, elem_tags, node_tags = gmsh.model.mesh.getElements(3, oznaka)
+            for tip, nt in zip(tipi, node_tags):
+                if tip == 4:   # 4-vozliščni tetraeder
+                    t = preslikava[np.asarray(nt, dtype=np.int64).reshape(-1, 4)]
+                    tets.append(t)
+                    telo.append(np.full(len(t), oznaka, dtype=np.int64))
         if not tets:
             raise RuntimeError("Gmsh ni dal tetraedrov")
-        tets = np.concatenate(tets)
+        tets, telo = np.concatenate(tets), np.concatenate(telo)
         # samo uporabljena vozlišča, preštevilčena
         upor = np.unique(tets)
         nov = np.full(len(xyz_vse), -1, dtype=np.int64)
         nov[upor] = np.arange(len(upor))
-        return xyz_vse[upor], nov[tets]
+        return xyz_vse[upor], nov[tets], telo
     finally:
         gmsh.finalize()
 
@@ -136,6 +139,22 @@ def _v_okvirju(c, o):
     return o[0] <= c[0] <= o[3] and o[1] <= c[1] <= o[4] and o[2] <= c[2] <= o[5]
 
 
+def obmocja_po_telesih(xyz, tets, telo, model, doc):
+    """Kot obmocja_elementov, a razvrsti le en element na telo mreže (vsako telo Boolean Fragments je v celoti eno območje):
+    pri izolaciji iz zlepkov je isInside na vsakem od ~90k elementov trajal več kot 25 min."""
+    import numpy as np
+    V = _prostornine(xyz, tets)
+    pred = {}
+    for t in np.unique(telo):
+        idx = np.nonzero(telo == t)[0]
+        # največji elementi telesa (težišče zanesljivo znotraj); glasovanje, ker naprave razen pene ločujejo le okvirji
+        izbor = idx[np.argsort(V[idx])[-9:]]
+        glasovi = {k: len(v) for k, v in obmocja_elementov(xyz, tets[izbor], model, doc).items()}
+        ime = max(glasovi, key=glasovi.get)
+        pred.setdefault(ime, []).append(idx)
+    return {ime: np.concatenate(v).tolist() for ime, v in pred.items()}
+
+
 def obmocja_elementov(xyz, tets, model, doc):
     """Ime območja za vsak tetraeder po težišču: okna, plašč (zunaj notranjosti), naprave (okvir + oblika prek Shape.isInside),
     sicer zrak. Vrne slovar ime -> seznam indeksov tetraedrov."""
@@ -144,6 +163,7 @@ def obmocja_elementov(xyz, tets, model, doc):
     notr = doc.getObject(model["objekt_notranjost"]).Shape.Solids
     okna = [(o["ime"], o["okvir"], doc.getObject(o["objekt"]).Shape.Solids) for o in model.get("okna", [])]
     bloki = [(b["ime"], b["okvir"], doc.getObject(b["objekt"]).Shape.Solids if b.get("realna") else None) for b in model["bloki"]]
+    izolacija = [(i["ime"], i["okvir"], doc.getObject(i["objekt"]).Shape.Solids) for i in model.get("izolacija", [])]
     N = model["notranji_mm"]
 
     def v_telesu(c, solidi):
@@ -160,6 +180,11 @@ def obmocja_elementov(xyz, tets, model, doc):
                 break
         if ime is None and (not _v_okvirju(c, N) or not v_telesu(cv, notr)):
             ime = "Plašč"
+        if ime is None:
+            for ime_i, o, sol in izolacija:
+                if _v_okvirju(c, o) and v_telesu(cv, sol):
+                    ime = ime_i
+                    break
         if ime is None:
             for ime_b, o, sol in bloki:
                 if _v_okvirju(c, o) and (sol is None or v_telesu(cv, sol)):
@@ -384,10 +409,10 @@ def main():
     frag = doc.getObject("Deli")
     stanje("mreza")
     log("mreženje z Gmsh (največ %g mm) ..." % float(mke.get("velikost_elementa_mm", 100)))
-    xyz, tets = zmrezi(frag, mke)
+    xyz, tets, telo = zmrezi(frag, mke)
     log("mreža: %d vozlišč, %d tetraedrov (%.0f s)" % (len(xyz), len(tets), time.time() - zacetek))
     stanje("vhod", vozlisc=len(xyz))
-    po_obmocjih = obmocja_elementov(xyz, tets, model, doc)
+    po_obmocjih = obmocja_po_telesih(xyz, tets, telo, model, doc)
     log("območja: " + ", ".join("%s %d" % (k, len(v)) for k, v in sorted(po_obmocjih.items())))
     ploskve = zunanje_ploskve(xyz, tets, model)
     log("lica: " + ", ".join("%s %d" % (k, len(v["lica"])) for k, v in ploskve.items()))

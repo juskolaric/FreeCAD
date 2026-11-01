@@ -2,7 +2,8 @@
 """Bilančni toplotni model boxa na soncu (korak 1 iz TOPLOTNA-ANALIZA-PLAN.md).
 
 Vozlišča: 5 zunanjih ploskev plašča (spredaj, zadaj, levo, desno, streha; dno adiabatno), notranji zrak, notranja masa
-(naprave, police). Vreme: PVGIS TMY po urah (pvlib), sonce na vsako ploskev (pvlib), konvekcija in sevanje (ht).
+(naprave, police). Izolacija (pena na notranji strani plašča) je zaporedni upor med plaščem in notranjostjo na pokritem
+delu vsake ploskve (brez lastne toplotne mase). Vreme: PVGIS TMY po urah (pvlib), sonce na vsako ploskev (pvlib), konvekcija in sevanje (ht).
 Za vsako lokacijo in barvo plašča: prosto segrevanje (brez hlajenja), idealno hlajenje na cilj (potrebna moč) in po želji
 delovanje vgrajene klime z omejeno močjo.
 
@@ -40,6 +41,7 @@ PRIVZETE = {
     "leto": 2023,
     "veter_najmanj_ms": 0.5,
     "albedo": 0.2,
+    "izolacija": {"debelina_mm": 0, "prevodnost": 0.04, "pokritost": {}},
 }
 
 
@@ -164,6 +166,11 @@ class Model:
         self.T_amb = df["temp_air"].to_numpy() + 273.15
         self.v = np.maximum(df["wind_speed"].to_numpy(), nast["veter_najmanj_ms"])
         self.G = np.column_stack([poa[i] for i in PLOSKVE])
+        iz = nast.get("izolacija") or {}
+        d_iz, k_iz = float(iz.get("debelina_mm", 0) or 0) / 1e3, float(iz.get("prevodnost", 0.04) or 0.04)
+        pok = iz.get("pokritost") or {}
+        self.R_iz = d_iz / k_iz if d_iz > 0 else 0.0   # m2K/W
+        self.f_iz = np.array([min(1.0, max(0.0, float(pok.get(p, 0) or 0))) for p in PLOSKVE]) if self.R_iz else np.zeros(5)
 
     def vhod(self, t):
         T_amb = np.interp(t, self.t, self.T_amb)
@@ -181,9 +188,17 @@ class Model:
         q["konv_zunaj"] = h_out * self.A * (T_amb - T_pl)
         q["sev_zunaj"] = self.eps * SIGMA * self.A * (self.F_nebo * (T_sky**4 - T_pl**4) + (1 - self.F_nebo) * (T_tla**4 - T_pl**4))
         h_in = np.array([h_zunaj(T_pl[i] - T_zr, self.L[i], 0.0, self.vodoravna[i], T_pl[i] < T_zr) for i in range(5)])
-        q["konv_znotraj"] = h_in * self.A * (T_zr - T_pl)
         eps_ef = 1 / (1 / 0.9 + 1 / 0.9 - 1)
-        q["sev_znotraj"] = eps_ef * SIGMA * self.A * (T_m**4 - T_pl**4)
+        f = self.f_iz
+        q["konv_znotraj"] = (1 - f) * h_in * self.A * (T_zr - T_pl)
+        q["sev_znotraj"] = (1 - f) * eps_ef * SIGMA * self.A * (T_m**4 - T_pl**4)
+        if self.R_iz:
+            # pokrit del: plašč -(R pene)- površina pene -(konvekcija v zrak, linearizirano sevanje v maso)
+            h_rad = 4 * eps_ef * SIGMA * ((T_pl + T_m) / 2) ** 3
+            g = 1.0 / self.R_iz
+            T_s = (h_in * T_zr + h_rad * T_m + g * T_pl) / (h_in + h_rad + g)
+            q["konv_znotraj"] = q["konv_znotraj"] + f * h_in * self.A * (T_zr - T_s)
+            q["sev_znotraj"] = q["sev_znotraj"] + f * h_rad * self.A * (T_m - T_s)
         h_m = h_prosta_navpicna(T_m - T_zr, 0.3)
         q["masa_zrak"] = h_m * self.A_masa * (T_m - T_zr)
         q["vent"] = self.vent * (T_amb - T_zr)
@@ -327,6 +342,8 @@ def izracun(mapa, nast, obseg="teden", lokacije=None, barve=None, orientacije=Tr
             poa = sonce_na_ploskve(df, nast["lokacije"][naj], az2, nast["albedo"])
             prosto = Model(nast, df, poa, alpha, "prosto").simuliraj(i0 * 3600.0, i1 * 3600.0)
             hlaj = Model(nast, df, poa, alpha, "idealno").simuliraj(i0 * 3600.0, i1 * 3600.0)
+            if len(hlaj) > 72:   # brez prvih 24 h (ohlajanje iz začetnega stanja), kot v glavni tabeli
+                prosto, hlaj = prosto.iloc[24:], hlaj.iloc[24:]
             orient.append({"lokacija": naj, "spredaj proti": smer, "plašč": barve[0],
                            "T_zrak max °C": round(float(prosto["T_zrak"].max()), 1),
                            "T_masa max °C": round(float(prosto["T_masa"].max()), 1),
@@ -350,6 +367,9 @@ def porocilo(mapa, nast, rez):
           + (f", klima {rez['klima_W']:.0f} W." if rez["klima_W"] else "."), "",
           f"Vozlišča: plašč po ploskvah ({nast['plasc'].get('material', {}).get('ime', 'jeklo')} {b['plocevina_mm']} mm), notranji zrak, notranja masa (naprave, police). Sonce iz pvlib na vsako ",
           "ploskev, konvekcija (ht: Churchill-Chu, McAdams) + veter, sevanje v nebo in tla, sevanje plašč–masa. Dno adiabatno.", "",
+          *([f"Izolacija: pena {nast['izolacija']['debelina_mm']} mm (λ {nast['izolacija']['prevodnost']} W/mK) na notranji strani plašča, pokritost ploskev "
+             + ", ".join(f"{k} {v * 100:.0f} %" for k, v in nast['izolacija'].get('pokritost', {}).items() if not k.startswith('_')) + ".", ""]
+            if float((nast.get('izolacija') or {}).get('debelina_mm', 0) or 0) > 0 else []),
           "## Rezultati", "", md_tabela(rez["tabela"]), ""]
     if rez["orientacije"]:
         md += ["## Vpliv orientacije sprednje stene (najhujši teden)", "", md_tabela(rez["orientacije"]), ""]

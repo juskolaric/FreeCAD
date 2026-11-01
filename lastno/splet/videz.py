@@ -10,6 +10,9 @@ Shininess ...), ki ga brskalnik (MeshStandardMaterial, PBR) ne more neposredno u
 2. Videz iz FreeCAD-ove knjižnice (Std_SetAppearance -> Steel, Chrome, Aluminum ...): prepozna se po vrednostih
    ShapeAppearance (knjižnica Materials/Appearance) in dobi ustrezne PBR vrednosti.
 3. Sicer privzeti satenast videz (kovinskost 0,15, hrapavost 0,42) z barvo iz FreeCAD-a.
+4. Ploščice (PBR teksture ambientCG, ploscice.py): lastnosti Ploscica, PloscicaSirina, PloscicaVisina, PloscicaZasuk,
+   PloscicaPloskve na kosu (ali vsebniku). Ploskev s ploščico dobi barvo povprečja teksture, posnetek pa še teksturo
+   in UV v mm (streznik._geometrija); render in brskalnik narišeta teksturo v pravem merilu.
 
 Sestav: povezava (App::Link) na podsestav je v posnetku en objekt, katerega oblika je sestav vseh kosov. Ploskve
 sestava gredo po vrsti `getSubObjects()` (le vidni elementi), zato videz po ploskvah sestavimo po listih drevesa
@@ -24,6 +27,8 @@ import os
 import re
 
 import FreeCAD as App
+
+import ploscice
 
 PRIVZETO = (0.15, 0.42, 0.0, 0)         # kovinskost, hrapavost, zrnatost, vzorec (brskalnik: satenast videz)
 # vzorec: 0 = brez / brušenje (zrnatost), 1 = les (letnice in pore; brskalnik ga izriše iz koordinat modela)
@@ -40,8 +45,12 @@ VIDEZI = {
     "barvano-belo": {"ime": "Prašno barvano, belo", "barva": (0.92, 0.92, 0.90), "kov": 0.0, "hrap": 0.55, "zrn": 0.8},
     "plastika": {"ime": "Plastika (barva ostane)", "barva": None, "kov": 0.0, "hrap": 0.48, "zrn": 0.0},
     "sijajna-plastika": {"ime": "Sijajna plastika (barva ostane)", "barva": None, "kov": 0.0, "hrap": 0.18, "zrn": 0.0},
+    "steklo": {"ime": "Steklo, čisto (barva in prosojnost ostaneta)", "barva": None, "kov": 0.0, "hrap": 0.04, "zrn": 0.0},
+    "steklo-mat": {"ime": "Steklo, matirano (barva in prosojnost ostaneta)", "barva": None, "kov": 0.0, "hrap": 0.62,
+                   "zrn": 0.0},
     "guma": {"ime": "Guma", "barva": (0.08, 0.08, 0.08), "kov": 0.0, "hrap": 0.9, "zrn": 0.0},
     "3d-tisk-rumen": {"ime": "3D tisk (rumen PETG)", "barva": (0.98, 0.76, 0.08), "kov": 0.0, "hrap": 0.38, "zrn": 0.0},
+    "3d-tisk-crn": {"ime": "3D tisk (črn PETG)", "barva": (0.07, 0.07, 0.08), "kov": 0.0, "hrap": 0.40, "zrn": 0.0},
     "folija": {"ime": "Folija (vinil, sijajna)", "barva": (0.10, 0.36, 0.78), "kov": 0.0, "hrap": 0.12, "zrn": 0.0},
     "les-hrast": {"ime": "Les, hrast", "barva": (0.72, 0.54, 0.34), "kov": 0.0, "hrap": 0.62, "zrn": 0.0, "vzorec": 1},
 }
@@ -141,6 +150,69 @@ def lastni_videz(obj):
     return ""
 
 
+# Ploščice (glej ploscice.py): lastnosti v skupini Videz
+PL_IME, PL_SIRINA, PL_VISINA, PL_ZASUK, PL_PLOSKVE = "Ploscica", "PloscicaSirina", "PloscicaVisina", "PloscicaZasuk", "PloscicaPloskve"
+PL_LASTNOSTI = (PL_IME, PL_SIRINA, PL_VISINA, PL_ZASUK, PL_PLOSKVE)
+
+
+def _vrednost(o, ime):
+    """Število iz lastnosti (Quantity v mm ali °, float) ali 0."""
+    if ime not in o.PropertiesList:
+        return 0.0
+    v = getattr(o, ime, 0)
+    try:
+        return float(v.Value) if hasattr(v, "Value") else float(v or 0)
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def _ploscica_objekta(o, s_ploskvami=True):
+    """(privzeta, ((indeks ploskve, ključ ali None), ...)) z objekta ali None, če ploščice nima. Ključ ploščice je
+    (mapa, š, v, zasuk) iz ploscice.nastavitev."""
+    pl = getattr(o, "PropertiesList", ())
+    if PL_IME not in pl and PL_PLOSKVE not in pl:
+        return None
+    privzeta = None
+    ime = getattr(o, PL_IME, "") if PL_IME in pl else ""
+    if ime:
+        privzeta = ploscice.nastavitev(ime, _vrednost(o, PL_SIRINA), _vrednost(o, PL_VISINA), _vrednost(o, PL_ZASUK))
+    po = ploscice.razcleni_ploskve(getattr(o, PL_PLOSKVE, ()) or ()) if s_ploskvami and PL_PLOSKVE in pl else {}
+    if privzeta is None and not po:
+        return None
+    return privzeta, tuple(sorted(po.items()))
+
+
+def lastna_ploscica(obj):
+    """Ploščica kosa (_ploscica_objekta) na objektu, povezanem objektu ali vsebniku (vsebnik: le privzeta)."""
+    for o in (obj, _cilj(obj)):
+        p = _ploscica_objekta(o)
+        if p is not None:
+            return p
+    o = _cilj(obj)
+    for _ in range(12):
+        try:
+            o = o.getParentGeoFeatureGroup()
+        except Exception:  # noqa: BLE001
+            return None
+        if o is None:
+            return None
+        p = _ploscica_objekta(o, s_ploskvami=False)
+        if p is not None:
+            return p
+    return None
+
+
+def _ploscica_ploskve(ploscica, i):
+    """Ključ ploščice ploskve i (0..) ali None."""
+    if not ploscica:
+        return None
+    privzeta, po = ploscica
+    for j, k in po:
+        if j == i:
+            return k
+    return privzeta
+
+
 def _je_vsebnik(obj):
     if obj.TypeId == "Assembly::AssemblyLink":
         return True
@@ -163,10 +235,13 @@ def _viden(obj, sub, otrok):
     return bool(getattr(otrok, "Visibility", True))
 
 
-def listi(obj, podedovan="", globina=0):
-    """[(list, ključ videza)] v vrstnem redu ploskev oblike objekta (glej opis modula)."""
+def listi(obj, podedovan="", globina=0, ploscica=None):
+    """[(list, ključ videza, ploščica)] v vrstnem redu ploskev oblike objekta (glej opis modula); ploščica je
+    (privzeta, po ploskvah) ali None."""
     podedovan = lastni_videz(obj) or podedovan
     if globina < 12 and _je_vsebnik(obj):
+        lastna = lastna_ploscica(obj)
+        ploscica = (lastna[0], ()) if lastna and lastna[0] else ploscica   # vsebnik: le privzeta za vse kose
         izhod = []
         for sub in obj.getSubObjects():
             try:
@@ -175,11 +250,11 @@ def listi(obj, podedovan="", globina=0):
                 otrok = None
             if otrok is None or not _viden(obj, sub, otrok):
                 continue
-            izhod.extend(listi(otrok, podedovan, globina + 1))
+            izhod.extend(listi(otrok, podedovan, globina + 1, ploscica))
         return izhod
     if globina and not hasattr(obj, "Shape"):
         return []          # skupina spojev (JointGroup) ipd.: brez oblike, ne prispeva ploskev
-    return [(obj, podedovan)]
+    return [(obj, podedovan, lastna_ploscica(obj) or ploscica)]
 
 
 def lastnosti(obj, kljuc):
@@ -198,8 +273,12 @@ def lastnosti(obj, kljuc):
     return (None,) + PRIVZETO
 
 
-def _pbr(lastn, barva):
-    return tuple(lastn[0] or barva[:3]) + tuple(lastn[1:])
+def _pbr(lastn, barva, ploscica=None):
+    """(r, g, b, kovinskost, hrapavost, zrnatost, vzorec, ploščica): ploskev s ploščico dobi povprečno barvo teksture."""
+    if ploscica:
+        o = ploscice.opis(ploscica[0])
+        return tuple(o["barva"]) + (0.0, o["hrapavost"], 0.0, 0, ploscica)
+    return tuple(lastn[0] or barva[:3]) + tuple(lastn[1:5]) + (None,)
 
 
 def stevilo_ploskev_lista(lst):
@@ -212,42 +291,48 @@ def stevilo_ploskev_lista(lst):
 
 def ploskve_videza(obj, stevilo_ploskev, barve):
     """Videz po ploskvah objekta posnetka: (osnovna, po_ploskvah ali None), vsak vnos (r, g, b, kov, hrap, zrn,
-    vzorec).
+    vzorec, ploščica ali None).
     `barve(obj, n)` je strežnikova funkcija (osnovna barva, barve po ploskvah ali None)."""
     vsi = listi(obj)
     if len(vsi) > 1:
         try:
             po_ploskvah = []
-            for lst, kljuc in vsi:
+            for lst, kljuc, plosc in vsi:
                 n = stevilo_ploskev_lista(lst)
                 osnovna, posamezne = barve(lst, n)
                 lastn = lastnosti(lst, kljuc)
-                if posamezne:
-                    po_ploskvah.extend(_pbr(lastn, b) for b in posamezne)
-                else:
-                    po_ploskvah.extend([_pbr(lastn, osnovna)] * n)
+                posamezne = posamezne or [osnovna] * n
+                po_ploskvah.extend(_pbr(lastn, b, _ploscica_ploskve(plosc, i)) for i, b in enumerate(posamezne))
             if po_ploskvah and len(po_ploskvah) == stevilo_ploskev:
                 return po_ploskvah[0], po_ploskvah
         except Exception:  # noqa: BLE001
             pass
     kljuc = vsi[0][1] if vsi else lastni_videz(obj)
-    osnovna, posamezne = barve(obj, stevilo_ploskev)
+    plosc = vsi[0][2] if vsi else lastna_ploscica(obj)
+    # povezava na vsebnik z enim kosom (Del s telesom): barva kosa, ne vsebnika (App::Part ima svoj, privzeto siv videz)
+    osnovna, posamezne = barve(vsi[0][0] if len(vsi) == 1 else obj, stevilo_ploskev)
     lastn = lastnosti(obj, kljuc)
+    if plosc:
+        posamezne = posamezne or [osnovna] * stevilo_ploskev
+        po = [_pbr(lastn, b, _ploscica_ploskve(plosc, i)) for i, b in enumerate(posamezne)]
+        return po[0], po
     return _pbr(lastn, osnovna), ([_pbr(lastn, b) for b in posamezne] if posamezne else None)
 
 
 def kljuc_videza(obj, barve):
     """Odtis videza za predpomnilnik posnetka (brez branja oblik listov: le ključi, barve, vidnost)."""
     odtis = []
-    for lst, kljuc in listi(obj):
+    for lst, kljuc, plosc in listi(obj):
         try:
             cilj = _cilj(lst)
             videz = tuple((tuple(m.DiffuseColor[:3]), tuple(m.SpecularColor[:3]), round(m.Shininess, 4))
                           for m in cilj.ViewObject.ShapeAppearance) if getattr(cilj, "ViewObject", None) else ()
         except Exception:  # noqa: BLE001
             videz = ()
-        odtis.append((lst.FullName if hasattr(lst, "FullName") else lst.Name, kljuc, videz,
-                      bool(getattr(getattr(lst, "ViewObject", None), "OverrideMaterial", False))))
+        vnos = (lst.FullName if hasattr(lst, "FullName") else lst.Name, kljuc, videz,
+                bool(getattr(getattr(lst, "ViewObject", None), "OverrideMaterial", False)))
+        # ploščica le, ko jo kos ima: ključi kosov brez ploščic ostanejo enaki (predpomnilnik posnetkov ne zastari)
+        odtis.append(vnos + (plosc, ploscice.odtis(plosc)) if plosc else vnos)
     return tuple(odtis)
 
 
@@ -339,11 +424,89 @@ def nastavi_videz(obj, kljuc):
         try:
             _shrani_izvirni(o)
             barva = p["barva"] or tuple(vo.ShapeAppearance[0].DiffuseColor[:3])
+            prosojnost = getattr(vo, "Transparency", 0)   # nov material jo ponastavi: steklo ostane prosojno
             vo.ShapeAppearance = (_material(barva, p),)
+            if prosojnost:
+                vo.Transparency = prosojnost
             spremenjeni.append(o)
         except Exception:  # noqa: BLE001
             pass
     return cilj, spremenjeni
+
+
+def nastavi_ploscico(obj, ime, sirina=0.0, visina=0.0, zasuk=0.0, ploskve=None):
+    """Kosu (povezava -> povezani objekt v svojem dokumentu) nastavi ploščico iz knjižnice (ploscice.najdi: ime mape,
+    njen začetek »Tiles036« ali polna pot) z velikostjo ene ploščice v mm (0 = privzeto) in zasukom vzorca v °.
+    ploskve: None = vse ploskve kosa; seznam imen (»Face3«) = le te ploskve (vrstica v PloscicaPloskve). ime '' ali
+    'privzeto' ploščico odstrani (pri ploskvah le vrstice teh ploskev). FreeCAD-ov videz dobi povprečno barvo
+    teksture (izvirnik v VidezIzvirni). Vrne (cilj, opis materiala ali None)."""
+    cilj = _cilj(obj)
+    brisi = not ime or ime == "privzeto"
+    mapa = None if brisi else ploscice.najdi(ime)
+    if not brisi and mapa is None:
+        raise ValueError("ploščice ni v knjižnici: %s (seznam: ploscice.seznam())" % ime)
+    o = ploscice.opis(mapa) if mapa else None
+    if not brisi and os.path.isabs(ime):
+        ime_zapis = mapa
+    else:
+        ime_zapis = o["id"] if o else ""
+    if ploskve:
+        ploskve = ["Face%d" % int(str(f).replace("Face", "")) for f in ploskve]
+        if PL_PLOSKVE not in cilj.PropertiesList:
+            cilj.addProperty("App::PropertyStringList", PL_PLOSKVE, "Videz",
+                             "Ploščice po ploskvah: »Face3: Tiles030 150x75 90« (velikost v mm, zasuk v °), »Face4: -« = brez")
+        ostale = ploscice.brez_ploskev(getattr(cilj, PL_PLOSKVE) or [], ploskve)
+        if not brisi:
+            ostale.append(ploscice.vrstica_ploskev(ploskve, ime_zapis, sirina, visina, zasuk))
+        setattr(cilj, PL_PLOSKVE, ostale)
+        if not brisi and getattr(cilj, "ViewObject", None) is not None:
+            _barva_po_ploskvah(cilj, ploskve, o["barva"])
+        return cilj, o
+    if brisi:
+        for p in PL_LASTNOSTI:
+            if p in cilj.PropertiesList:
+                cilj.removeProperty(p)
+        for k in [cilj] + kosi_z_obliko(cilj):
+            if getattr(k, "ViewObject", None) is not None:
+                _vrni_izvirni(k)
+        return cilj, None
+    if PL_IME not in cilj.PropertiesList:
+        cilj.addProperty("App::PropertyString", PL_IME, "Videz",
+                         "Ploščica (PBR tekstura) iz knjižnice Standardni deli/*/_Ploscice: ime mape, npr. Tiles036, ali polna pot")
+        cilj.addProperty("App::PropertyLength", PL_SIRINA, "Videz", "Širina ene ploščice (0 = privzeto iz ploscica.json)")
+        cilj.addProperty("App::PropertyLength", PL_VISINA, "Videz", "Višina ene ploščice (0 = po razmerju privzete velikosti)")
+        cilj.addProperty("App::PropertyAngle", PL_ZASUK, "Videz", "Zasuk vzorca v ravnini ploskve")
+    setattr(cilj, PL_IME, ime_zapis)
+    setattr(cilj, PL_SIRINA, float(sirina or 0))
+    setattr(cilj, PL_VISINA, float(visina or 0))
+    setattr(cilj, PL_ZASUK, float(zasuk or 0))
+    p = {"kov": 0.0, "hrap": o["hrapavost"]}
+    for k in kosi_z_obliko(cilj):
+        try:
+            _shrani_izvirni(k)
+            k.ViewObject.ShapeAppearance = (_material(tuple(o["barva"]), p),)
+        except Exception:  # noqa: BLE001
+            pass
+    return cilj, o
+
+
+def _barva_po_ploskvah(cilj, ploskve, barva):
+    """FreeCAD-ov videz: le naštete ploskve dobijo barvo ploščice (ShapeAppearance po ploskvah)."""
+    try:
+        n = cilj.Shape.countElement("Face")
+        vo = cilj.ViewObject
+        _shrani_izvirni(cilj)
+        videz = list(vo.ShapeAppearance)
+        if len(videz) != n:
+            videz = [videz[0]] * n if videz else [App.Material()] * n
+        m = _material(tuple(barva), {"kov": 0.0, "hrap": 0.35})
+        for f in ploskve:
+            i = int(f.replace("Face", "")) - 1
+            if 0 <= i < n:
+                videz[i] = m
+        vo.ShapeAppearance = tuple(videz)
+    except Exception:  # noqa: BLE001
+        pass
 
 
 def je_plocevina(obj):
@@ -370,6 +533,10 @@ def videz_plocevine(obj):
     if "alumin" in mat or "1060" in mat or "6061" in mat or "5754" in mat:
         return "aluminij"
     return "pločevina"
+
+
+def seznam_ploscic():
+    return ploscice.seznam()
 
 
 def seznam_videzov():

@@ -336,7 +336,8 @@
     padding: 0 8px; border-radius: 999px; line-height: 19px; color: #4b5563; background: #eceff3; }
   #drevoVrsta:empty { display: none; }
   #drevoVrsta.sestav { color: #1e5fb8; background: #e2ecfa; }
-  #drevoVrsta.prazno { color: #8a94a3; background: #f1f3f6; }
+  /* razred .prazno tu ni prazen seznam: brez odmika iz #stranski .prazno, sicer je glava drevesa višja od glave dokumentov */
+  #drevoVrsta.prazno { color: #8a94a3; background: #f1f3f6; padding: 0 8px; font-size: 11px; text-align: left; }
   #drevoGlava .ikonaGumb, #dokumentiGlava .ikonaGumb { flex: none; width: 26px; height: 24px; display: inline-flex; align-items: center; justify-content: center; border: none;
     background: transparent; border-radius: 6px; color: #6b7685; cursor: pointer; padding: 0; }
   #drevoGlava .ikonaGumb:hover, #dokumentiGlava .ikonaGumb:hover { background: #e8edf3; color: #1f2937; }
@@ -347,9 +348,11 @@
   #drevoGlava .iskanje input::-webkit-search-cancel-button, #dokumentiGlava .iskanje input::-webkit-search-cancel-button { cursor: pointer; }
   #drevoGlava .iskanje .stevec, #dokumentiGlava .iskanje .stevec { font-size: 11px; color: #8a94a3; white-space: nowrap; }
   /* glava stolpca dokumentov od 2026-10-26: samo iskanje in filter (odprti na vrhu); projekt se izbere v stolpcu Projekti */
-  #dokumentiGlava .vrsticaIskanja { display: flex; align-items: center; gap: 4px; }
-  #dokumentiGlava .vrsticaIskanja .iskanje { flex: 1 1 auto; min-width: 0; }
-  #dokumentiGlava #dokumentiFilter { height: 28px; width: 28px; }
+  #dokumentiGlava .vrsticaIskanja, #drevoGlava .vrsticaIskanja { display: flex; align-items: center; gap: 4px; }
+  #dokumentiGlava .vrsticaIskanja .iskanje, #drevoGlava .vrsticaIskanja .iskanje { flex: 1 1 auto; min-width: 0; }
+  #dokumentiGlava #dokumentiFilter, #drevoGlava .vrsticaIskanja .ikonaGumb { height: 28px; width: 28px; }
+  /* glava drevesa od 2026-10-28 v eni vrstici kot glava dokumentov: oznaka vrste visoka kot gumb »vsi odprti« */
+  #drevoGlava .vrsticaIskanja #drevoVrsta { height: 28px; box-sizing: border-box; border-radius: 8px; }
   #dokumentiGlava #dokumentiFilter.vklopljen { color: var(--poudarek); background: #dcebfc; }
   /* gumb »vsi odprti« (od 2026-10-28): seznam ne kaže več odprtih zunaj projekta, ampak jih ta gumb pokaže vse v plošči pod glavo */
   #dokumentiOdprti { flex: none; display: inline-flex; align-items: center; gap: 4px; height: 28px; padding: 0 7px; border: 1px solid var(--crta);
@@ -389,12 +392,14 @@
   #drevoVsebina .vozel:hover .slika .znacka { box-shadow: 0 0 0 2px #eef2f6; }
   #drevoVsebina .vozel.izbran .slika .znacka { box-shadow: 0 0 0 2px #dcebfc; }
   #drevoVsebina .besedilo { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
-  #drevoVsebina .ime { line-height: 1.25; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow-wrap: anywhere; }
+  /* ime se ne krajša (od 2026-10-28, želja uporabnika »čim bolj vse vidi«): prelomi se po besedah v toliko vrstic, kot jih rabi */
+  #drevoVsebina .ime { line-height: 1.25; overflow-wrap: break-word; }
   #drevoVsebina .vozel.izbran .ime { font-weight: 600; color: #0f3d7a; }
   #drevoVsebina .ime .smer { color: #98a2b0; margin: 0 3px; font-weight: 400; }
   #drevoVsebina .ime mark { background: #fff1a8; color: inherit; border-radius: 2px; padding: 0 1px; }
-  #drevoVsebina .podnapis { display: flex; align-items: center; gap: 5px; font-size: 11px; color: #7a8594; white-space: nowrap; overflow: hidden; }
-  #drevoVsebina .podnapis .vec { overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+  #drevoVsebina .podnapis { display: flex; flex-wrap: wrap; align-items: center; gap: 3px 5px; font-size: 11px; color: #7a8594; white-space: nowrap; }
+  #drevoVsebina .podnapis .vec { overflow: hidden; text-overflow: ellipsis; min-width: 0; max-width: 100%; }
+  #drevoVsebina .podnapis .napaja { max-width: 100%; }
   #drevoVsebina .cip { flex: none; font-size: 10px; font-weight: 600; letter-spacing: .02em; padding: 0 6px; border-radius: 999px; line-height: 16px;
     color: var(--barva, #4a5568); background: var(--ozadjeIkone, #edf0f4); }
   #drevoVsebina .stevilo { flex: none; font-size: 11px; font-weight: 600; color: #6b7685; background: #e9edf2; border-radius: 999px; padding: 0 7px; line-height: 18px;
@@ -427,6 +432,11 @@
     padding: 0 6px; border-radius: 999px; color: #7a4e00; background: #fff4d6; box-shadow: inset 0 0 0 1px #f3d48a; cursor: pointer; }
   #drevoVsebina .napaja.prazno { color: #a0a9b6; background: transparent; box-shadow: inset 0 0 0 1px var(--crta); }
   #drevoVsebina .dejanja { flex: none; display: flex; align-items: center; gap: 1px; }
+  /* gumba Uredi in oko plavata čez desni rob le ob miški ali izbiri, da imenu ne jemljeta širine; pri skritem kosu oko ostane v vrstici */
+  #drevoVsebina .vozel:not(.neviden) > .dejanja { position: absolute; right: 2px; top: 50%; transform: translateY(-50%); border-radius: 7px;
+    background: inherit; pointer-events: none; }
+  #drevoVsebina .vozel:not(.neviden):hover > .dejanja, #drevoVsebina .vozel.izbran:not(.neviden) > .dejanja,
+  #drevoVsebina .vozel:not(.neviden) > .dejanja:focus-within { pointer-events: auto; }
   #drevoVsebina .dejanje { width: 26px; height: 26px; display: inline-flex; align-items: center; justify-content: center; border: none; background: transparent;
     border-radius: 6px; color: #6b7685; cursor: pointer; padding: 0; opacity: 0; transition: opacity .1s; }
   #drevoVsebina .vozel:hover .dejanje, #drevoVsebina .vozel.izbran .dejanje, #drevoVsebina .dejanje:focus-visible { opacity: 1; }
@@ -476,6 +486,15 @@
   #knjiznicaVsebina .kos img { width: 100%; height: 96px; object-fit: contain; border-radius: 6px; background: linear-gradient(#fff, #eef1f5); }
   #knjiznicaVsebina .kos .ime { font-size: 13px; font-weight: 500; line-height: 1.25; overflow-wrap: anywhere; }
   #knjiznicaVsebina .kos .podatki { display: flex; gap: 6px; align-items: center; font-size: 11px; color: var(--besedilo3); }
+  /* skupina: glavni kos in kosi, ki spadajo k njemu (Pripada); vsak se vstavi posebej */
+  #knjiznicaVsebina .skupinaKosov { grid-column: span var(--n, 2); display: grid; grid-template-columns: repeat(var(--n, 2), minmax(0, 1fr));
+    gap: 6px; padding: 5px; border: 1.5px dashed #b9c6da; border-radius: 13px; background: #eef3fb; }
+  #knjiznicaVsebina .kos.spremljevalec { border-style: solid; border-color: #d7deea; }
+  #knjiznicaVsebina .kos .spada { font-size: 11px; color: #5b6b85; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  #knjiznicaVsebina .kos .dobavitelj { font-size: 11.5px; color: var(--besedilo2); line-height: 1.3; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  #knjiznicaVsebina .kos .dobavitelj::before { content: '🚚 '; }
+  #knjiznicaVsebina .kos .dobavitelj.ni { color: var(--besedilo3); font-style: italic; opacity: .7; }
+  #knjiznicaVsebina .kos .dobavitelj.ni::before { content: ''; }
   #knjiznicaVsebina .kos .znacka { border-radius: 999px; padding: 1px 7px; background: #e8eefb; color: #1e4fa3; font-weight: 600; }
   #knjiznicaVsebina .kos .znacka.sestav { background: #efe8fb; color: #6b3fb0; }
   #knjiznicaVsebina .kos .odpri { position: absolute; top: 8px; right: 8px; border: 1px solid var(--crta); background: rgba(255,255,255,.92); border-radius: 6px;
@@ -698,7 +717,7 @@
   .gumbPomocnik.dela::after { content: ''; display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: #f59e0b;
                               margin-left: 6px; vertical-align: middle; }
   body.stopnjaZunaj #gumbNaIpad { display: none; }   /* posnetek je pogled Strojnega risanja */
-  #gumbNaIpad.dela { opacity: .6; cursor: progress; }
+  #gumbNaIpad.dela, #pogledi .gumb.dela { opacity: .6; cursor: progress; }
   #tiskanjeOkvir { flex: 1 1 auto; width: 100%; height: 100%; border: 0; background: #fff; }
   #tiskanjeStanje { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; background: var(--plosca); }
   #tiskanjeStanje .okno { width: min(92%, 460px); background: #fff; border: 1px solid var(--crta); border-radius: 14px; box-shadow: var(--senca2);
@@ -1026,10 +1045,10 @@
 </style>
 <script type="importmap">
 { "imports": {
-  "three": "https://cdn.jsdelivr.net/npm/three@0.186.1/build/three.webgpu.js",
-  "three/webgpu": "https://cdn.jsdelivr.net/npm/three@0.186.1/build/three.webgpu.js",
-  "three/tsl": "https://cdn.jsdelivr.net/npm/three@0.186.1/build/three.tsl.js",
-  "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.186.1/examples/jsm/"
+  "three": "/three/0.186.1/build/three.webgpu.js",
+  "three/webgpu": "/three/0.186.1/build/three.webgpu.js",
+  "three/tsl": "/three/0.186.1/build/three.tsl.js",
+  "three/addons/": "/three/0.186.1/examples/jsm/"
 } }
 </script>
 </head>
@@ -1076,11 +1095,9 @@
       <div class="locilnik" id="locilnikStolpcev" title="Povleci: širina seznama dokumentov"></div>
       <div id="drevoStolpec">
         <div id="drevoGlava">
-          <div class="naslov"><span class="napis">Drevo</span><span class="dokument" id="drevoNaslov"></span><span id="drevoVrsta"></span>
-            <button type="button" class="ikonaGumb" id="drevoRazpri" title="Razpri vse veje"></button>
-            <button type="button" class="ikonaGumb" id="drevoStrni" title="Strni vse veje"></button>
-          </div>
-          <label class="iskanje"><span id="drevoLupa"></span><input id="drevoIskanje" type="search" placeholder="Išči v drevesu …" autocomplete="off" spellcheck="false"><span class="stevec" id="drevoStevec"></span></label>
+          <!-- ena vrstica kot glava dokumentov (želja uporabnika 2026-10-28); naslov ostane skrit za kodo, ki ga polni -->
+          <div class="naslov" style="display: none"><span class="napis">Drevo</span><span class="dokument" id="drevoNaslov"></span></div>
+          <div class="vrsticaIskanja"><label class="iskanje"><span id="drevoLupa"></span><input id="drevoIskanje" type="search" placeholder="Išči v drevesu …" autocomplete="off" spellcheck="false"><span class="stevec" id="drevoStevec"></span></label><button type="button" class="ikonaGumb" id="drevoRazpri" title="Razpri vse veje"></button><button type="button" class="ikonaGumb" id="drevoStrni" title="Strni vse veje"></button><span id="drevoVrsta"></span></div>
         </div>
         <div id="drevoVsebina" tabindex="0"><div class="ni">Nalagam …</div></div>
       </div>
@@ -1350,7 +1367,7 @@ function odpriMeni(gumb, u) {
   meni.style.top = (r.bottom + 2) + 'px';
   meni.classList.remove('skrit');
 }
-function zapriMeni() { meni.classList.add('skrit'); meni.dataset.vir = ''; meni.style.maxHeight = ''; }
+function zapriMeni() { meni.classList.add('skrit'); meni.dataset.vir = ''; meni.style.maxHeight = ''; meni.style.zIndex = ''; }
 document.addEventListener('pointerdown', e => { if (!meni.contains(e.target) && !e.target.classList.contains('puscica')) zapriMeni(); });
 
 let opisCasovnik = null;
@@ -1641,6 +1658,7 @@ function odpriMeniDrevesa(x, y, v) {
     if (s.standardni) dodaj('Ni standardni' + (s.vBazi ? ' (vrni iz baze v projekt)' : ''), () => odznaciStandardni(v));
   }
   if (v.kosov) dodaj('▦ Število kosov (' + v.kosov + ') …', () => odpriMeniKosov(x, y, v));
+  for (const m of (v.mere || [])) dodaj('📏 ' + m.oznaka + ' (' + stMere(m.vrednost) + ' mm) …', () => vprasajMero(v, m));
   if (v.napajalnik) dodaj('⚡ Napaja ' + (v.napaja && v.napaja.length ? '(' + napisNapaja(v) + ')' : '…'), () => odpriMeniNapaja(x, y, v));
   if (!/^(Sketcher::|Assembly::Joint|App::Origin)/.test(v.tip || '')) dodaj('◐ Videz …', () => odpriMeniVideza(x, y, v));
   if (imenaZaIzris(v.ime).length) dodaj('🖨 Natisni …', () => natisniVozel(v));   // STEP v vhod plošče Tiskaj + okno Pripravi
@@ -1648,6 +1666,17 @@ function odpriMeniDrevesa(x, y, v) {
   meni.classList.remove('skrit');
   meni.style.left = Math.max(8, Math.min(x, window.innerWidth - meni.offsetWidth - 8)) + 'px';
   meni.style.top = Math.max(8, Math.min(y, window.innerHeight - meni.offsetHeight - 8)) + 'px';
+}
+// Nastavljiva mera kosa iz baze (od 2026-10-29): v bazi je ena letev DIN in en kabelski kanal, povezava v sestavu ima
+// svojo dolžino (strežnik: drevo.nastavi_mero, POST /drevo {dejanje: mera, ime, lastnost, vrednost}; FreeCAD naredi
+// zasebno kopijo kosa v sestavu, LinkCopyOnChange = Tracking).
+function stMere(x) { return String(Math.round(x * 100) / 100).replace('.', ','); }
+function vprasajMero(v, m) {
+  const odg = prompt(m.oznaka + ' za »' + (v.oznaka || v.ime) + '« v mm (privzeto v bazi ' + stMere(m.privzeto) + '):', stMere(m.vrednost));
+  if (odg === null) return;
+  const st = parseFloat(String(odg).replace(',', '.'));
+  if (!(st > 0)) { obvesti('Neveljavna mera: ' + odg, true); return; }
+  drevoDejanje({ dejanje: 'mera', ime: v.ime, lastnost: m.lastnost, vrednost: st });
 }
 // Konfiguracija »število kosov« (kot konfiguracije v SolidWorksu): v bazi je en kos (npr. spona za DIN letev), sestav ga
 // vstavi kot vrsto n kosov vzdolž osi X kosa (strežnik: drevo._nastavi_kosov, POST /drevo {dejanje: kosov, ime, stevilo}).
@@ -1746,14 +1775,49 @@ function posodobiNapiseNapajalnikov() {
 }
 // Videz kosa (strežnik: videz.py, POST /videz). Prednastavitev se zapiše na kos v njegovi datoteki (lastnost Videz +
 // FreeCAD-ov ShapeAppearance), zato velja v vseh sestavih, ki kos uporabljajo; datoteko kosa je treba shraniti.
-let videziSeznam = null;
+let videziSeznam = null, ploscicSeznam = null;
+// Ploščice (videz.nastavi_ploscico): material iz knjižnice _Ploscice, velikost ene ploščice v mm in zasuk; z izbranimi
+// ploskvami tega kosa velja le zanje (lastnost PloscicaPloskve), sicer za cel kos.
+function odpriMeniPloscic(x, y, v) {
+  meni.innerHTML = '';
+  const ploskve = [];
+  for (const s of stanje.izbira || []) if (s.objekt === v.ime) for (const el of s.elementi || []) if (el.startsWith('Face')) ploskve.push(el);
+  const naslov = document.createElement('div'); naslov.className = 'gumb'; naslov.style.cssText = 'opacity:.7;pointer-events:none';
+  naslov.textContent = ploskve.length ? 'Ploščice na ' + ploskve.join(', ') : 'Ploščice na cel kos (za ploskve jih najprej izberi)';
+  meni.appendChild(naslov);
+  const poslji = async telo => {
+    try { const r = await videzZahteva(Object.assign({ dejanje: 'ploscica', ime: v.ime, ploskve: ploskve.length ? ploskve : null }, telo)); obvesti(r.sporocilo, !r.ok); } catch (e) { pokaziNapako(e); }
+  };
+  for (const p of ploscicSeznam) {
+    const g = document.createElement('div'); g.className = 'gumb';
+    const k = document.createElement('span');
+    k.style.cssText = 'display:inline-block;width:12px;height:12px;border-radius:3px;margin-right:8px;vertical-align:-1px;border:1px solid var(--crtaMocna);background:rgb('
+      + p.barva.map(c => Math.round(c * 255)).join(',') + ')';
+    const s = document.createElement('span'); s.textContent = p.id + ' · ' + p.opis + ' (' + p.privzeto_mm.map(m => Math.round(m)).join(' × ') + ' mm)';
+    g.append(k, s);
+    g.addEventListener('click', () => {
+      zapriMeni();
+      const odgovor = prompt('Velikost ene ploščice v mm (širina x višina) in po želji zasuk vzorca v °:', p.privzeto_mm.map(m => Math.round(m)).join('x') + ' 0');
+      if (odgovor === null) return;
+      const m = odgovor.replace(',', '.').match(/(\d+(?:\.\d+)?)\s*[x×*]?\s*(\d+(?:\.\d+)?)?(?:\s+(-?\d+(?:\.\d+)?))?/);
+      poslji({ ploscica: p.id, sirina: m ? +m[1] : 0, visina: m && m[2] ? +m[2] : 0, zasuk: m && m[3] ? +m[3] : 0 });
+    });
+    meni.appendChild(g);
+  }
+  const brez = document.createElement('div'); brez.className = 'gumb'; brez.textContent = 'Brez ploščic';
+  brez.addEventListener('click', () => { zapriMeni(); poslji({ ploscica: '' }); });
+  meni.appendChild(brez);
+  meni.classList.remove('skrit');
+  meni.style.left = Math.max(8, Math.min(x, window.innerWidth - meni.offsetWidth - 8)) + 'px';
+  meni.style.top = Math.max(8, Math.min(y, window.innerHeight - meni.offsetHeight - 8)) + 'px';
+}
 async function videzZahteva(telo) {
   const r = await fetch('/videz', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Zeton': ZETON }, body: JSON.stringify(telo) });
   if (!r.ok) throw new Error('/videz: ' + r.status);
   return r.json();
 }
 async function odpriMeniVideza(x, y, v) {
-  try { if (!videziSeznam) videziSeznam = (await videzZahteva({ dejanje: 'seznam' })).videzi; } catch (e) { pokaziNapako(e); return; }
+  try { if (!videziSeznam) { const r = await videzZahteva({ dejanje: 'seznam' }); videziSeznam = r.videzi; ploscicSeznam = r.ploscice || []; } } catch (e) { pokaziNapako(e); return; }
   meni.innerHTML = '';
   const dodaj = (napis, barva, dejanje) => {
     const g = document.createElement('div'); g.className = 'gumb';
@@ -1770,6 +1834,7 @@ async function odpriMeniVideza(x, y, v) {
     try { const r = await videzZahteva({ dejanje: 'nastavi', ime: v.ime, videz: kljuc }); obvesti(r.sporocilo, !r.ok); } catch (e) { pokaziNapako(e); }
   };
   for (const vz of videziSeznam) dodaj(vz.ime, css(vz.barva) || '#888', () => nastavi(vz.kljuc));
+  if (ploscicSeznam && ploscicSeznam.length) dodaj('Ploščice (tekstura v merilu) …', 'rgb(205,210,215)', () => odpriMeniPloscic(x, y, v));
   dodaj('Privzeto (barva iz FreeCAD-a)', '', () => nastavi('privzeto'));
   dodaj('Pločevina vsem kosom iz pločevine (in shrani) …', css([0.66, 0.68, 0.70]), async () => {
     if (!confirm('Vsem kosom iz pločevine v tem dokumentu in njegovih podsestavih nastavim videz pločevine in shranim njihove datoteke?')) return;
@@ -1959,7 +2024,7 @@ function preklopiVejo(ime) {
   if (drevoRazprto.has(ime)) drevoRazprto.delete(ime); else drevoRazprto.add(ime);
   shraniDrevo(); narisiDrevo(stanje.drevo);
 }
-const ZAMIK_RAVNI = 16;
+const ZAMIK_RAVNI = 12;
 let drevoKazalec = null;    // vrstica, po kateri se premika tipkovnica (puščice)
 let drevoIskanje = '';
 function vozelDrevesa(d, ime, globina, pot, filter, q) {
@@ -2002,7 +2067,14 @@ function vozelDrevesa(d, ime, globina, pot, filter, q) {
     vrstica.addEventListener('mouseenter', () => osvetli(zaIzris));
     vrstica.addEventListener('mouseleave', () => osvetli(null));
   } else if (v.povezava || /^(Assembly::Assembly(Object|Link)|PartDesign::Body|App::Part)$/.test(v.tip)) {
-    const okvir = el('span', 'slika'); okvir.append(ploscicaVrste(v, o)); vrstica.append(okvir);   // kos brez izrisa (skrit): enaka širina kot s sličico
+    const okvir = el('span', 'slika'), url = slicicaPovezave(v);
+    if (url) {   // skrita povezava ni v posnetku: sličica povezane datoteke (ista kot v seznamu odprtih dokumentov)
+      const s = el('img', 'slicicaVozla'); s.alt = ''; s.src = url;
+      s.addEventListener('error', () => { s.replaceWith(ploscicaVrste(v, o)); z.remove(); }, { once: true });
+      const z = el('span', 'znacka'); z.style.setProperty('--barva', o.barva); z.append(svgIkona(o.ikona, 10));
+      okvir.append(s, z);
+    } else okvir.append(ploscicaVrste(v, o));   // kos brez izrisa (skrit): enaka širina kot s sličico
+    vrstica.append(okvir);
   } else {
     vrstica.append(ploscicaVrste(v, o));
     const kosa = (v.deli || []).filter(x => objekti.has(x));
@@ -2011,42 +2083,48 @@ function vozelDrevesa(d, ime, globina, pot, filter, q) {
       vrstica.addEventListener('mouseleave', () => osvetli(null));
     }
   }
+  // ime ima celo širino vrstice; čipi (vrsta, število otrok, STD, ×n, napaja) so v podnapisu pod njim, da se ime ne krajša
   const besedilo = el('div', 'besedilo');
   const imeEl = el('div', 'ime'); napolniIme(imeEl, o.ime, q); besedilo.append(imeEl);
-  if (o.cip || o.vec) {
-    const pod = el('div', 'podnapis');
-    if (o.cip) { const c = el('span', 'cip', o.cip); c.style.setProperty('--barva', o.barva); c.style.setProperty('--ozadjeIkone', o.ozadje); pod.append(c); }
-    if (o.vec) { const x = el('span', 'vec', o.vec); x.title = 'Datoteka: ' + o.vec; pod.append(x); }
-    besedilo.append(pod);
-  }
-  vrstica.append(besedilo);
+  const pod = el('div', 'podnapis');
+  if (o.cip) { const c = el('span', 'cip', o.cip); c.style.setProperty('--barva', o.barva); c.style.setProperty('--ozadjeIkone', o.ozadje); pod.append(c); }
   if (imaOtroke && (!razprt || o.skupina)) {
     const st = el('span', 'stevilo');
     const spojev = otroci.filter(x => d.vozli[x] && d.vozli[x].deli).length;
     if (spojev && spojev === otroci.length) { st.classList.add('spojev'); st.append(svgIkona('spoji', 11)); st.title = spojev + (spojev === 1 ? ' spoj' : ' spojev'); }
+    else st.title = otroci.length + ' pod tem';
     st.append(document.createTextNode(String(otroci.length)));
-    vrstica.append(st);
+    pod.append(st);
   }
   if (v.standardni && v.standardni.standardni) {
     const z = el('span', 'std' + (v.standardni.vBazi ? '' : ' zunaj'), 'STD');
     z.title = v.standardni.vBazi ? 'Standardni ' + (v.standardni.sestav ? 'sestav' : 'del') + ' iz skupne baze (desni klik: možnosti)'
       : 'Označen kot standardni, a je še v projektu – klik ga premakne v bazo';
     if (!v.standardni.vBazi) z.addEventListener('click', e => { e.stopPropagation(); odpriDialogBaze(v); });
-    vrstica.append(z);
+    pod.append(z);
   }
   if (v.kosov > 1) {
     const k = el('span', 'kosov', '×' + v.kosov);
     k.title = 'Konfiguracija: ' + v.kosov + ' kosov v vrsti (klik: izberi število)';
     k.addEventListener('click', e => { e.stopPropagation(); const r = k.getBoundingClientRect(); odpriMeniKosov(r.left, r.bottom + 4, v); });
-    vrstica.append(k);
+    pod.append(k);
+  }
+  for (const m of (v.mere || [])) {   // nastavljiva mera (dolžina letve, kanala) te povezave; klik jo spremeni
+    const k = el('span', 'kosov', stMere(m.vrednost) + ' mm');
+    k.title = m.oznaka + ' samo za ta kos v sestavu (v bazi ' + stMere(m.privzeto) + ' mm) – klik: spremeni';
+    k.addEventListener('click', e => { e.stopPropagation(); vprasajMero(v, m); });
+    pod.append(k);
   }
   if (v.napajalnik) {
     const prazno = !(v.napaja && v.napaja.length);
     const n = el('span', 'napaja' + (prazno ? ' prazno' : ''), prazno ? '⚡ ?' : '⚡ ' + napisNapaja(v));
     n.title = prazno ? 'Napajalnik: še ni označeno, kaj napaja (klik: izberi)' : 'Napaja: ' + napisNapaja(v) + ' (klik: spremeni)';
     n.addEventListener('click', e => { e.stopPropagation(); const r = n.getBoundingClientRect(); odpriMeniNapaja(r.left, r.bottom + 4, v); });
-    vrstica.append(n);
+    pod.append(n);
   }
+  if (o.vec) { const x = el('span', 'vec', o.vec); x.title = 'Datoteka: ' + o.vec; pod.append(x); }
+  if (pod.childNodes.length) besedilo.append(pod);
+  vrstica.append(besedilo);
   const dejanja = el('div', 'dejanja');
   if (!o.brezUrejanja) {
     const telo = v.tip === 'PartDesign::Body' || v.tip === 'App::Part';
@@ -2143,7 +2221,7 @@ function stZadetkov(n) {
   return n + (m === 1 ? ' zadetek' : m === 2 ? ' zadetka' : m === 3 || m === 4 ? ' zadetki' : ' zadetkov');
 }
 function narisiDrevo(d) {
-  stanje.drevo = d;
+  stanje.drevo = d; narisanOdtisSlicicPovezav = odtisSlicicPovezav();
   if (typeof narisiNapiseNapajalnikov === 'function') narisiNapiseNapajalnikov();   // napisi »napaja« v 3D sledijo drevesu
   const odmik = drevoVsebina.scrollTop;
   drevoVsebina.innerHTML = '';
@@ -2341,9 +2419,12 @@ function posodobiVrstoDrevesa() {
     : d.vrsta === 'del' ? 'Del: ' + (d.teles || 0) + ' teles' : 'Dokument brez teles';
 }
 function oznakaVrste(d) {
-  const o = cipVnosa(d.vrsta || 'prazno', IMENA_VRST[d.vrsta || ''] || d.vrsta);
-  o.title = d.vrsta === 'sestav' ? 'Sestav: ' + (d.povezav || 0) + ' povezav na kose, ' + (d.teles || 0) + ' teles'
-    : d.vrsta === 'del' ? 'Del: ' + (d.teles || 0) + ' teles' : 'Dokument brez teles';
+  // za čipom še mera, po kateri je seznam razvrščen: pri sestavu število podsestavov, pri delu največja stranica okvirja
+  const dodatek = d.vrsta === 'sestav' && d.podsestavov ? ' · ' + d.podsestavov : d.vrsta === 'del' && d.mere ? ' · ' + Math.round(Math.max(...d.mere)) + ' mm' : '';
+  const o = cipVnosa(d.vrsta || 'prazno', (IMENA_VRST[d.vrsta || ''] || d.vrsta) + dodatek);
+  const mere = d.mere ? '\nOkvir: ' + d.mere.map(v => Math.round(v)).join(' × ') + ' mm' : '';
+  o.title = d.vrsta === 'sestav' ? 'Sestav: ' + (d.podsestavov || 0) + ' podsestavov, ' + (d.povezav || 0) + ' povezav na kose, ' + (d.teles || 0) + ' teles' + mere
+    : d.vrsta === 'del' ? 'Del: ' + (d.teles || 0) + ' teles' + mere : 'Dokument brez teles';
   return o;
 }
 // ikonski gumb v vrstici dokumenta (viden ob miški)
@@ -2478,6 +2559,12 @@ function narisiProjekte(p) {
   if (!$('projektiOkno').classList.contains('skrit') && !meniSkupine) narisiOknoProjektov(true);
   posodobiVrstoDrevesa();
   osveziTrakRazlicic();   // pot in oznaka »neshranjeno« aktivnega dokumenta za vrstico različic
+  if (stanje.drevo && odtisSlicicPovezav() !== narisanOdtisSlicicPovezav) narisiDrevo(stanje.drevo);   // sličice skritih povezav so prišle po drevesu
+}
+let narisanOdtisSlicicPovezav = '';
+function odtisSlicicPovezav() {
+  const d = stanje.drevo; if (!d || !d.vozli) return '';
+  return Object.entries(d.vozli).filter(([i, v]) => v.povezava && !objekti.has(i)).map(([, v]) => slicicaPovezave(v)).join('|');
 }
 // Trenutni projekt (od 2026-10-15, želja uporabnika): levi stolpec kaže le odprte dokumente in datoteke enega projekta.
 // Projekt = prva mapa pod mapo modeliranja (Oblak/3D modeliranje/<Projekt>/...), za datoteko zunaj nje njena mapa.
@@ -2496,9 +2583,12 @@ function projektPoti(pot) {   // null = dokument ne pripada nobenemu projektu (v
 }
 function imeProjekta(k) { return k === '' ? 'Brez projekta (koren mape)' : k.includes('/') ? k.slice(k.lastIndexOf('/') + 1) : k; }
 function prikazaniProjekt() {   // null ali '*' = vsi
-  const pot = aktivniDokumentPot(), akt = pot ? projektPoti(pot) : null;
+  const pot = aktivniDokumentPot(), aktPoti = pot ? projektPoti(pot) : null;
+  if (aktPoti && aktPoti !== PROJEKT_KNJIZNICE) delovniProjektZadnji = aktPoti;
+  // standardni del ne preklopi seznama na knjižnico (želja uporabnika 2026-10-27: »čim bolj čisto«); ostane delovni projekt,
+  // knjižnico pokaže le izrecna izbira v oknu projektov
+  const akt = aktPoti === PROJEKT_KNJIZNICE ? (delovniProjekt() ?? aktPoti) : aktPoti;
   if (akt !== null && akt !== zadnjiProjekt) { zadnjiProjekt = akt; izbraniProjekt = null; }   // preklop na dokument drugega projekta
-  if (akt && akt !== PROJEKT_KNJIZNICE) delovniProjektZadnji = akt;
   return izbraniProjekt !== null ? izbraniProjekt : zadnjiProjekt;
 }
 // Delovni projekt (od 2026-10-19, želja uporabnika »pokaži, kateri projekt imamo odprt«): standardni del iz sestava preklopi seznam
@@ -2746,7 +2836,7 @@ function narisiOdprteDokumente() {
   // Od 2026-10-11 (od 2026-10-07 do tedaj je stolpec kazal samo odprte dokumente).
   let vseDatotek = 0, najdenih = 0;
   prvaNajdenaDatoteka = null;
-  if ((p.skupine || []).some(sk => (sk.datoteke || []).some(d => vProjektu(d.pot)))) vsebina.append(preklopPogleda());
+  // preklop Mape / Vse / Seznam je skrit (želja uporabnika 2026-10-28): vedno pogled Mape
   for (const sk of p.skupine || []) {
     const zaprte = (sk.datoteke || []).filter(d => vProjektu(d.pot));
     vseDatotek += zaprte.length;
@@ -2826,7 +2916,7 @@ const odprtiProjekti = new Set((() => { try { return JSON.parse(localStorage.get
 // kosi nimajo svoje ploščice ali čipa, njihovi kosi so med kosi nadrejene mape. Iskanje vedno kaže zadetke vseh map v eni mreži.
 const MALA_MAPA = 2;
 const POGLEDI_DATOTEK = { mape: 'Mape', vse: 'Vse', seznam: 'Seznam' };
-let pogledDatotek = (() => { try { const v = localStorage.getItem('pogledDatotek'); return v in POGLEDI_DATOTEK ? v : 'mape'; } catch (e) { return 'mape'; } })();
+let pogledDatotek = 'mape';   // preklop pogledov ni več prikazan (2026-10-28); shranjena izbira v localStorage se ne upošteva
 const mestoPogleda = new Map();   // koren drevesa (mapa Oblaka | predpona projekta) -> {mapa: odprta mapa v pogledu Mape, filter: čip v pogledu Vse}
 function preklopPogleda() {
   const g = el('div', 'preklopPogleda');
@@ -3102,6 +3192,7 @@ function nogaRazlicic() {
   const o = stanje.oblak;
   n.append('Odpri pokaže kopijo različice samo za ogled (shranjevanje ne spremeni datoteke v oblaku). Povrni naredi novo, trenutno različico z vsebino izbrane; starejše ostanejo. ');
   if (o && o.prijavljen) {
+    if (o.drugOblak) n.append(el('div', 'podatek', '⚠ ' + o.drugOblak));   // odjemalec pošilja v drug oblak (oblak.py drug_oblak)
     n.append('Prijavljen: ' + (o.ime ? o.ime + ' (' + o.email + ')' : o.email) + ' · ');
     const odj = el('button', 'povezava', 'Odjava'); odj.type = 'button';
     odj.addEventListener('click', async () => { try { stanje.oblak = await oblakKlic('POST', '/oblak/odjava'); if (stanje.razlicice) pokaziRazlicice(stanje.razlicice.pot, stanje.razlicice.ime); osveziTrakRazlicic(true); } catch (e) { obvesti(e.message, true); } });
@@ -3337,7 +3428,7 @@ async function posljiSlicicoRazlicice(pot, kljuc) {
   if (kljuc && trakRazlicic.poslanaSlicica === kljuc) return;
   trakRazlicic.poslanaSlicica = kljuc || '';
   try {
-    const platno = await izrisiIzometrijo(null, VELIKOST_SLICICE);
+    const platno = await izrisiIzometrijo(null, VELIKOST_SLICICE, null, smerSlicice(pot));
     if (!platno) { trakRazlicic.poslanaSlicica = ''; return; }
     const d = await oblakKlic('POST', '/oblak/slicica', { pot, png: platno.toDataURL('image/png') });
     if (d.takoj) osveziTrakRazlicic(true);
@@ -3853,7 +3944,10 @@ function narediMaterialPloskev(jakostOkolja) {
     polygonOffset: true, polygonOffsetFactor: 1, polygonOffsetUnits: 1 });
   const pbr = attribute('pbr', 'vec4');
   const p = positionLocal;
-  const zrno = mx_noise_float(p.mul(vec3(0.01, 0.3, 0.3))).mul(pbr.z);
+  // brušene proge vzdolž X; na ploskvah, pravokotnih na X, vzdolž Z (sicer je tam le pikast šum in je ploskev videti
+  // gladka — 29. 10. vrata Slim A drugačna od pokrova, želja uporabnika: ves aluminij enake teksture)
+  const zrno = select(abs(normalLocal.x).greaterThan(0.7),
+    mx_noise_float(p.mul(vec3(0.3, 0.3, 0.01))), mx_noise_float(p.mul(vec3(0.01, 0.3, 0.3)))).mul(pbr.z);
   const zvitje = mx_noise_float(p.mul(vec3(0.0025, 0.012, 0.012))).mul(3.5);
   const letnica = fract(p.y.mul(0.1).add(p.z.mul(0.04)).add(zvitje));
   const pore = mx_noise_float(p.mul(vec3(0.05, 1.4, 1.4)));
@@ -3888,8 +3982,43 @@ function narediMaterialPloskev(jakostOkolja) {
   m.envMapIntensity = jakostOkolja;
   return m;
 }
-const materialPloskev = narediMaterialPloskev(1), materialKovine = narediMaterialPloskev(3.2);
-const MATERIALI_PLOSKEV = [materialPloskev, materialKovine];
+const materialPloskev = narediMaterialPloskev(1), materialKovine = narediMaterialPloskev(3.2);const MATERIALI_PLOSKEV = [materialPloskev, materialKovine];
+// Prosojni kosi (steklo; strežnik: `prosojnost` 0..1 iz FreeCAD-ove prosojnosti): ista senčilna koda, a prosojen material
+// brez pisanja globine, da se vidi, kar je za steklom; en par (satenast, kovinski) na stopnjo prosojnosti (korak 0,05).
+const MATERIALI_PROSOJNI = new Map();
+function materialiProsojni(prosojnost) {
+  const k = Math.round(prosojnost * 20) / 20;
+  let m = MATERIALI_PROSOJNI.get(k);
+  if (!m) {
+    m = [narediMaterialPloskev(1), narediMaterialPloskev(3.2)];
+    for (const x of m) { x.transparent = true; x.opacity = 1 - k; x.depthWrite = false; }
+    MATERIALI_PROSOJNI.set(k, m);
+  }
+  return m;
+}
+// Ploščice (strežnik: videz.py, ploscice.py): objekt posnetka nosi `teksture` [{mapa, slike {barva, normala, hrapavost}}]
+// in `uv` (merilo je že v UV: 1 = ena slika = ploščic × velikost v mm), ploskev indeks 11 = 1 + indeks teksture.
+// En material na mapo teksture; ploskve s ploščico imajo belo barvo oglišč, da tekstura ohrani svojo barvo (izbira jih
+// še vedno obarva, ker vertexColors pomnoži teksturo).
+const MATERIALI_PLOSCIC = new Map(), nalagalnikTekstur = new THREE.TextureLoader();
+function teksturaPloscice(pot, barvna) {
+  const t = nalagalnikTekstur.load('/ploscica/slika?pot=' + encodeURIComponent(pot));
+  t.wrapS = t.wrapT = THREE.RepeatWrapping; t.anisotropy = 8;
+  if (barvna) t.colorSpace = THREE.SRGBColorSpace;
+  return t;
+}
+function materialPloscice(t) {
+  let m = MATERIALI_PLOSCIC.get(t.mapa);
+  if (m) return m;
+  const s = t.slike || {};
+  m = new THREE.MeshStandardNodeMaterial({ vertexColors: true, side: THREE.DoubleSide, metalness: 0,
+    roughness: t.hrapavost ?? 0.35, polygonOffset: true, polygonOffsetFactor: 1, polygonOffsetUnits: 1 });
+  if (s.barva) m.map = teksturaPloscice(s.barva, true);
+  if (s.normala) m.normalMap = teksturaPloscice(s.normala, false);
+  if (s.hrapavost) { m.roughnessMap = teksturaPloscice(s.hrapavost, false); m.roughness = 1; }
+  MATERIALI_PLOSCIC.set(t.mapa, m);
+  return m;
+}
 const materialRobov = new THREE.LineBasicNodeMaterial({ vertexColors: true });
 // ob prerezu se robovi kosov ne rišejo (želja uporabnika 2026-10-21): vidne so le senčene ploskve in ploskve prereza
 // z obrobo (material ploskev); prej so se skrili le robovi na pikah z rezom, notranji robovi votlin so ostali
@@ -3960,23 +4089,32 @@ function zgradiObjekt(o) {
         pbr[4 * v] = k; pbr[4 * v + 1] = h; pbr[4 * v + 2] = z; pbr[4 * v + 3] = w;
       }
     }
+    const teksture = (o.teksture && o.uv && o.uv.length === o.tocke.length / 3 * 2) ? o.teksture : [];
+    if (teksture.length) {
+      geo.setAttribute('uv', new THREE.Float32BufferAttribute(o.uv, 2));
+      for (const p of o.ploskve) if (p[11] > 0) barve.fill(1, 3 * p[0], 3 * (p[0] + p[1]));
+    }
     geo.setAttribute('color', new THREE.BufferAttribute(barve, 3));
     geo.setAttribute('pbr', new THREE.BufferAttribute(pbr, 4));
     // številka telesa za prerez (barva in šrafura po kosih); izračuna jo šele vključen prerez (oznaciTelesaZaPrerez)
     geo.setAttribute('kos', new THREE.BufferAttribute(new Float32Array(o.tocke.length / 3), 1));
     geo.setAttribute('kosBarva', new THREE.BufferAttribute(new Float32Array(o.tocke.length / 3), 1));   // ista oblika = ista barva
-    // skupine trikotnikov: 0 = satenast material, 1 = kovinski (zaporedne ploskve iste vrste v eni skupini)
-    let kovinskih = 0;
+    // skupine trikotnikov: 0 = satenast material, 1 = kovinski, 2 + i = ploščica i (zaporedne ploskve iste vrste v eni skupini)
+    let posebnih = 0;
     for (const p of o.ploskve) {
-      const vrsta = (p.length > 7 ? p[7] : 0) >= 0.5 ? 1 : 0; kovinskih += vrsta;
+      const vrsta = teksture.length && p[11] > 0 ? 1 + p[11] : (p.length > 7 ? p[7] : 0) >= 0.5 ? 1 : 0; posebnih += vrsta ? 1 : 0;
       const zadnja = geo.groups[geo.groups.length - 1];
       if (zadnja && zadnja.materialIndex === vrsta && zadnja.start + zadnja.count === 3 * p[2]) zadnja.count += 3 * p[3];
       else geo.addGroup(3 * p[2], 3 * p[3], vrsta);
     }
-    if (!kovinskih) geo.clearGroups();
+    if (!posebnih) geo.clearGroups();
     geo.computeVertexNormals();
-    mesh = new THREE.Mesh(geo, geo.groups.length ? MATERIALI_PLOSKEV : materialPloskev);
-    mesh.layers.enable(PLAST_SENCENJA);
+    const prosojnost = o.prosojnost > 0 ? Math.min(o.prosojnost, 0.95) : 0;
+    const osnovni = prosojnost ? materialiProsojni(prosojnost) : MATERIALI_PLOSKEV;
+    const materiali = teksture.length ? [...osnovni, ...teksture.map(materialPloscice)] : osnovni;
+    mesh = new THREE.Mesh(geo, geo.groups.length ? materiali : osnovni[0]);
+    // prosojni kosi se rišejo za neprosojnimi in ne senčijo kotov (steklo ne sme zatemniti prostora za sabo)
+    if (prosojnost) mesh.renderOrder = 1; else mesh.layers.enable(PLAST_SENCENJA);
     mesh.userData = { objekt: o.ime, ploskve: o.ploskve, telesa: o.telesaPloskev, osnovneBarve: barve.slice(), material: mesh.material };
     skupina.add(mesh);
   }
@@ -4090,11 +4228,21 @@ function nacrtujSlicico() {
 async function izrisiSlicico() {
   const pot = potDokumenta();
   if (!pot || !koren.children.length || skica.posnetek) return;
-  const kljuc = stanje.dokument + '@' + stanje.verzija;
+  const smer = smerSlicice(pot);
+  const kljuc = stanje.dokument + '@' + stanje.verzija + '@' + (smer ? smer.ime : '');
   if (kljuc === slicicaZadnja) return;
-  const platno = await izrisiIzometrijo(null, VELIKOST_SLICICE); if (!platno) return;
+  const platno = await izrisiIzometrijo(null, VELIKOST_SLICICE, null, smer); if (!platno) return;
   await objavi('/slicica', { pot, png: platno.toDataURL('image/png') });
   slicicaZadnja = kljuc;   // šele po uspešnem pošiljanju, da se ob napaki poskusi znova
+  if (smer) sliciceSmeri.add(pot + '|' + smer.ime);
+}
+// Smer sličice: dokument jo izbere z Meta["SlicicaPogled"] = ime standardnega pogleda (»Desno«: elektro plošče gledamo
+// naravnost v elektroniko; strežnik ga pošlje v seznamu odprtih kot slicicaPogled), sicer izometrija (null).
+const sliciceSmeri = new Set();   // pot|pogled: sličica s to smerjo je v tej seji strani že izrisana
+function smerSlicice(pot) {
+  const o = ((stanje.projekti && stanje.projekti.odprti) || []).find(o => o.pot === pot);
+  const ime = o && o.slicicaPogled ? String(o.slicicaPogled).toLowerCase() : '';
+  return ime && STANDARDNI_POGLEDI.find(p => p.ime.toLowerCase() === ime) || null;
 }
 
 // Izometrični izris (prozorno ozadje, prileganje po projiciranih ogliščih, nadvzorčenje) celega modela ali samo
@@ -4196,36 +4344,130 @@ async function izrisiVirZdaj(samo, zunanja, velikost, sestavi, smer) {
 let knjiznicaPodatki = null;
 function narisiKnjiznico() {
   const c = $('knjiznicaVsebina'); c.innerHTML = '';
+  knjiznicaBrezSlicice.clear();
   const p = knjiznicaPodatki; if (!p) return;
   const iskanje = ($('knjiznicaIskanje').value || '').trim().toLowerCase();
   let kosov = 0, prikazanih = 0;
+  // Spremljajoči kosi (od 2026-10-29): kos z lastnostjo Pripada (ime glavnega kosa, več z ;) je v skupini z glavnim kosom
+  // (nosilec MikroTika, deli LED obroča, napajalnik računalnika); vsak kos v skupini se še vedno vstavi posebej.
+  const poImenu = new Map(); for (const k of p.kategorije) for (const d of k.kosi) poImenu.set(d.ime.toLowerCase(), d);
+  const glavniOd = d => (d.pripada || '').split(';').map(s => s.trim().toLowerCase()).filter(s => s && poImenu.has(s) && s !== d.ime.toLowerCase());
+  const spremljevalci = new Map();   // ime glavnega (mala) -> [kosi]
+  for (const k of p.kategorije) for (const d of k.kosi) for (const g of glavniOd(d)) { if (!spremljevalci.has(g)) spremljevalci.set(g, []); spremljevalci.get(g).push(d); }
+  const ujema = (d, k) => (d.ime + ' ' + k.ime + ' ' + (d.dobavitelj || '') + ' ' + (d.proizvajalec || '')).toLowerCase().includes(iskanje);
   for (const k of p.kategorije) {
     kosov += k.kosi.length;
-    const zadetki = iskanje ? k.kosi.filter(d => (d.ime + ' ' + k.ime).toLowerCase().includes(iskanje)) : k.kosi;
-    if (!zadetki.length) continue;
-    prikazanih += zadetki.length;
+    const skupine = k.kosi.filter(d => !glavniOd(d).length).map(d => [d, ...(spremljevalci.get(d.ime.toLowerCase()) || [])]);
+    const vidne = iskanje ? skupine.filter(s => s.some(d => ujema(d, k))) : skupine;
+    if (!vidne.length) continue;
+    const vSekciji = vidne.reduce((s, x) => s + x.length, 0);
+    prikazanih += vSekciji;
     const sek = el('section', 'kategorija');
-    const h = el('h4', '', k.ime ? k.ime.replace(/\//g, ' › ') : 'Brez kategorije'); h.append(el('span', 'stevilo', zadetki.length));
+    const h = el('h4', '', k.ime ? k.ime.replace(/\//g, ' › ') : 'Brez kategorije'); h.append(el('span', 'stevilo', vSekciji));
     const mreza = el('div', 'mreza');
-    for (const d of zadetki) {
-      const kos = el('button', 'kos'); kos.type = 'button'; kos.title = d.ime + '\nKlik: vstavi v aktivni sestav';
-      const img = el('img'); img.alt = '';
-      if (d.slicica) { img.src = '/slicica?pot=' + encodeURIComponent(d.pot) + '&v=' + (d.slicicaV || 0); img.addEventListener('error', () => { img.src = IKONA_KOCKE(false); }, { once: true }); }
-      else img.src = IKONA_KOCKE(false);
-      const pd = el('div', 'podatki'); pd.append(el('span', 'znacka ' + (d.vrsta || ''), d.vrsta === 'sestav' ? 'sestav' : 'del'));
-      if (d.verzija) pd.append(el('span', 'verzija', 'v' + d.verzija));
-      if (d.teles > 1) pd.append(el('span', '', d.teles + ' teles'));
-      const odpri = el('button', 'odpri', '↗'); odpri.type = 'button'; odpri.title = 'Odpri datoteko kosa';
-      odpri.addEventListener('click', e => { e.stopPropagation(); knjiznicaDejanje(kos, { dejanje: 'odpri', pot: d.pot }); zapriKnjiznico(); });
-      kos.append(img, el('div', 'ime', d.ime), pd, odpri);
-      kos.addEventListener('click', () => knjiznicaDejanje(kos, { dejanje: 'vstavi', pot: d.pot, dokument: stanje.dokument }));
-      mreza.append(kos);
+    for (const s of vidne) {
+      if (s.length === 1) { mreza.append(karticaKnjiznice(s[0])); continue; }
+      const sk = el('div', 'skupinaKosov'); sk.style.setProperty('--n', Math.min(s.length, 4));
+      sk.title = s.length + ' kosov skupaj: ' + s.map(d => d.ime).join(', ');
+      for (const d of s) sk.append(karticaKnjiznice(d, d !== s[0] ? s[0].ime : ''));
+      mreza.append(sk);
     }
     sek.append(h, mreza); c.append(sek);
   }
   if (!prikazanih) c.append(el('div', 'prazno', kosov ? 'Ni zadetkov.' : (p.napaka || 'Baza je prazna.')));
   const aktivni = ((stanje.projekti && stanje.projekti.odprti) || []).find(o => o.aktiven);
   $('knjiznicaPovzetek').textContent = kosov + ' kosov v ' + p.kategorije.length + ' kategorijah' + (aktivni ? ' · vstavljam v: ' + aktivni.oznaka : ' · ni aktivnega dokumenta');
+  izrisiSliciceKnjiznice();
+}
+// Desni klik na kartico knjižnice: kam kos spada (Pripada) in nov izris sličice (vgrajena sličica FCStd iz skritega okna
+// je včasih le izhodišče z osmi, npr. kolesa Tente 29. 10.).
+function meniKartice(e, d) {
+  e.preventDefault(); e.stopPropagation();
+  meni.innerHTML = ''; meni.style.zIndex = '70';   // nad oknom knjižnice (z-index 60)
+  const dodaj = (napis, dejanje) => {
+    const g = document.createElement('div'); g.className = 'gumb'; g.textContent = napis;
+    g.addEventListener('click', () => { zapriMeni(); dejanje(); }); meni.appendChild(g);
+  };
+  dodaj('⛓ Spada k kosu …' + (d.pripada ? ' (' + d.pripada + ')' : ''), () => {
+    const k = prompt('»' + d.ime + '« spada k kosu (ime ali del imena; več z ;). Kos gre v njegovo mapo, vstaviš ga še vedno posebej:', d.pripada || '');
+    if (k === null || !k.trim()) return;
+    knjiznicaUkaz({ dejanje: 'pripni', pot: d.pot, k: k.trim() });
+  });
+  if (d.pripada) dodaj('Ne spada k nobenemu', () => knjiznicaUkaz({ dejanje: 'pripni', pot: d.pot, k: '' }));
+  dodaj('↻ Na novo izriši sličico', () => {
+    const img = [...$('knjiznicaVsebina').querySelectorAll('.kos')].find(x => x._pot === d.pot)?.querySelector('img');
+    if (!img) return;
+    knjiznicaSlicicaPoskus.delete(d.pot); knjiznicaBrezSlicice.set(d.pot, { img, d }); izrisiSliciceKnjiznice();
+  });
+  meni.classList.remove('skrit');
+  meni.style.left = Math.max(8, Math.min(e.clientX, window.innerWidth - meni.offsetWidth - 8)) + 'px';
+  meni.style.top = Math.max(8, Math.min(e.clientY, window.innerHeight - meni.offsetHeight - 8)) + 'px';
+}
+async function knjiznicaUkaz(telo) {
+  try {
+    const r = await fetch('/knjiznica', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Zeton': ZETON }, body: JSON.stringify(telo) });
+    const o = (await r.json()) || { ok: false, sporocilo: 'Strežnik ni vrnil odgovora.' };
+    obvesti(o.sporocilo || (o.ok ? 'V redu.' : 'Napaka.'), !o.ok);
+    if (o.ok) await odpriKnjiznico();
+  } catch (e) { pokaziNapako(e); }
+}
+function karticaKnjiznice(d, glavni) {
+  {
+    {
+      const kos = el('button', 'kos' + (glavni ? ' spremljevalec' : '')); kos.type = 'button'; kos._pot = d.pot;
+      kos.title = d.ime + (glavni ? '\nSpada k: ' + glavni : '') + '\nKlik: vstavi v aktivni sestav · desni klik: možnosti';
+      kos.addEventListener('contextmenu', e => meniKartice(e, d));
+      const img = el('img'); img.alt = '';
+      if (d.slicica) { img.src = '/slicica?pot=' + encodeURIComponent(d.pot) + '&v=' + (d.slicicaV || 0); img.addEventListener('error', () => { img.src = IKONA_KOCKE(false); knjiznicaBrezSlicice.set(d.pot, { img, d }); izrisiSliciceKnjiznice(); }, { once: true }); }
+      else { img.src = IKONA_KOCKE(false); knjiznicaBrezSlicice.set(d.pot, { img, d }); }
+      const pd = el('div', 'podatki'); pd.append(el('span', 'znacka ' + (d.vrsta || ''), d.vrsta === 'sestav' ? 'sestav' : 'del'));
+      if (d.verzija) pd.append(el('span', 'verzija', 'v' + d.verzija));
+      if (d.teles > 1) pd.append(el('span', '', d.teles + ' teles'));
+      const odpri = el('button', 'odpri', '↗'); odpri.type = 'button'; odpri.title = 'Odpri datoteko kosa';
+      odpri.addEventListener('click', e => { e.stopPropagation(); knjiznicaDejanje(kos, { dejanje: 'odpri', pot: d.pot }); zapriKnjiznico(); });
+      // dobavitelj s kosa (lastnost Dobavitelj, skupina Kos): na kartici ime do prve vejice, celota v namigu (2026-10-29)
+      const dob = el('div', 'dobavitelj' + (d.dobavitelj ? '' : ' ni'),
+        d.dobavitelj ? d.dobavitelj.split(/[,;]/)[0].trim() : 'dobavitelj ni vpisan');
+      dob.title = d.dobavitelj ? 'Dobavitelj: ' + d.dobavitelj + (d.proizvajalec ? '\nProizvajalec: ' + d.proizvajalec : '')
+        : 'Dobavitelj ni vpisan (lastnost Dobavitelj na kosu)' + (d.proizvajalec ? '\nProizvajalec: ' + d.proizvajalec : '');
+      kos.append(img, el('div', 'ime', d.ime), pd, dob, odpri);
+      if (glavni) kos.append(el('div', 'spada', '⛓ ' + glavni));
+      kos.addEventListener('click', () => knjiznicaDejanje(kos, { dejanje: 'vstavi', pot: d.pot, dokument: stanje.dokument }));
+      return kos;
+    }
+  }
+}
+// Kosi brez sličice (še nikoli odprti v pogledu, npr. uvoženi iz STEP-a): dokler je knjižnica odprta, jih stran po vrsti
+// izriše (GET /posnetek?pot= — strežnik zaprt kos odpre skrito in ga po posnetku zapre) in render shrani kot sličico
+// (POST /slicica), da ga knjižnica in seznami odslej pokažejo (2026-10-28).
+const knjiznicaBrezSlicice = new Map();   // pot -> {img, d} prikazanih kartic brez sličice
+const knjiznicaSlicicaPoskus = new Set();   // poti, ki so bile v tej seji strani že poskušene
+let knjiznicaSliciceTece = false;
+async function izrisiSliciceKnjiznice() {
+  if (knjiznicaSliciceTece) return;
+  knjiznicaSliciceTece = true;
+  try {
+    while (!$('knjiznica').classList.contains('skrit')) {
+      const pot = [...knjiznicaBrezSlicice.keys()].find(p => !knjiznicaSlicicaPoskus.has(p));
+      if (!pot) break;
+      knjiznicaSlicicaPoskus.add(pot);
+      try {
+        const r = await fetch('/posnetek?pot=' + encodeURIComponent(pot), { cache: 'no-store' });
+        if (!r.ok) continue;
+        const model = await r.json();
+        if (!model.objekti || !model.objekti.length) continue;
+        const skupina = new THREE.Group();
+        for (const ob of model.objekti) skupina.add(zgradiObjekt(ob).skupina);
+        const platno = await izrisiIzometrijo(null, VELIKOST_SLICICE, skupina);
+        skupina.traverse(n => { if (n.geometry) n.geometry.dispose(); });
+        if (!platno) continue;
+        const png = platno.toDataURL('image/png');
+        await objavi('/slicica', { pot, png });
+        const k = knjiznicaBrezSlicice.get(pot);
+        if (k) { k.d.slicica = true; k.d.slicicaV = Math.floor(Date.now() / 1000); if (k.img.isConnected) k.img.src = png; }
+      } catch (e) { console.warn('sličica kosa iz knjižnice', pot, e); }
+    }
+  } finally { knjiznicaSliciceTece = false; }
 }
 async function knjiznicaDejanje(kartica, telo) {
   if (kartica.classList.contains('delo')) return;
@@ -4235,6 +4477,8 @@ async function knjiznicaDejanje(kartica, telo) {
     const o = (await r.json()) || { ok: false, sporocilo: 'Strežnik ni vrnil odgovora (starejši strežnik? ponovno zaženi FreeCAD).' };
     obvesti(o.sporocilo || (o.ok ? 'V redu.' : 'Napaka.'), !o.ok);
     if (o.ok) narisiKnjiznico();
+    // kos z nastavljivo mero (letev DIN, kanal): takoj vprašaj, kako dolg naj bo v tem sestavu
+    if (o.ok && o.mere && o.mere.length) for (const m of o.mere) vprasajMero({ ime: o.ime, oznaka: o.oznaka }, m);
   } catch (e) { pokaziNapako(e); }
   kartica.classList.remove('delo');
 }
@@ -4933,9 +5177,12 @@ async function izrisiSliciceDokumentov() {
   try {
     for (;;) {
       const odprti = (stanje.projekti && stanje.projekti.odprti) || [];
-      const o = odprti.find(o => o.pot && (!o.slicica || slicicaNeNalozi.has(o.pot)) && !o.aktiven && !sliciceDokumentovPoskus.has(o.pot + '|' + (o.spremenjeno || 0)));
+      // brez sličice ali z izbrano smerjo, ki je v tej seji še ni izrisala (dokument je morda imel izometrično)
+      const novaSmer = o => o.slicicaPogled && !sliciceSmeri.has(o.pot + '|' + smerSlicice(o.pot)?.ime);
+      const o = odprti.find(o => o.pot && (((!o.slicica || slicicaNeNalozi.has(o.pot)) && !o.aktiven) || novaSmer(o)) && !sliciceDokumentovPoskus.has(o.pot + '|' + (o.spremenjeno || 0) + '|' + (o.slicicaPogled || '')));
       if (!o) break;
-      sliciceDokumentovPoskus.add(o.pot + '|' + (o.spremenjeno || 0));
+      sliciceDokumentovPoskus.add(o.pot + '|' + (o.spremenjeno || 0) + '|' + (o.slicicaPogled || ''));
+      const smer = smerSlicice(o.pot);
       await pocakajMir();
       await new Promise(r => setTimeout(r, 600));   // premor med dokumenti
       try {
@@ -4945,9 +5192,12 @@ async function izrisiSliciceDokumentov() {
         if (!model.objekti || !model.objekti.length) continue;
         const skupina = new THREE.Group();
         for (const ob of model.objekti) skupina.add(zgradiObjekt(ob).skupina);
-        const platno = await izrisiIzometrijo(null, VELIKOST_SLICICE, skupina);
+        const platno = await izrisiIzometrijo(null, VELIKOST_SLICICE, skupina, smer);
         skupina.traverse(n => { if (n.geometry) n.geometry.dispose(); });
-        if (platno) { await objavi('/slicica', { pot: o.pot, png: platno.toDataURL('image/png') }); slicicaNeNalozi.delete(o.pot); }
+        if (platno) {
+          await objavi('/slicica', { pot: o.pot, png: platno.toDataURL('image/png') }); slicicaNeNalozi.delete(o.pot);
+          if (smer) sliciceSmeri.add(o.pot + '|' + smer.ime);
+        }
       } catch (e) { console.warn('sličica dokumenta', o.oznaka, e); }
     }
   } finally { sliciceDokumentovTece = false; }
@@ -5025,6 +5275,11 @@ function kljucSliciceVozla(ime) {
   for (const i of imena) { const o = objekti.get(i).podatki; tock += o.tocke ? o.tocke.length : 0; trikotnikov += o.trikotniki ? o.trikotniki.length : 0; }
   return stanje.dokument + '|' + ime + '|' + imena.length + '|' + tock + '|' + trikotnikov;
 }
+function slicicaPovezave(v) {   // URL sličice datoteke, na katero kaže povezava (dokument je odprt skupaj s sestavom)
+  if (!v.povezava) return '';
+  const d = ((stanje.projekti || {}).odprti || []).find(x => x.oznaka === v.povezava.dokument && x.pot);
+  return d && d.slicica ? '/slicica?pot=' + encodeURIComponent(d.pot) + '&v=' + (d.slicicaV || d.spremenjeno || 0) : '';
+}
 function slicicaVozla(ime) {
   const k = kljucSliciceVozla(ime);
   return k ? slicicePoVozlih.get(k) || '' : '';
@@ -5086,7 +5341,7 @@ const KORAK_VRTENJA = THREE.MathUtils.degToRad(15);   // SolidWorks: Možnosti >
 const VRTENJE_NA_PIKO = 0.008;
 const OBRNI_KOLESCEK = false;                          // true: kolešček naprej približa (kot v večini programov)
 const oznakaVrtenja = new THREE.Mesh(new THREE.SphereGeometry(1, 16, 12), new THREE.MeshBasicMaterial({ color: 0xd81b9c, depthTest: false }));
-oznakaVrtenja.renderOrder = 10; oznakaVrtenja.visible = false; scene.add(oznakaVrtenja);
+oznakaVrtenja.renderOrder = 10; oznakaVrtenja.visible = false;   // ni v sceni: uporabnik je ne želi videti (2026-10-29)
 
 const STANDARDNI_POGLEDI = [   // FreeCAD: Z gor, spredaj gledamo v smeri +Y; tipka 1 = izometrično, nato 2–7 po vrsti
   { ime: 'Izometrično', nazaj: [1, -1, 1], gor: [0, 0, 1] },
@@ -5445,6 +5700,8 @@ const IKONE_POGLEDOV = {
     + '<path class="skrito" d="M15 15H20M15 4H20V15L15 20"/><path d="M4 9H10V20H4ZM4 9L9 4H15M10 9L15 4V15L10 20"/>'),
   risba: svgIkone('<path d="M5 3h10l4 4v14H5z"/><path d="M15 3v4h4"/>'
     + '<rect class="poudarjeno" x="8" y="11" width="8" height="6" fill-opacity=".55"/><path d="M8 11h8v6H8zM10 9v2M14 9v2"/>'),
+  ipad: svgIkone('<rect x="3" y="3" width="15" height="18" rx="2"/><path d="M9.5 18h2"/>'
+    + '<path class="poudarjeno" d="M12.5 13.5L20 6l2 2-7.5 7.5-2.8.8z" fill-opacity=".55"/><path d="M12.5 13.5L20 6l2 2-7.5 7.5-2.8.8z"/>'),
 };
 function zgradiVrsticoPogledov() {
   vrsticaPogledov.innerHTML = '';
@@ -5496,6 +5753,7 @@ function zgradiVrsticoPogledov() {
   vrsticaPogledov.appendChild(d);
   locilo();
   dodaj(IKONE_POGLEDOV.render, 'Render: fotorealistična slika trenutnega pogleda v Blenderju (Cycles; osvetlitev, ozadje, video 360°)', odpriRenderModela);
+  const gIp = dodaj(IKONE_POGLEDOV.ipad, 'Na iPad: posnetek tega pogleda gre v aplikacijo Free 3D, tam po njem rišeš s Pencilom in ga pošlješ Claudu', () => posljiNaIpad(gIp));
   const gRis = dodaj(IKONE_POGLEDOV.risba, 'Risbe (strani TechDraw) tega dokumenta: prikaz lista in izvoz PDF / DXF / SVG', () => odpriRisbo());
   gRis.dataset.risbe = '1'; gRis.classList.toggle('skrit', !risba.strani.length);
 }
@@ -5644,6 +5902,56 @@ function zadetekPodKazalcem(e) {
   if (zp.length) return { objekt: zp[0].object.userData.objekt, element: 'Face' + (ploskevTrikotnika(zp[0].object, zp[0].faceIndex) + 1) };
   return { objekt: null, element: '' };
 }
+// --- Premikanje kosov sestava z vlečenjem (od 2026-10-19) ------------------------------------------------------
+// V sestavu levi vlek kosa premakne kos po vodoravni ravnini skozi prijeto točko (kot po tleh). Med vlekom se premika
+// le prikaz (odmik skupine kosa); ob spustu strežnik (POST /sestav/premakni) spremeni lego in požene reševalnik, ki
+// spoje spet uveljavi (kos na tleh ostane na tleh), nov posnetek modela odmik nadomesti. Esc prekliče, klik brez
+// premika še vedno izbira. Prizemljen kos strežnik zavrne in prikaz se vrne.
+let vlekKosa = null;
+function aktivniJeSestav() {
+  const odprti = (stanje.projekti && stanje.projekti.odprti) || [];
+  const d = odprti.find(o => o.oznaka === stanje.dokument) || odprti.find(o => o.aktiven);
+  return !!(d && d.vrsta === 'sestav');
+}
+function prikaziVlekKosa() {
+  const v = vlekKosa, z = objekti.get(v.objekt); if (!z) return;
+  z.skupina.position.set(v.izhodisce.x + v.dx, v.izhodisce.y + v.dy, v.izhodisce.z);
+}
+function koncajVlekKosa(prekini) {
+  const v = vlekKosa; if (!v) return; vlekKosa = null;
+  const el = renderer.domElement;
+  if (el.hasPointerCapture && el.hasPointerCapture(v.kazalec)) el.releasePointerCapture(v.kazalec);
+  const z = objekti.get(v.objekt);
+  if (prekini || !v.premaknjen) { if (z) z.skupina.position.copy(v.izhodisce); osveziHud(); return; }
+  objavi('/sestav/premakni', { dokument: stanje.dokument, objekt: v.objekt, dx: v.dx, dy: v.dy, dz: 0 })
+    .catch(err => { if (z) z.skupina.position.copy(v.izhodisce); pokaziNapako(err); });
+  osveziHud();
+}
+renderer.domElement.addEventListener('pointerdown', e => {
+  if (e.button !== 0 || skica.posnetek || meritve.vklop || e.ctrlKey || e.shiftKey || e.altKey || !aktivniJeSestav()) return;
+  nastaviKazalec(e);
+  const meshi = []; for (const z of objekti.values()) if (z.mesh && z.skupina.visible) meshi.push(z.mesh);
+  const zad = raycaster.intersectObjects(meshi, false); if (!zad.length) return;
+  const objekt = zad[0].object.userData.objekt, z = objekti.get(objekt); if (!z) return;
+  const ravnina = new THREE.Plane(new THREE.Vector3(0, 0, 1), -zad[0].point.z);   // vodoravno skozi prijeto točko
+  vlekKosa = { objekt, ravnina, zacetek: zad[0].point.clone(), izhodisce: z.skupina.position.clone(), dx: 0, dy: 0,
+               x0: e.clientX, y0: e.clientY, premaknjen: false, kazalec: e.pointerId };
+});
+renderer.domElement.addEventListener('pointermove', e => {
+  const v = vlekKosa; if (!v) return;
+  if (!v.premaknjen) {
+    if (Math.hypot(e.clientX - v.x0, e.clientY - v.y0) <= 3) return;
+    v.premaknjen = true;
+    try { renderer.domElement.setPointerCapture(v.kazalec); } catch (_) { /* umetni dogodek brez kazalca */ }
+  }
+  nastaviKazalec(e);
+  const t = new THREE.Vector3(); if (!raycaster.ray.intersectPlane(v.ravnina, t)) return;
+  v.dx = t.x - v.zacetek.x; v.dy = t.y - v.zacetek.y;
+  prikaziVlekKosa(); osveziHud();
+});
+renderer.domElement.addEventListener('pointerup', e => { if (vlekKosa && e.button === 0) koncajVlekKosa(false); });
+renderer.domElement.addEventListener('pointercancel', () => koncajVlekKosa(true));
+window.addEventListener('keydown', e => { if (e.key === 'Escape' && vlekKosa) { koncajVlekKosa(true); e.stopPropagation(); } }, true);
 // Desni klik na kos v 3D pogledu (od 2026-10-15): isti meni kot v drevesu (Odpri sestav/del, Skrij, Videz, Natisni ...).
 // Desni gumb tudi premika pogled, zato meni le, če se kazalec od pritiska ni premaknil; v praznem prostoru menija ni.
 renderer.domElement.addEventListener('contextmenu', e => {
@@ -6598,6 +6906,12 @@ function osveziHud() {
       + (skica.izbrano != null ? ' · izbrano: ' + skica.izbrano : '') + povezava + '</span><span class="desno">Dokument: ' + (stanje.dokument || '–') + ' · izris: ' + izris + '</span>';
     return;
   }
+  if (vlekKosa && vlekKosa.premaknjen) {   // vlek kosa sestava: odmik v mm
+    const z = objekti.get(vlekKosa.objekt);
+    hud.innerHTML = '<span class="levo">Premikam <b>' + escapeHtml(z ? z.podatki.oznaka : vlekKosa.objekt) + '</b>: Δx ' + Math.round(vlekKosa.dx)
+      + ' mm · Δy ' + Math.round(vlekKosa.dy) + ' mm · spusti za premik, Esc prekliče</span>';
+    return;
+  }
   const mera = besediloMeritveHud();
   hud.innerHTML = '<span class="levo">Dokument: <b>' + (stanje.dokument || '–') + '</b> · Izbira: <b>' + izbrano + '</b>' + urejanje + povezava + '</span>'
     + (mera ? '<span class="mera">📏 ' + mera + '</span>' : '')
@@ -6708,8 +7022,8 @@ function zapriPomocnika() {
 document.querySelectorAll('.gumbPomocnik').forEach(g => g.addEventListener('click', () => { if (pomocnik.odprto) zapriPomocnika(); else odpriPomocnika(); }));
 // gumb Na iPad (Free 3D, od 2026-10-21): posnetek tega pogleda s kamero gre na iPad (orodje MCP skice, akcija poslji;
 // strežnik posnetek zahteva od te strani z dogodkom mcp, medtem ko ta klic čaka)
-$('gumbNaIpad').addEventListener('click', async () => {
-  const g = $('gumbNaIpad');
+// Isto dejanje ima tudi gumb v vrstici pogledov (od 2026-10-21, želja uporabnika: posnetek tam, kjer gleda model).
+async function posljiNaIpad(g) {
   if (g.classList.contains('dela')) return;
   g.classList.add('dela');
   try {
@@ -6717,10 +7031,11 @@ $('gumbNaIpad').addEventListener('click', async () => {
       body: JSON.stringify({ ime: 'skice', argumenti: { akcija: 'poslji', izvor: 'uporabnik' } }) });
     const o = await r.json();
     const besedilo = (o.vsebina || []).filter(v => v.vrsta === 'besedilo').map(v => v.besedilo).join(' ');
-    obvesti(o.ok ? 'Pogled je na iPadu (Free 3D).' : (besedilo || 'Pošiljanje na iPad ni uspelo.'), !o.ok);
+    obvesti(o.ok ? 'Posnetek čaka na iPadu (Free 3D): odpri ga tam in riši s Pencilom.' : (besedilo || 'Pošiljanje na iPad ni uspelo.'), !o.ok);
   } catch (err) { obvesti('Pošiljanje na iPad ni uspelo: ' + (err && err.message || err), true); }
   finally { g.classList.remove('dela'); }
-});
+}
+$('gumbNaIpad').addEventListener('click', () => posljiNaIpad($('gumbNaIpad')));
 $('pomocnikZapri').addEventListener('click', zapriPomocnika);
 async function pomocnikPost(telo) {
   const r = await fetch('/pomocnik', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Zeton': ZETON }, body: JSON.stringify(telo) });

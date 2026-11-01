@@ -23,6 +23,7 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
+import zipfile
 
 MAPA_NASTAVITEV = os.path.join(os.environ.get("LOCALAPPDATA") or os.path.expanduser("~"), "FreeCAD-splet")
 DATOTEKA_SEJE = os.path.join(MAPA_NASTAVITEV, "oblak.json")
@@ -67,6 +68,36 @@ def _zapisi_png(pot, png):
     with open(zacasna, "wb") as f:
         f.write(png)
     os.replace(zacasna, pot)
+
+
+_XLINK_DATOTEKA = re.compile(r'(<XLink\b[^>]*?\bfile=")([^"]+)(")')
+
+
+def preusmeri_povezave(pot_fcstd, mapa_izvirnika):
+    """Relativne povezave na druge datoteke (<XLink file="Sestavi/...">) v kopiji FCStd naredi absolutne proti mapi
+    izvirnika. Kopija različice leži v mapi različic, FreeCAD pa relativne poti razreši proti mapi dokumenta, zato bi
+    sestav iskal »razlicice/Sestavi/Kapa A.FCStd« (desetine napak ob odprtju). Vrne število preusmerjenih povezav."""
+    with zipfile.ZipFile(pot_fcstd) as z:
+        vnosi = [(i, z.read(i.filename)) for i in z.infolist()]
+    n = 0
+
+    def absolutna(m):
+        nonlocal n
+        rel = m.group(2)
+        if rel.startswith("https://") or os.path.isabs(rel):
+            return m.group(0)
+        n += 1
+        return m.group(1) + os.path.normpath(os.path.join(mapa_izvirnika, rel)).replace("\\", "/") + m.group(3)
+
+    vnosi = [(i, _XLINK_DATOTEKA.sub(absolutna, b.decode("utf-8")).encode("utf-8") if i.filename == "Document.xml" else b)
+             for i, b in vnosi]
+    if n:
+        zacasna = pot_fcstd + ".xl"
+        with zipfile.ZipFile(zacasna, "w", zipfile.ZIP_DEFLATED) as z:
+            for i, b in vnosi:   # vrstni red ostane (Document.xml prvi)
+                z.writestr(i, b, compress_type=i.compress_type)
+        os.replace(zacasna, pot_fcstd)
+    return n
 
 
 def _skupina(prostor):
@@ -143,8 +174,24 @@ class Oblak:
             self._log("oblak: seje ni bilo mogoče zapisati: %s" % e)
 
     def api(self):
-        return (self.seja.get("api") or os.environ.get("SPLET_OBLAK_API") or self._odjemalec.get("api")
-                or PRIVZETI_API).rstrip("/")
+        return (self.seja.get("api") or self._api_odjemalca()).rstrip("/")
+
+    def _api_odjemalca(self, sveze=False):
+        """Oblak, v katerega pošilja odjemalec (sveze: nastavitve prebere znova - odjemalca lahko kdo preklopi
+        na drug strežnik, 2026-10-17 z lokalnega na oblak.masterhub.si)."""
+        if sveze:
+            self._odjemalec = self._preberi_odjemalca()
+        return (os.environ.get("SPLET_OBLAK_API") or self._odjemalec.get("api") or PRIVZETI_API).rstrip("/")
+
+    def drug_oblak(self):
+        """Opis, če je FreeCAD prijavljen v drug oblak, kot ga uporablja odjemalec (sicer prazen niz)."""
+        if not self.prijavljen():
+            return ""
+        odjemalec = self._api_odjemalca(sveze=True)
+        if self.api() == odjemalec:
+            return ""
+        return ("FreeCAD je prijavljen v oblak %s, odjemalec oblaka pa pošilja v %s. V plošči z različicami se "
+                "odjavi in prijavi znova." % (self.api(), odjemalec))
 
     def mapa_sinhronizacije(self):
         """Mapa, ki jo odjemalec oblaka drži usklajeno (SPLET_OBLAK_MAPA za preizkuse)."""
@@ -187,11 +234,12 @@ class Oblak:
             "mapaRazlicic": MAPA_RAZLICIC,
             "odjemalec": bool(self._odjemalec),
             "zaklepov": len(self._moji),
+            "drugOblak": self.drug_oblak(),
         }
 
     # ------------------------------------------------------------------ klici v oblak
-    def _zahteva(self, metoda, pot, telo=None, poizvedba=None, zeton=None, surovo=False, timeout=60):
-        url = self.api() + pot
+    def _zahteva(self, metoda, pot, telo=None, poizvedba=None, zeton=None, surovo=False, timeout=60, osnova=None):
+        url = (osnova or self.api()) + pot
         if poizvedba:
             url += "?" + urllib.parse.urlencode({k: v for k, v in poizvedba.items() if v is not None})
         glave = {"Accept": "application/json"}
@@ -393,11 +441,14 @@ class Oblak:
         if not email or not geslo:
             raise NapakaOblaka(400, "manjka", "Vpiši e-pošto in geslo")
         ime_naprave = "FreeCAD (splet) · %s" % (platform.node() or "računalnik")
+        # Nova prijava gre vedno v oblak, v katerega pošilja odjemalec (ne v tistega iz stare seje).
+        osnova = self._api_odjemalca(sveze=True)
         r = self._zahteva("POST", "/v1/auth/login",
-                          {"email": email, "password": geslo, "device_name": ime_naprave, "platform": "cli"})
+                          {"email": email, "password": geslo, "device_name": ime_naprave, "platform": "cli"},
+                          osnova=osnova)
         with self.kljuc:
             self.seja = {
-                "api": self.api(),
+                "api": osnova,
                 "refresh_token": r["refresh_token"],
                 "dostop": r.get("access_token"),
                 "velja_do": time.time() + float(r.get("expires_in", 900)),
@@ -420,6 +471,8 @@ class Oblak:
             self.seja = {}
             self._zapisi_sejo()
             self._prostori = []
+            self._prostori_cas = 0.0
+        self._api_odjemalca(sveze=True)
         return self.stanje()
 
     # ------------------------------------------------------------------ preslikava poti
@@ -514,6 +567,12 @@ class Oblak:
                 if not kos:
                     break
                 f.write(kos)
+        try:
+            n = preusmeri_povezave(zacasna, os.path.dirname(lokalna_pot))
+            if n:
+                self._log("oblak: različica %s: %d povezav preusmerjenih v mapo izvirnika" % (os.path.basename(cilj), n))
+        except (OSError, zipfile.BadZipFile, KeyError, UnicodeDecodeError) as e:
+            self._log("oblak: povezav v različici ni bilo mogoče preusmeriti: %r" % e)
         os.replace(zacasna, cilj)
         oznaka = "%s · različica %d (%s)" % (ime, st, datum)
         self._kopije[os.path.normcase(os.path.normpath(cilj))] = {"izvirnik": lokalna_pot, "rev": rev}
@@ -666,7 +725,9 @@ class Oblak:
                         return
                     self._oddaj_dogodek("komentar", lokalna_pot, "Komentar je zapisan k različici #%d datoteke »%s«." % (st2, ime))
                     return
+            drug = self.drug_oblak()
             self._oddaj_dogodek("cakanje", lokalna_pot,
+                                ("Komentar k »%s« ni zapisan. %s" % (ime, drug)) if drug else
                                 "Odjemalec oblaka nove različice »%s« še ni poslal; komentar ni zapisan. Preveri, ali odjemalec teče, "
                                 "in komentar dodaj v plošči z različicami." % ime)
 

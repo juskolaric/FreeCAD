@@ -300,8 +300,19 @@ const GEOM_CACHE_NAJVEC = 48;
 let model = { objekti: [], seznam: [], parametri: [] }, verzija = -1, prilagodiOb = true;
 const okvirModela = new THREE.Box3();
 
+const teksture = new Map();   // ključ slike -> THREE.Texture (slika na osnovni barvi materiala v Blenderju, GET /tekstura)
+function tekstura(k) {
+  let t = teksture.get(k);
+  if (!t) {
+    t = new THREE.TextureLoader().load('/tekstura?k=' + k);
+    t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = renderer.capabilities.getMaxAnisotropy();
+    teksture.set(k, t);
+  }
+  return t;
+}
 function material(m) {
   return new THREE.MeshPhysicalMaterial({
+    map: m.tekstura ? tekstura(m.tekstura) : null,
     color: new THREE.Color().setRGB(...m.barva, THREE.SRGBColorSpace), metalness: m.kovinskost, roughness: m.hrapavost,
     transparent: m.prosojnost > 0.01, opacity: 1 - m.prosojnost, clearcoat: m.kovinskost < 0.5 ? 0.15 : 0,
     envMapIntensity: m.kovinskost >= 0.5 ? 2.2 : 1.0, side: THREE.DoubleSide, vertexColors: !!m.poOgliscih,
@@ -311,6 +322,7 @@ function zgradiGeometrijo(o) {
   const g = new THREE.BufferGeometry();
   g.setAttribute('position', new THREE.Float32BufferAttribute(o.tocke, 3));
   g.setAttribute('normal', new THREE.Float32BufferAttribute(o.normale, 3));
+  if (o.uv) g.setAttribute('uv', new THREE.Float32BufferAttribute(o.uv, 2));
   if (o.barve) { const b = new THREE.Float32BufferAttribute(o.barve, 3); for (let i = 0; i < b.array.length; i++) { const c = b.array[i]; b.array[i] = c <= 0.04045 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4); } g.setAttribute('color', b); }
   const n = o.tocke.length / 3;
   g.setIndex(n > 65535 ? new THREE.Uint32BufferAttribute(o.trikotniki, 1) : new THREE.Uint16BufferAttribute(o.trikotniki, 1));
@@ -349,7 +361,7 @@ async function naloziModel() {
     if (!g) {
       g = zgradiGeometrijo(o); o.trikotnikov = o.trikotniki.length / 3;
       if (o.kljuc) geomCache.set(o.kljuc, { geometry: g, materiali: o.materiali, okvir: o.okvir, trikotnikov: o.trikotnikov });
-      delete o.tocke; delete o.normale; delete o.trikotniki; delete o.barve;   // podatki so v geometriji
+      delete o.tocke; delete o.normale; delete o.trikotniki; delete o.barve; delete o.uv;   // podatki so v geometriji
     }
     const mesh = zgradiObjekt(o, g); koren.add(mesh); objekti.set(o.ime, mesh);
   }
@@ -856,7 +868,7 @@ const KORAK_VRTENJA = THREE.MathUtils.degToRad(15);
 const VRTENJE_NA_PIKO = 0.008;
 const OBRNI_KOLESCEK = false;   // true: kolešček naprej približa
 const oznakaVrtenja = new THREE.Mesh(new THREE.SphereGeometry(1, 16, 12), new THREE.MeshBasicMaterial({ color: 0xd81b9c, depthTest: false }));
-oznakaVrtenja.renderOrder = 10; oznakaVrtenja.visible = false; scene.add(oznakaVrtenja);
+oznakaVrtenja.renderOrder = 10; oznakaVrtenja.visible = false;   // ni v sceni: uporabnik je ne želi videti (2026-10-29)
 const STANDARDNI_POGLEDI = [   // Z gor, spredaj gledamo v smeri +Y (kot FreeCAD in Blender)
   { nazaj: [0, -1, 0], gor: [0, 0, 1] }, { nazaj: [0, 1, 0], gor: [0, 0, 1] },
   { nazaj: [-1, 0, 0], gor: [0, 0, 1] }, { nazaj: [1, 0, 0], gor: [0, 0, 1] },

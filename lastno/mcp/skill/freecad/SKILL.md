@@ -30,8 +30,12 @@ njegovih dokumentov, zato vedno delaj na pravem dokumentu (argument `dokument`, 
 ## Postopki
 - **Nov kos**: `dokumenti nov` → telo PartDesign → skice na ravninah izhodišča, popolnoma omejene (`sk.solve() == 0`,
   `sk.FullyConstrained`), loki s središčem in kotoma (ne s tremi točkami) → izbokline in ugrezi → mere na enem mestu.
-- **Pločevina**: najprej preberi `lastno/raziskava/plocevina.md` v repozitoriju FreeCAD; lastna objekta TeloVPlocevino
-  in Razgrnitev (`lastno/plocevina/lastna_plocevina.py`); lastnosti ne imenuj `Debelina`.
+- **Pločevina**: najprej preberi `lastno/raziskava/plocevina.md` v repozitoriju FreeCAD (§3a). **Vsak kos: najprej
+  material in debelina**, iz njiju odprtina V, notranji polmer in K (`python`: `import plocevina_materiali as pm;
+  pm.opis("inox", 4)`; v skripti kosa `pm.mere_plocevine(mere, material, T)` napolni objekt »Mere«, upogibi in razgrnitev se
+  vežejo nanj z izrazi). Lastna objekta TeloVPlocevino in Razgrnitev (`lastno/plocevina/lastna_plocevina.py`) imata
+  `Material` + `Samodejno`. Polmera ne ugibaj, K ne prepisuj; vrednost delavnice vpiši in `Samodejno` izklopi.
+  Lastnosti ne imenuj `Debelina` (razen na objektu »Mere« pločevine).
 - **Sestav**: okolje Assembly (`ukaz {"okolje": "AssemblyWorkbench"}`), kosi kot App::Link na shranjene dokumente,
   spoji: najprej Offset1/Offset2, šele nato Reference1/Reference2. Trke preveri z `izmeri {"vsi": true}`.
 - **Pregled**: `drevo` (⚠ napake), `izmeri vsi`, `slika` iz treh smeri; ničesar ne spreminjaj.
@@ -39,6 +43,10 @@ njegovih dokumentov, zato vedno delaj na pravem dokumentu (argument `dokument`, 
   (odpre okno Pripravi; tiskalnik, predal in polnilo potrdi uporabnik, tisk se ne zažene sam).
 - **Render**: `render` (osnutek je hiter; `pogled zaslon` = uporabnikova kamera). **Proste oblike**: `oblikovanje`
   (Python v Blenderju, 1 enota = 1 mm, `slika: true`).
+- **Ploščice** (PBR teksture v pravem merilu, render in 3D pogled): v `python` `import videz;
+  videz.nastavi_ploscico(obj, "Tiles036", 200, 200)` (cel kos; velikost ene ploščice v mm, 0 = privzeto) ali z
+  `ploskve=["Face3"]` le za ploskve; seznam `import ploscice; ploscice.seznam()`. Materiali so v
+  `Standardni deli/Kopalnica/_Ploscice` (opis `ploscica.json`), navodila v `PREBERI.md` tam.
 - **Videz, baza standardnih delov, knjižnica, oblak**: `splet` (`splet {"katalog": true}` našteje končne točke).
 - **Brez strežnika** ali krog zapis-branje STEP (v strežniku lahko sesuje proces): `freecadcmd`.
 

@@ -137,6 +137,86 @@ Viri: durmapress.com (V-die opening, V-die chart, tonnage chart), wilatooling.co
 thefabricator.com (dissecting-bend-deductions-and-die-openings, minimum flange lengths, why-tonnage-matters,
 how-an-air-bend-turns-sharp, design-for-the-press-brake), protolabs.com/resources/blog/bend-relief.
 
+### 3a. Izbira parametrov po materialu in debelini (Amada, 29. 10. 2026) — **pravilo za vsak kos**
+
+**Vsakič, ko rišeš kos iz pločevine, najprej določi material in debelino; iz njiju sledijo odprtina V, notranji polmer R
+in K.** Ne ugibaj polmera in ne prepisuj K iz prejšnjega kosa. Koda: `lastno/plocevina/plocevina_materiali.py`
+(`parametri(material, T)`, `opis(material, T)`, `mere_plocevine(mere, material, T)`); lastna objekta pločevine imata
+lastnosti `Material` in `Samodejno` (polmer in K iz tabele ob spremembi materiala ali debeline; vrednost delavnice vpiši
+ročno in `Samodejno` izklopi). Katalogi Amada (upogibna orodja AFH 2024, štancna orodja) so v
+`Standardni deli/_Proizvajalci/Amada/`; proizvajalec je vpisan v `_Proizvajalci/proizvajalci.md`.
+
+**Odprtina matrice** (Amada, tabela sil pri prostem krivljenju, str. 74 kataloga): **V = 6 T** do 3 mm, **8 T** od 3 do 8 mm,
+10 T od 8 do 12 mm, 12 T nad 12 mm; zaokroži na standardno odprtino (4, 6, 7, 8, 10, 12, 14, 16, 18, 20, 25, 32, 40, 50, 63, 80 …).
+
+**Notranji polmer na delu** ga pri prostem krivljenju naredi matrica, ne klin: **R ≈ 0,16 V** jeklo, **≈ 0,20 V** nerjavno,
+**≈ 0,14 V** aluminij; v modelu zaokrožen navzgor na 0,5 mm in nikoli pod najmanjšim polmerom materiala (jeklo 0,8 T, nerjavno
+in Al 5754 1 T, Al 6082-T6 3 T). Amadina tabela (`ir` v vrstici V): V8 → 1,3, V10 → 1,6, V12 → 2, V16 → 2,6, V20 → 3,3,
+V25 → 4, V32 → 5, V40 → 6,5, V50 → 8 (jeklo; nerjavno ≈ 20 % več).
+
+**Klin** (pestič) je oster: **R0,6** je pri Amadi privzeti radij skoraj vseh klinov (H120: 804, 847, 820, 817, 846, 841, 840,
+814, 831; H90: 704, 747, 720, 717, 746, 713, 731; H160: 904, 947, 914), na voljo še R0,2, R0,52, R0,8, R1,5, R2, R3, R4, R5,
+R6; večji radiji (R7–R50) so vložki v držalu, ne za običajne kose. Klin ne sme biti ostrejši od ~0,63 T (zareže pločevino):
+do 3 mm R0,6/R0,8, 3–4,5 mm R3 (standardni 804/904), nad 4,5 mm R5/R6 (ravna 803/603, 1000 kN/m; labodji vrat 450–500 kN/m
+pri debelem nerjavnem ne zdrži).
+
+| Material, T | V | R v modelu | K (R/T → K) | najkrajši krak | sila/m | klin |
+|---|---|---|---|---|---|---|
+| Al 5754-H22, 2 mm | 12 | **2** | 0,40 (1:0,40; 3:0,50) | 8,5 mm | ≈ 12 t | 86°/88° R0,6 |
+| nerjavno 1.4301, 1,4 mm | 8 | **2** | 0,44 (1:0,43; 3:0,47) | 5,5 mm | ≈ 24 t | R0,6 |
+| nerjavno, 4 mm | 32 | **6,5** | 0,44 | 22 mm | ≈ 50 t | 86° R3 |
+| nerjavno, 5 mm | 40 | **8** | 0,44 | 28 mm | ≈ 62 t | 60° R5/R6 |
+| nerjavno, 6 mm | 50 | **10** | 0,44 | 35 mm | ≈ 72 t | 60° R5/R6 |
+| DC01, 1,5 mm | 10 | **2** | 0,43 (1:0,42; 3:0,46) | 7 mm | ≈ 15 t | R0,6 |
+| DC01, 2 mm | 12 | **2** | 0,42 | 8,5 mm | ≈ 22 t | R0,6/R0,8 |
+| S235, 3 mm | 18 | **3** | 0,42 | 12,5 mm | ≈ 33 t | R0,8 |
+| Al 6082-T6, 2 mm | 12 | **6** (3 T, sicer poka) | 0,45 | 8,5 mm | ≈ 18 t | R0,6 |
+
+**K-faktor** se iz R/T vzame iz dvovrstične tabele materiala (SheetMetal V2 interpolira pravilno le med dvema vrsticama):
+jeklo 1:0,42 · 3:0,46; nerjavno 1:0,43 · 3:0,47; Al 5754 1:0,40 · 3:0,50; Al 6082-T6 1:0,42 · 3:0,45; baker/medenina
+1:0,36 · 3:0,42. Isti K gre v `Razgrnitev.KTabela` in v `Mere.KTabela` kosov, narisanih s SheetMetal.
+
+**Ostri upogibi R0,8 v modelu** (zalogovnik folije, betonski podstavek, 7.–8. 10. 2026) so bili izbrani zaradi cene; pri prostem
+krivljenju 1,5–2 mm jekla pa matrica V10/V12 naredi R ≈ 1,6–2 mm, ne 0,8 — pri naslednji prenovi teh kosov vzemi R iz tabele.
+Nerjavno se krivi s klini 86°/88° (vzmetenje 2–4°); Al 6082-T6 (trd) poka pri R < 3 T, zato za krivljenje jemlji 5754.
+
+Viri: Amada, Bending tools catalogue AFH 2024 (`Catalog_AFH_EN_2024.pdf`, str. 11–25 klini, 74 tabela sil), thefabricator.com
+(predicting-the-radius-without-test-bending, what-makes-an-air-bend-sharp), wilatooling.com (tip-radius, v-opening).
+
+---
+
+### 3b. Postopek krivljenja: zaporedje upogibov, orodja, prislon (30. 10. 2026) — **za dokumentacijo kosa**
+
+Vsak kos iz pločevine dobi **list za krivilca** (`lastno/plocevina/dokumentacija_krivljenja.py` iz `izvlecek_upogibov.py`):
+razgrnitev z upogibnimi črtami U1…Un (kot, smer gor/dol, R), sliko upognjenega kosa, tabelo upogibov in zaporedje korakov z
+orodjem in prislonom. Kos nosi lasersko oznako (sloj GRAVURA, `oznaci_dxf.py`); **pogled na razgrnitev je s strani gravure**,
+»gor« pomeni, da se krak dvigne proti gledalcu (proti gravuri), »dol« stran od nje.
+
+**Orodje (iz tabele materiala, §3a):** matrica 1V z odprtino V = 6 T (do 3 mm) oz. 8 T (3–8 mm) → Al 5754 2 mm: **V12**, jeklo
+3 mm: **V18/V20**, 4 mm: **V32**, 8 mm: **V63**. Klin za 90° kot pri zračnem krivljenju **88° R0,6** (Amada 804 standard, H120)
+— 88° zaradi vzmetenja (Al 5754 1–2°, nerjavno 2–4°), kot se doseže z globino; pri 3–4,5 mm klin R3 (804 R3), nad 4,5 mm
+R5/R6 60° (803/603, 1000 kN/m). **Labodji vrat 847** (gooseneck) vedno, kadar je na kosu že upognjen povratni krak ali
+zaprt profil (U, škatla z notranjimi kraki) — 847 nosi 500 kN/m, tanki 846 350 kN/m. Visoki kraki (> ~100 mm) rabijo klin
+H160 ali ozko matrico, sicer krak trči v stroj/orodje. Sila: Amada tabela str. 74 (Al 5754 2 mm V12 ≈ 120 kN/m, jeklo 3 mm V20
+≈ 330 kN/m, 4 mm V32 ≈ 400 kN/m, 8 mm V63 ≈ 800 kN/m) × dolžina upogiba.
+
+**Zaporedje (pravila, povzeto po Amada AFH 2024 str. 6–7, 70, Bystronic, Mate, thefabricator):**
+1. **Od znotraj navzven / najprej najgloblji**: povratni (notranji) kraki in zavihki pred krakom, na katerem sedijo — ko je
+   zunanji krak upognjen, notranjega klin ne doseže več. Globina v drevesu upogibov pada po korakih.
+2. **Krajši kraki pred daljšimi** na isti globini; pri škatli najprej oba kratka nasprotna kraka, nato dolga.
+3. **Čim manj obračanj**: upogibi iste smeri (gor/dol) skupaj, menjava smeri pomeni obrat kosa — zapisan je v koraku.
+4. **Prislon** vedno na raven, dolg rob (nikoli na že upognjen kratek krak ali na lok); mera prislona je razdalja od upogibne
+   črte do roba kraka **v razgrnitvi** (CNC si BA kompenzira sam); za kontrolo je zraven zunanja mera kraka po krivljenju.
+5. **Preveri trk** pred vsakim korakom: že upognjeni kraki proti klinu, držalu in čeljusti; pri U-profilu širine < 2 × višine
+   kraka klin ne gre ven — rabi labodji vrat ali drug red. Nekratki kot (< 90° ali > 90°) naj ne bo zadnji, ki se prislanja.
+6. **Najkrajši krak** ≥ 0,7 V (Al 2 mm: 8,5 mm); krajši krak zdrsne v matrico → ožja matrica (V8) ali konstrukcijska sprememba.
+7. **Isti R in isti kot** na vseh upogibih = ena nastavitev; prvi kos izmeri (kot, mera), popravi globino, šele nato serija.
+8. Stopenjsko krivljenje (Amada »stage bending«): več orodnih postaj v eni mizi, kos se prime enkrat — če ima delavnica AFH.
+
+Smer valjanja: pri Al 5754-H22 in jeklu 2–4 mm upogibi R ≥ T niso občutljivi; pri R < T upogibaj prečno na valjanje.
+Viri: Amada AFH 2024 (str. 6–7 stage bending, 12–13 klini 804/847/820/817/846, 64 min. krak, 70 U/beading), Bystronic
+whitepaper (simuliraj zaporedje), Mate (povratni kraki trčijo v klin), 247TailorSteel (prislon), gwklaser (kratek krak).
+
 ---
 
 ## 4. Pravila konstruiranja (DFM)
@@ -394,8 +474,11 @@ de.wikipedia.org/wiki/Biegeverkürzung, lokalno `src/App/FreeCADInit.py`.
 
 ## 8. Postopek za naše delo
 
-1. **Od delavnice** pridobi tabelo: material, debeline, matrice V, nastali R, K ali BD. Do takrat: jeklo K = 0,44,
-   R ≈ 0,16·V (≈ 1–1,25T), Al 5052 K = 0,40, R ≈ 1T. En polmer na debelino.
+1. **Material in debelina najprej** (3a): `python` → `import plocevina_materiali as pm; print(pm.opis("inox", 4))` da V, R, K,
+   najkrajši krak, silo in klin; v skripti kosa `pm.mere_plocevine(mere, "Al 5754-H22", 2.0)` napolni objekt »Mere«
+   (Debelina, Polmer, KFaktor, KTabela, Material, OdprtinaV, Klin), vsi upogibi in razgrnitev se vežejo nanj z izrazi.
+   **Od delavnice** pridobi tabelo (material, debeline, matrice V, nastali R, K ali BD) in jo vpiši (`v=`, `r=`,
+   `Samodejno` izklopi). En polmer na debelino.
 2. **Model:** zaprta skica → Make Base Wall (ali Base Shape) → Make Wall na robovih (polmer, kot, `LengthSpec`
    po tem, kako je kotirana risba) → razbremenilni in vogalni izrezi → luknje (Extruded Cutout) stran od upogibov.
 3. **Preveri DFM** (poglavje 4): prirobnica ≥ 0,7·V, luknje ≥ 2T + R od upogiba, izrez R + T + 0,5 mm, polmer ≥
@@ -439,6 +522,45 @@ SolidWorksovim COM ne dela), mere se odčitajo iz STEP v FreeCADCmd. Kar se je p
 - **Preverjanje**: prostornina in prekrivanje z izvirnikom (`common`), raztegovanje na kopiji (več naborov mer in
   vrnitev na izvirne), slike iz STL z lastnim izrisovalnikom.
 
+## Parametrično ohišje iz uvoženega (2026-10-29, Ohišje zadaj Slim A)
+
+`Photobox Slim A/Deli/Pločevina/Ohišje zadaj Basi - parametrično.FCStd`, skripte v `Skripte/ohisje_parametricno/`:
+- U profil: odprta skica = **zunanja** ploskev, `SMBaseBend` z `BendSide = "Outside"` (material navznoter), `Radius` = notranji
+  polmer vogalov, `Length` = višina. `Inside` da material navzven (okvir +2T).
+- Zavihka: `SMBendWall` na čelnih ploskvah debeline stranic, `BendType = "Material Inside"`, `LengthSpec = "Outer Sharp"`
+  (zunanja mera zavihka), `gap1/gap2` skrajšata zavihek na koncih.
+- **`ExtrudedCutout` je pri stotinah lukenj neuporaben**: za debelino primerja vsako ploskev z vsako (`distToShape`, O(n²)),
+  vsak naslednji izrez je počasnejši (4 izrezi ~10 min na glavni niti). Namesto njega skica → `Part::Extrusion` (±5 mm po
+  normali, `Solid`) → `Part::Cut`: 429 izrezov v 12 s. Skice stenam sledijo z izrazi na `.Placement.Base`.
+- Izreze iz uvoženega kosa prenesi kot geometrijo skice (notranje zanke zunanje ploskve stene; dva polkroga → krog).
+- Razgrnitev izvirnika je imela K 0,5 (ne privzeti 0,44): primerjaj K, preden iščeš razliko v geometriji.
+- Zamenjava v sestavih brez preračuna: v dokumentu kosa povezava na nov kos v istem `App::Part`, izvirnik skrit (spoji
+  sestavov kažejo na njegove ploskve in ostanejo veljavni).
+
+## Prenova uvoženih kosov v drugo debelino in polmer (2026-10-29, Slim A → Al 5754-H22 2 mm, R 2)
+
+`lastna_plocevina.prenovi_plocevino(oblika, debelina, polmer, obrni)` in objekt `PrenovaPlocevine` (parametri Debelina,
+Polmer, Obrni; izvirnik ostane skrit, ker nanj kažejo spoji sestavov):
+1. debelina iz para vzporednih velikih ploskev; upogibi = pari koaksialnih valjev r / r + T (stene lukenj izločene po
+   osni dolžini ≤ 1,2 T, sicer povežejo obe strani); valji z r ≥ 10 T so zviti deli in ostanejo;
+2. `defeaturing(upogibi)` → ostri kos; strani pločevine po sosednosti velikih ploskev; zunanja = več izbočenih robov
+   (zviti deli: večji polmer);
+3. postopek A: vsaka notranja ploskev posebej `makeOffsetShape(ΔT, fill=True)` + unija; zunanji ostri rob `makeFillet(R + T)`,
+   nato obroč R … R + T (odebelitev valjaste ploskve navznoter) + unija. Postopek B (rezerva): lupina zunanje strani
+   `makeOffsetShape(-T, join=2, fill=True)`. **Dvojno zaokroževanje (notranji R in zunanji R + T) OCC sestavi neveljavno**
+   (»Self-intersecting wire«), lupina iz več ploskev s `fill` pogosto pade (»ThruSections failed«);
+4. luknje zunanje strani se izrežejo na koncu skozi novo debelino (luknja ob upogibu sicer zmoti zaokroževanje).
+Preverjanje: veljavnost, prostornina ≈ izvirnik · T_nova / T_stara, okvir nespremenjen (pri ravnih ploščah +ΔT).
+Dopolnitve: dvojček velike ploskve mora ležati nasproti (prekrivanje projekcije), sicer se strani povežejo; ravne notranje
+ploskve se odebelijo z izvlekom, ukrivljene z odmikom (preverjena prostornina); med upogibanjem so luknje zapolnjene;
+pladnji (štirje upogibi z vogali) dobijo kvadratno vogalno razbremenitev R + T + 0,5, ker stara (za stari polmer) novega
+zaokroževanja ne spusti skozi (`_vogalne_razbremenitve`). Videz: vsebnik kosa (App::Part) z lastnostjo Videz =
+»pločevina« da lisasto strukturo tudi novemu kosu — aluminijastim nastavi `videz.nastavi_videz(vsebnik, "aluminij")`.
+Izid 29. 10. (prvi krog): 19 od 25 kosov 1,5 mm; ne gre: posodici in stena klime z letvijo (strani niso ločljive), podstavek trda tla
+in pokrovček betonskega podstavka (OCC), Betonski podstavek in Šild 2 (okvir se spremeni – napačna geometrija).
+Razgrnitev: `KTabela` »1:0.40; 3:0.50« (Al 5754-H22, R/T); razgrnjevalnik pri nekaterih kosih pade z vseh ploskev
+(»Two points are coincident«: Elektro levo, Elektro sredina).
+
 ## Zlivanje dveh uvoženih kosov v en kos (2026-10-09, ohišje klime Slim A)
 
 - Stena in letev, ki se stikata v skupni ravnini, se zlijeta v eno telo (`fuse`), a `getUnfold` (SheetMetalNewUnfolder) iz
@@ -448,3 +570,18 @@ SolidWorksovim COM ne dela), mere se odčitajo iz STEP v FreeCADCmd. Kar se je p
   izhodiščno ploskev na mestu, zato je unija ploskih razgrnitev pravilna razgrnitev celega kosa (preverjeno: ploščina = prostornina / T).
 - Kjer upogib ene prirobnice konča ob drugi prirobnici, se konca dotikata in razgrnitev se tam raztrga: izreži sprostitev (2 mm reža
   čez upogib in prirobnico).
+
+## Na novo narisani kosi z majhnim polmerom (2026-10-29, Slim A: mizica, posodica za slike, stena klime)
+
+Kosi z notranjim R ≈ 0,3 se s prenovo ne dajo prenesti na R 2, zato so narisani znova kot SheetMetal (osnovna plošča iz zaprte skice
+z mero-izrazi na objektu »Mere«, stene `SMBendWall`, luknje iz izvirnika s `izrezi_iz_izvirnika.py`: notranje žice ravnih ploskev →
+skica → izvlek ±5 mm → odštevanje, vogali in posebni izrezi s skico in izvlekom). Pasti:
+- **Jeziček, nižji od upogibnega pasu** (prirobnica le na delu roba, rob plošče ob njej nižje od R + T): »Material Inside« in »Thickness
+  Outside« upogib razširita čez **ves** rob plošče (prirobnica od stopnice do stopnice). Deluje »Material Outside«: upogib je ves zunaj
+  plošče, notranja ploskev prirobnice je za **polmer** nad robom plošče — rob plošče v skici postavi na zunanjo mero − T − R, ob straneh
+  razbremenilni zarezi (širina 0,8, 1 mm pod začetkom upogiba).
+- »Outer Sharp« stene na čelu druge stene: pri posodici je bila dolžina zunanja mera + T, pri steni klime točno zunanja mera — dolžino
+  vedno preveri po okvirju.
+- `SMBaseBend` iz zaprte skice: smer debeline ni vedno normala skice; preveri okvir in po potrebi `Reverse = True`.
+- Okvir izvirnika je zaokrožen: ravnine za izreze vzemi iz `CenterOfMass` ploskve (-92,1829, ne -92,18), sicer filter s toleranco 1e-3 ne najde ničesar.
+- Zaokrožitev v skici osnovne plošče lahko poravna sosednja stena; zaokroži jo raje kot izrez po steni.

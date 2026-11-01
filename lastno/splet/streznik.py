@@ -104,6 +104,7 @@ if MAPA not in sys.path:
 from drevo import drevo_dejanje, drevo_dokumenta  # noqa: E402
 from baza import baza_dejanje, v_bazi as _v_bazi, tarca as _tarca_baze, BAZA as MAPA_BAZE  # noqa: E402
 import videz  # noqa: E402
+import ploscice  # noqa: E402  (PBR teksture ploščic: knjižnica _Ploscice, UV v mm; videz.py, GET /ploscica/slika)
 import samodejno  # noqa: E402  (tiha obnova dokumentov, samodejno shranjevanje)
 import delno  # noqa: E402  (delno naloženi dokumenti: NoPartialLoading, polno nalaganje brez izgube sprememb)
 from oblak import Oblak, obdelaj_zahtevo as oblak_zahteva, pot_slicice_revizije as oblak_slicica_revizije  # noqa: E402
@@ -751,7 +752,9 @@ def _videz_dejanje(podatki):
     datoteke)."""
     dejanje = podatki.get("dejanje", "seznam")
     if dejanje == "seznam":
-        return {"ok": True, "videzi": videz.seznam_videzov()}
+        return {"ok": True, "videzi": videz.seznam_videzov(), "ploscice": videz.seznam_ploscic()}
+    if dejanje == "ploscice":
+        return {"ok": True, "ploscice": videz.seznam_ploscic()}
     doc = App.ActiveDocument
     if doc is None:
         return {"ok": False, "sporocilo": "Ni odprtega dokumenta."}
@@ -768,6 +771,26 @@ def _videz_dejanje(podatki):
         ime = videz.VIDEZI[kljuc]["ime"] if kljuc in videz.VIDEZI else "privzeti videz"
         kje = "" if cilj.Document is doc else " (v datoteki »%s«, shrani jo)" % cilj.Document.Label
         return {"ok": True, "sporocilo": "»%s«: %s%s" % (cilj.Label, ime, kje)}
+    if dejanje == "ploscica":
+        # {ime, ploscica ('' = odstrani), sirina, visina (mm, 0 = privzeto), zasuk (°), ploskve [Face3 ...] ali None}
+        obj = doc.getObject(podatki.get("ime", ""))
+        if obj is None:
+            return {"ok": False, "sporocilo": "Objekta ni."}
+        doc.openTransaction("Ploščica")
+        try:
+            cilj, o = videz.nastavi_ploscico(obj, podatki.get("ploscica", ""), podatki.get("sirina") or 0,
+                                             podatki.get("visina") or 0, podatki.get("zasuk") or 0,
+                                             podatki.get("ploskve") or None)
+        except ValueError as e:
+            return {"ok": False, "sporocilo": str(e)}
+        finally:
+            doc.commitTransaction()
+        kje = "" if cilj.Document is doc else " (v datoteki »%s«, shrani jo)" % cilj.Document.Label
+        if o is None:
+            return {"ok": True, "sporocilo": "»%s«: brez ploščic%s" % (cilj.Label, kje)}
+        s_, v_ = ploscice.velikost(o, podatki.get("sirina") or 0, podatki.get("visina") or 0)
+        kam = (" na " + ", ".join(podatki["ploskve"])) if podatki.get("ploskve") else ""
+        return {"ok": True, "sporocilo": "»%s«%s: ploščice %s, %g × %g mm%s" % (cilj.Label, kam, o["opis"], s_, v_, kje)}
     if dejanje == "plocevina":
         kosi = {}
         # vsi dokumenti, ki jih aktivni uporablja (povezave čez datoteke, rekurzivno), in aktivni sam
@@ -922,6 +945,25 @@ def _z3(v):
     return (round(v.x, 3), round(v.y, 3), round(v.z, 3))
 
 
+def _prosojnost(obj):
+    """Prosojnost objekta (0..1) za spletni pogled: največja od povezave in povezanega objekta (steklo)."""
+    if not IMA_OKNO:
+        return 0.0
+    naj = 0.0
+    for _ in range(8):
+        try:
+            vo = obj.ViewObject
+            if vo is not None:
+                naj = max(naj, float(getattr(vo, "Transparency", 0) or 0) / 100.0)
+            cilj = obj.LinkedObject if obj.isDerivedFrom("App::Link") else None
+            if cilj is None or cilj is obj:
+                break
+            obj = cilj
+        except Exception:  # noqa: BLE001
+            break
+    return round(min(naj, 0.95), 2)
+
+
 def _barva_robov(obj):
     """[r, g, b] robov kosa iz ViewObject.LineColor, če je uporabnik robove posvetlil (laminat: stiki plošč komaj vidni);
     None pri privzeti temni barvi (brskalnik riše skupno temno sivo)."""
@@ -970,10 +1012,11 @@ def _geometrija(obj, faktor=1.0):
     if jedro == "prevec":
         return _geometrija(obj, faktor * 3)   # proračun točk presežen: celoten objekt znova, trikrat grobje
     tocke, trikotniki, ploskve_surove, rob_tocke, robovi, rob_info = jedro
-    ploskve = []
+    ploskve, kljuci_ploscic = [], []
     for i, p in enumerate(ploskve_surove):
         barva = po_ploskvah[i] if po_ploskvah else osnovna
         ploskve.append(p + [round(c, 3) for c in barva[:7]])
+        kljuci_ploscic.append(barva[7] if len(barva) > 7 else None)
 
     izid = {
         "ime": obj.Name,
@@ -988,9 +1031,17 @@ def _geometrija(obj, faktor=1.0):
     telesa = _telesa_ploskev(oblika)
     if telesa:
         izid["telesaPloskev"] = telesa
+    prosojnost = _prosojnost(obj)
+    if prosojnost:
+        izid["prosojnost"] = prosojnost
     rob_barva = _barva_robov(obj)
     if rob_barva:
         izid["robBarva"] = rob_barva
+    if any(kljuci_ploscic):
+        try:
+            _dodaj_ploscice(izid, kljuci_ploscic, globalna)
+        except Exception as e:  # noqa: BLE001
+            _log("ploščice %s: %r" % (obj.Name, e))
     return izid
 
 
@@ -1297,6 +1348,27 @@ def _geometrija_iz_listov(obj, oblika, premik, toleranca, odmik_robov, vsi):
     return tocke, trikotniki, ploskve, rob_tocke, robovi, rob_info
 
 
+def _dodaj_ploscice(izid, kljuci, globalna):
+    """Ploščice objekta posnetka (videz.py, ploscice.py): `teksture` [{mapa, ime, slike {barva, normala, hrapavost,
+    visina, ao}, hrapavost, ponovitev}], `uv` (2 na točko, 1 = ena slika teksture v mm merilu) in pri vsaki ploskvi
+    indeks 11 = 1 + indeks teksture (0 = brez). Osi preslikave sta lokalna X in Z objekta (zasukana stena)."""
+    teksture, indeksi = [], {}
+    for p, k in zip(izid["ploskve"], kljuci):
+        p.extend((0.15, 0.42, 0, 0)[len(p) - 7:] if len(p) < 11 else ())
+        if k and k[0] not in indeksi:
+            o = ploscice.opis(k[0])
+            indeksi[k[0]] = len(teksture)
+            teksture.append({"mapa": k[0], "ime": o["ime"], "slike": {v: pot for v, pot in o["slike"].items() if pot},
+                             "hrapavost": o["hrapavost"],
+                             "ponovitev": [round(k[1] * o["ploscic"][0], 3), round(k[2] * o["ploscic"][1], 3)]})
+        p.append(indeksi[k[0]] + 1 if k else 0)
+    rot = globalna.Rotation
+    os_x, os_z = rot.multVec(App.Vector(1, 0, 0)), rot.multVec(App.Vector(0, 0, 1))
+    izid["teksture"] = teksture
+    izid["uv"] = ploscice.uv_objekta(izid["tocke"], izid["trikotniki"], izid["ploskve"], kljuci,
+                                     (os_x.x, os_x.y, os_x.z), (os_z.x, os_z.y, os_z.z))
+
+
 # Predpomnilnik posnetkov objektov: (ime dokumenta, ime objekta) -> (ključ, posnetek). Ključ zajame vse, od
 # česar je posnetek odvisen (oblika, lega, barve, oznaka); ob preklopu dokumenta ali ponovnem izračunu se
 # teselirajo le objekti, ki so se res spremenili. Brez tega je preklop na sobo trajal >10 s.
@@ -1342,15 +1414,42 @@ def _kljuc_oblike(obj, globina=0):
     return (oblika.hashCode(), _lega_kljuc(oblika.Placement))
 
 
+def _osvezi_obliko_sestava(obj):
+    """Število ploskev oblike sestava (povezava na sestav, App::Part) ali None, ko objekt ni sestav. Če se oblika ne
+    ujema z vsoto ploskev vidnih kosov (videz.listi), je FreeCAD-ov predpomnilnik oblik (_Part_ShapeCache) zastarel:
+    sprazni se ob spremembi Group/Shape vsebnika, ne pa ob spremembi kosa globlje v drugi datoteki. Sestav je potem
+    brez novih kosov in videz po kosih odpove (ves sestav dobi eno sivo barvo; Slim A, 2026-10-28). Takrat
+    predpomnilnike oblik v dokumentu in vseh odvisnih dokumentih izpraznimo (le pomnilnik, ni preračuna)."""
+    if not videz._je_vsebnik(obj):
+        return None
+    oblika_n = obj.Shape.countElement("Face")
+    try:
+        kosi_n = sum(videz.stevilo_ploskev_lista(lst) for lst, _, _ in videz.listi(obj))
+    except Exception:  # noqa: BLE001
+        return oblika_n
+    if kosi_n == oblika_n:
+        return oblika_n
+    for d in obj.Document.getDependentDocuments():
+        for o in d.Objects:
+            if "_Part_ShapeCache" in o.PropertiesList:
+                o._Part_ShapeCache = None
+    novo_n = obj.Shape.countElement("Face")
+    _log("oblika »%s«: zastarel predpomnilnik oblik (%d ploskev, kosi %d) -> %d" % (obj.Label, oblika_n, kosi_n, novo_n))
+    return novo_n
+
+
 def _geometrija_kljuc(obj):
+    ploskev_sestava = _osvezi_obliko_sestava(obj)   # pred branjem oblike: zastarel predpomnilnik oblik sprazni
     oblika = obj.Shape
     try:
         globalna = obj.getGlobalPlacement()
     except Exception:  # noqa: BLE001
         globalna = oblika.Placement
     barve = videz.kljuc_videza(obj, _barve)   # videz vseh kosov (pri sestavu tudi kosov v drugih datotekah)
-    return (_kljuc_oblike(obj), _lega_kljuc(oblika.Placement), _lega_kljuc(globalna), obj.Label, barve,
-            tuple(_barva_robov(obj) or ()))
+    kljuc = (_kljuc_oblike(obj), _lega_kljuc(oblika.Placement), _lega_kljuc(globalna), obj.Label, barve,
+             _prosojnost(obj), tuple(_barva_robov(obj) or ()))
+    # le pri sestavih: ključ drugih objektov ostane enak (predpomnilniki posnetkov v pomnilniku in na disku ostanejo)
+    return kljuc + (("ploskev", ploskev_sestava),) if ploskev_sestava is not None else kljuc
 
 
 def _razlika_kljuca(a, b, pot=""):
@@ -2897,6 +2996,116 @@ def _skica_izvedi(sk, op):
     return novi
 
 
+def _premik_skupine(sestav, spoji, skupina, obj, premik):
+    """Premik toge skupine pri vlečenju (v koordinatah sestava). Če skupino z ostalim sestavom veže en sam vrtljivi spoj
+    (vrata na tečaju, ročica na gredi), vlek postane zasuk okoli osi spoja: točka kosa (središče okvirja) se zavrti
+    proti povlečeni legi. Sicer navaden premik; reševalnik nato uveljavi spoje."""
+    zunanji = []
+    for j in spoji:
+        if not getattr(j, "Activated", True) or getattr(j, "Suppressed", False):
+            continue
+        refs = [r for r in (getattr(j, "Reference1", None), getattr(j, "Reference2", None)) if r]
+        if len(refs) == 2 and (refs[0][0] in skupina) != (refs[1][0] in skupina):
+            zunanji.append((j, refs))
+    if len(zunanji) != 1 or getattr(zunanji[0][0], "JointType", "") != "Revolute":
+        return App.Placement(premik, App.Rotation())
+    j, refs = zunanji[0]
+    try:
+        import math
+        import UtilsAssembly
+        jcs = UtilsAssembly.getJcsGlobalPlc(j.Placement1, j.Reference1)
+        jcs = sestav.getGlobalPlacement().inverse().multiply(jcs)
+        os_t, os_s = jcs.Base, jcs.Rotation.multVec(App.Vector(0, 0, 1))
+        # središče iz oblike cilja in trenutne lege: obj.Shape povezave zaostaja za spremembo lege (predpomnilnik)
+        if obj.isDerivedFrom("App::Link") and obj.LinkedObject is not None:
+            import Part
+            p = obj.Placement.multVec(Part.getShape(obj.LinkedObject).BoundBox.Center)
+        else:
+            p = obj.Shape.BoundBox.Center
+        v1, v2 = p - os_t, p + premik - os_t
+        v1 = v1 - os_s * v1.dot(os_s)
+        v2 = v2 - os_s * v2.dot(os_s)
+        if v1.Length < 1e-6 or v2.Length < 1e-6:
+            return App.Placement(premik, App.Rotation())
+        kot = math.degrees(math.atan2(os_s.dot(v1.cross(v2)), v1.dot(v2)))
+    except Exception:  # noqa: BLE001
+        return App.Placement(premik, App.Rotation())
+    return App.Placement(os_t, App.Rotation(os_s, kot)).multiply(App.Placement(-os_t, App.Rotation()))
+
+
+def _sestav_premakni(stanje, podatki):
+    """Premik kosa sestava z vlečenjem v brskalniku (od 2026-10-19, POST /sestav/premakni): kos je neposredni član
+    sestava (povezava ali telo v Assembly::AssemblyObject), premik (dx, dy, dz) je v mm v globalnih koordinatah.
+    Lega se spremeni, nato reševalnik sestava spoje spet uveljavi (kos na tleh ostane na tleh). Prizemljen kos se
+    ne premika. Vrne {ok, sporocilo, resitev}; ena transakcija (Razveljavi)."""
+    ime_dok = str(podatki.get("dokument") or "")
+    doc = None
+    for d in App.listDocuments().values():
+        if ime_dok and ime_dok in (d.Name, d.Label):
+            doc = d
+            break
+    doc = doc or App.ActiveDocument
+    if doc is None:
+        return {"ok": False, "sporocilo": "Ni odprtega dokumenta."}
+    obj = doc.getObject(str(podatki.get("objekt") or ""))
+    if obj is None or not hasattr(obj, "Placement"):
+        return {"ok": False, "sporocilo": "Kosa ni ali nima lege."}
+    sestav = None
+    for p in obj.InList:
+        if p.TypeId == "Assembly::AssemblyObject" and obj in p.Group:
+            sestav = p
+            break
+    if sestav is None:
+        return {"ok": False, "sporocilo": "%s ni kos sestava; z vlečenjem se premikajo le kosi v sestavu." % obj.Label}
+    spoji = [j for s in sestav.Group if s.TypeId == "Assembly::JointGroup" for j in s.Group]
+    prizemljeni = {getattr(j, "ObjectToGround", None) for j in spoji} - {None}
+    if obj in prizemljeni:
+        return {"ok": False, "sporocilo": "%s je prizemljen; premakni druge kose." % obj.Label}
+    # toga skupina: kosi, povezani s togimi spoji, se premaknejo skupaj; sicer reševalnik povlečeni kos le potegne
+    # nazaj k ostalim (vrata s steklom, ležajem in krilom tečaja so se odprla za 3° namesto za vlek, 2026-10-29)
+    skupina = {obj}
+    rast = True
+    while rast:
+        rast = False
+        for j in spoji:
+            if getattr(j, "JointType", "") != "Fixed" or not getattr(j, "Activated", True) or getattr(j, "Suppressed", False):
+                continue
+            kosa = [r[0] for r in (getattr(j, "Reference1", None), getattr(j, "Reference2", None)) if r]
+            if len(kosa) == 2 and (kosa[0] in skupina) != (kosa[1] in skupina):
+                skupina.update(kosa)
+                rast = True
+    if skupina & prizemljeni:
+        return {"ok": False, "sporocilo": "%s je s togim spojem pritrjen na prizemljen kos; premakni gibljive kose." % obj.Label}
+    premik = App.Vector(float(podatki.get("dx") or 0), float(podatki.get("dy") or 0), float(podatki.get("dz") or 0))
+    if premik.Length < 1e-6:
+        return {"ok": True, "sporocilo": "Brez premika.", "resitev": 0}
+    try:
+        premik = sestav.getGlobalPlacement().Rotation.inverted().multVec(premik)   # v koordinate sestava
+    except Exception:  # noqa: BLE001
+        pass
+    doc.openTransaction("Premik kosa: " + obj.Label)
+    try:
+        gib = _premik_skupine(sestav, spoji, skupina, obj, premik)
+        for kos in skupina:
+            if hasattr(kos, "Placement"):
+                kos.Placement = gib.multiply(kos.Placement)
+        doc.recompute()
+        resitev = sestav.solve()
+        doc.recompute()
+        doc.commitTransaction()
+    except Exception:
+        doc.abortTransaction()
+        raise
+    stanje.umazano = True
+    sporocilo = "%s premaknjen za (%.0f, %.0f, %.0f) mm" % (obj.Label, premik.x, premik.y, premik.z)
+    if len(skupina) > 1:
+        sporocilo += " (s togo povezanimi kosi: %d)" % (len(skupina) - 1)
+    if resitev:
+        sporocilo += "; reševalnik sestava javlja napako %s" % resitev
+    _log("premik: " + sporocilo)
+    return {"ok": True, "sporocilo": sporocilo, "resitev": resitev}
+
+
 # ---------------------------------------------------------------------------
 # Stanje, deljeno med nitmi
 
@@ -3000,8 +3209,9 @@ def _lastnosti_fcstd(pot, st):
     """Vrsta in prisotnost sličice (thumbnails/Thumbnail.png) iz datoteke FCStd; samo datotečni dostop, brez FreeCAD API-ja."""
     kljuc = (os.path.normcase(pot), int(st.st_mtime), st.st_size)
     r = _LASTNOSTI_FCSTD.get(kljuc)
-    if r is None:
-        r = {"vrsta": "", "teles": 0, "povezav": 0, "slicica": False, "verzija": 0, "povezane": []}
+    if r is None or "pripada" not in r:   # vnosi pred 2026-10-29 nimajo dobavitelja in Pripada: preberi znova (enkrat)
+        r = {"vrsta": "", "teles": 0, "povezav": 0, "slicica": False, "verzija": 0, "povezane": [],
+             "proizvajalec": "", "dobavitelj": "", "pripada": ""}
         povezane = set()   # datoteke, na katere kažejo povezave (XLink file="…FCStd"); za glavni sestav projekta
         try:
             with zipfile.ZipFile(pot) as z:
@@ -3014,12 +3224,19 @@ def _lastnosti_fcstd(pot, st):
                     # shranjevanje (»file is marked as read-only«, FileInfo::isWritable odpre brez deljenja)
                     with z.open("Document.xml") as tok:
                         v_meta = v_objektih = False   # Meta dokumenta je pred <ObjectData>; Item z istim ključem pri objektih ne šteje
+                        # Proizvajalec / Dobavitelj / Pripada (skupina Kos) za kartice knjižnice; prva neprazna
+                        lastnost_kosa = None
                         for dogodek, e in ET.iterparse(tok, events=("start", "end")):
                             if dogodek == "start":
                                 if e.tag == "ObjectData":
                                     v_objektih = True
                                 elif e.tag == "Property" and not v_objektih:
                                     v_meta = e.get("name") == "Meta"
+                                elif e.tag == "Property":
+                                    ime_l = e.get("name")
+                                    lastnost_kosa = ime_l.lower() if ime_l in ("Proizvajalec", "Dobavitelj", "Pripada") else None
+                                elif e.tag == "String" and lastnost_kosa and not r[lastnost_kosa]:
+                                    r[lastnost_kosa] = str(e.get("value", "")).strip()
                                 elif e.tag == "Item" and v_meta and e.get("key") == KLJUC_VERZIJE:
                                     try:
                                         r["verzija"] = int(str(e.get("value", "0")).strip() or 0)
@@ -3242,6 +3459,73 @@ def _povecaj_verzijo(doc):
     return v
 
 
+# Vrstni red seznama odprtih dokumentov (želja uporabnika 2026-10-19): sestavi z največ podsestavi zgoraj, nato deli od
+# največjega do najmanjšega. Podsestav = povezava (App::Link, Assembly::AssemblyLink) na objekt v drugem dokumentu, ki
+# je sestav (Assembly ali dokument vrste »sestav«); šteje se količina povezav. Velikost = diagonala okvirja teles (mm).
+# Okvir se računa največ vsakih 10 min na dokument (seznam se gradi vsaki 2 s; BoundBox pri 268 dokumentih ni zastonj).
+_RAZVRSTITEV = {}   # ime dokumenta -> (čas, število objektov, {podsestavov, velikost, mere})
+
+
+def _je_sestav_cilj(obj, vrste_dokumentov):
+    """Ali je cilj povezave sestav: Assembly, ali App::Part/koren v dokumentu vrste »sestav«."""
+    if obj is None:
+        return False
+    if obj.TypeId.startswith("Assembly::"):
+        return True
+    ime = obj.Document.Name
+    if ime not in vrste_dokumentov:
+        try:
+            vrste_dokumentov[ime] = _vrsta_iz_tipov(x.TypeId for x in obj.Document.Objects)["vrsta"]
+        except Exception:  # noqa: BLE001
+            vrste_dokumentov[ime] = ""
+    return vrste_dokumentov[ime] == "sestav"
+
+
+def _razvrstitev_dokumenta(doc, vrsta):
+    """{podsestavov, velikost, mere} za vrstni red; predpomnjeno po dokumentu (10 min ali ob spremembi števila objektov)."""
+    zdaj = time.time()
+    objektov = len(doc.Objects)
+    z = _RAZVRSTITEV.get(doc.Name)
+    if z and zdaj - z[0] < 600 and z[1] == objektov:
+        return dict(z[2])
+    r = {"podsestavov": 0, "velikost": 0.0, "mere": None}
+    try:
+        if vrsta == "sestav":
+            vrste = {doc.Name: "sestav"}
+            for o in doc.Objects:
+                if o.TypeId in ("App::Link", "Assembly::AssemblyLink"):
+                    cilj = getattr(o, "LinkedObject", None)
+                    if cilj is not None and cilj.Document is not doc and _je_sestav_cilj(cilj, vrste):
+                        n = getattr(o, "ElementCount", 0) or 0
+                        r["podsestavov"] += n if n > 1 else 1
+        okvir = None
+        # okvir le za dele in le iz teles: Shape povezave ali App::Part v sestavu se gradi ob vsakem branju znova (sekunde)
+        for o in (doc.Objects if vrsta == "del" and not getattr(doc, "Partial", False) else ()):
+            if o.TypeId not in TIPI_TELES:
+                continue
+            try:
+                s = o.Shape   # brez isValid(): BRepCheck na velikem telesu traja sekunde, okvir ga ne potrebuje
+                if s.isNull():
+                    continue
+                b = s.BoundBox
+                if not b.isValid() or b.DiagonalLength > 1e9:
+                    continue
+                b = App.BoundBox(b)
+                if okvir is None:
+                    okvir = b
+                else:
+                    okvir.add(b)
+            except Exception:  # noqa: BLE001
+                continue
+        if okvir is not None:
+            r["velikost"] = round(okvir.DiagonalLength, 1)
+            r["mere"] = [round(okvir.XLength, 1), round(okvir.YLength, 1), round(okvir.ZLength, 1)]
+    except Exception:  # noqa: BLE001
+        _log("razvrstitev %s: %s" % (doc.Name, traceback.format_exc().splitlines()[-1]))
+    _RAZVRSTITEV[doc.Name] = (zdaj, objektov, r)
+    return dict(r)
+
+
 def zgradi_projekte():
     aktivni = App.ActiveDocument.Name if App.ActiveDocument is not None else ""
     odprti = []
@@ -3253,8 +3537,12 @@ def zgradi_projekte():
         if getattr(d, "Partial", False):
             o["delen"] = True   # odprt prek povezave, naložen le delno: FreeCAD ga ne shrani (delno.py)
         o.update(_vrsta_iz_tipov(x.TypeId for x in d.Objects))
+        o.update(_razvrstitev_dokumenta(d, o["vrsta"]))   # podsestavov / velikost za vrstni red seznama (2026-10-19)
         o["verzija"] = verzija_dokumenta(d)
         o["samodejno"] = samodejno.velja_za(d)   # vsaka sprememba se shrani sama -> nova različica (brez gumba Shrani)
+        pogled = (d.Meta or {}).get("SlicicaPogled", "")
+        if pogled:
+            o["slicicaPogled"] = pogled   # smer sličice (ime standardnega pogleda, npr. »Desno« za elektro plošče), sicer izometrija
         if d.FileName:
             try:
                 # PDM: zaklep datoteke (iz predpomnilnika; ob prvem odprtju se sproži samodejni zaklep v ozadju)
@@ -3334,6 +3622,68 @@ def zgradi_knjiznico():
     return {"baza": _pot(MAPA_BAZE), "kategorije": kategorije}
 
 
+def _kosi_baze():
+    """{ime datoteke brez končnice: pot} vseh kosov v bazi (brez map _*, .*, DXF)."""
+    kosi = {}
+    for koren, podmape, imena in os.walk(MAPA_BAZE):
+        podmape[:] = [d for d in podmape if not d.startswith((".", "_")) and d not in MAPE_BAZE_IZPUSCENE]
+        for ime in imena:
+            if ime.lower().endswith(".fcstd"):
+                kosi[os.path.splitext(ime)[0]] = os.path.join(koren, ime)
+    return kosi
+
+
+def _knjiznica_pripni(stanje, pot, k):
+    """Spremljajoči kos (od 2026-10-29): lastnost Pripada na glavnem objektu kosa = ime glavnega kosa (več z »;«).
+    Knjižnica ga pokaže v skupini z glavnim kosom, vstaviti ga je še vedno mogoče posebej. Pri pripenjanju gre datoteka
+    v mapo glavnega kosa (baza._prestavi: sestavi, ki ga uporabljajo, se preusmerijo); prazen `k` kos odpne."""
+    import baza
+    kosi = _kosi_baze()
+    glavni = []
+    for del_k in [x.strip() for x in k.split(";") if x.strip()]:
+        zadetki = [i for i in kosi if i.lower() == del_k.lower()] or [i for i in kosi if del_k.lower() in i.lower()]
+        zadetki = [i for i in zadetki if not _ista_pot(kosi[i], pot)]
+        if len(zadetki) != 1:
+            return {"ok": False, "sporocilo": "Kosa »%s« v bazi ni ali ni enoličen (%s)." % (
+                del_k, ", ".join(zadetki[:6]) or "ni zadetkov")}
+        glavni.append(zadetki[0])
+    doc = next((d for d in App.listDocuments().values() if _ista_pot(d.FileName, pot)), None)
+    odprt_zdaj = doc is None
+    if doc is None:
+        doc = App.openDocument(pot, True)
+    if getattr(doc, "Partial", False):
+        delno.nalozi_in_javi(stanje, doc)
+    t = _tarca_baze(doc)
+    if t is None:
+        return {"ok": False, "sporocilo": "»%s« nima glavnega objekta." % doc.Label}
+    if "Pripada" not in t.PropertiesList:
+        t.addProperty("App::PropertyString", "Pripada", "Kos", "Glavni kos v bazi, h kateremu ta kos spada (ime, več z ;)")
+    t.Pripada = "; ".join(glavni)
+    stanje.tiho_shranjevanje = True
+    try:
+        doc.save()
+        if IMA_OKNO:
+            Gui.getDocument(doc.Name).Modified = False
+    finally:
+        stanje.tiho_shranjevanje = False
+    premaknjen = ""
+    if glavni:
+        mapa = os.path.dirname(kosi[glavni[0]])
+        if os.path.normcase(os.path.normpath(os.path.dirname(pot))) != os.path.normcase(os.path.normpath(mapa)):
+            nova = os.path.join(mapa, os.path.basename(pot))
+            if os.path.exists(nova):
+                return {"ok": False, "sporocilo": "V mapi kosa »%s« že je datoteka z imenom »%s«." % (glavni[0], os.path.basename(pot))}
+            shranjeni, _ = baza._prestavi(stanje, doc, nova)
+            premaknjen = " Premaknjen k njemu (%s)%s." % (os.path.relpath(mapa, MAPA_BAZE).replace("\\", "/"),
+                                                         ("; preusmerjeni sestavi: " + ", ".join(shranjeni)) if shranjeni else "")
+    if odprt_zdaj and doc.Name in App.listDocuments():
+        App.closeDocument(doc.Name)
+    if not glavni:
+        return {"ok": True, "sporocilo": "»%s« ni več pripet k nobenemu kosu." % os.path.splitext(os.path.basename(pot))[0]}
+    return {"ok": True, "sporocilo": "»%s« spada k »%s«.%s" % (os.path.splitext(os.path.basename(pot))[0],
+                                                             "«, »".join(glavni), premaknjen)}
+
+
 def _knjiznica_dejanje(stanje, podatki):
     dejanje = podatki.get("dejanje", "")
     pot = podatki.get("pot", "")
@@ -3342,6 +3692,8 @@ def _knjiznica_dejanje(stanje, podatki):
     if dejanje == "odpri":
         _projekt_dejanje(stanje, {"dejanje": "odpri", "pot": pot})
         return {"ok": True, "sporocilo": "Odprt: %s" % os.path.splitext(os.path.basename(pot))[0]}
+    if dejanje == "pripni":
+        return _knjiznica_pripni(stanje, pot, str(podatki.get("k", "") or "").strip())
     if dejanje != "vstavi":
         return {"ok": False, "sporocilo": "Neznano dejanje: %s" % dejanje}
     # Ciljni dokument je tisti, ki ga brskalnik kaže kot aktivnega (ime v zahtevi), ne App.ActiveDocument: drugo sejo
@@ -3370,6 +3722,10 @@ def _knjiznica_dejanje(stanje, podatki):
     povezava = asm.newObject(tip, ime) if asm is not None else cilj_doc.addObject(tip, ime)
     povezava.LinkedObject = kos
     povezava.Label = kos.Label
+    import drevo as _drevo   # nastavljiva mera (letev DIN, kanal): povezava jo nosi zase, brskalnik takoj vpraša zanjo
+    mere = _drevo._mere_povezave(povezava) if tip == "App::Link" else []
+    if mere:
+        povezava.LinkCopyOnChange = "Tracking"
     cilj_doc.recompute()
     App.setActiveDocument(cilj_doc.Name)
     if IMA_OKNO:
@@ -3380,7 +3736,8 @@ def _knjiznica_dejanje(stanje, podatki):
             _log("knjižnica: izbira: %r" % e)
     kam = ("v sestav »%s«" % asm.Label) if asm is not None else ("v dokument »%s«" % cilj_doc.Label)
     _log("knjižnica: vstavljen %s %s" % (kos.Label, kam))
-    return {"ok": True, "sporocilo": "»%s« vstavljen %s." % (kos.Label, kam), "ime": povezava.Name}
+    return {"ok": True, "sporocilo": "»%s« vstavljen %s." % (kos.Label, kam), "ime": povezava.Name, "oznaka": povezava.Label,
+            "mere": mere}
 
 
 def _kosi_za_tisk(doc, imena, napake):
@@ -4360,6 +4717,10 @@ class Stanje:
             rezultat = toplota_modul.glavna(self, podatki)
             if odgovor is not None:
                 odgovor["rezultat"] = rezultat
+        elif ukaz == "premik":
+            # vlečenje kosa sestava v brskalniku (POST /sestav/premakni): lega + reševalnik; brskalnik počaka
+            if odgovor is not None:
+                odgovor["rezultat"] = _sestav_premakni(self, podatki)
         elif ukaz == "meritev":
             # mere izbire za statusno vrstico brskalnika (mcp_orodja.meritev_izbire); brskalnik počaka
             if odgovor is not None:
@@ -4559,8 +4920,10 @@ def _videz_kljuc(doc):
             barve = tuple(tuple(m.DiffuseColor[:3]) for m in vo.ShapeAppearance) if hasattr(vo, "ShapeAppearance") else ()
         except Exception:  # noqa: BLE001
             barve = ()
+        # ploščice (Ploscica, PloscicaSirina ...): sprememba v urejevalniku lastnosti ne spremeni oblike ne barve
+        plosc = tuple(str(getattr(obj, p, "")) for p in videz.PL_LASTNOSTI if p in obj.PropertiesList)
         odtis.append((obj.Name, bool(getattr(vo, "Visibility", True)), getattr(vo, "Transparency", 0), barve,
-                      tuple(_barva_robov(obj) or ())))
+                      tuple(_barva_robov(obj) or ())) + ((plosc,) if plosc else ()))
     return (doc.Name, tuple(odtis))
 
 
@@ -4621,6 +4984,22 @@ class Zahteva(http.server.BaseHTTPRequestHandler):
             with open(os.path.join(MAPA, "index.html"), "rb") as f:
                 stran = f.read().replace(b"__ZETON__", ZETON.encode("ascii"))
             self._odgovor(stran, "text/html; charset=utf-8")
+        elif pot.startswith("/three/"):
+            # three.js lokalno (lastno/splet/three/<verzija>/, prenos z three_prenos v 26. 10. 2026): prej z jsDelivr ob
+            # vsakem odprtju strani (~6 s); pot ima različico, zato brskalnik datoteke hrani eno leto brez preverjanja.
+            koren = os.path.abspath(os.path.join(MAPA, "three"))
+            datoteka = os.path.abspath(os.path.join(MAPA, os.path.normpath(pot.lstrip("/"))))
+            if not datoteka.startswith(koren + os.sep) or not os.path.isfile(datoteka):
+                self._odgovor(b"", "text/plain", 404)
+                return
+            with open(datoteka, "rb") as f:
+                telo = f.read()
+            self.send_response(200)
+            self.send_header("Content-Type", "text/javascript; charset=utf-8")
+            self.send_header("Content-Length", str(len(telo)))
+            self.send_header("Cache-Control", "public, max-age=31536000, immutable")
+            self.end_headers()
+            self.wfile.write(telo)
         elif pot == "/ikona.svg":
             with open(os.path.join(MAPA, "ikona.svg"), "rb") as f:
                 self._odgovor(f.read(), "image/svg+xml", predpomni=True)
@@ -4649,6 +5028,18 @@ class Zahteva(http.server.BaseHTTPRequestHandler):
             import urllib.parse
             od = (urllib.parse.parse_qs(self.path.partition("?")[2]).get("od") or [""])[0]
             self._odgovor(STANJE.posnetek_delni(int(od)) if od.isdigit() else STANJE.posnetek())
+        elif pot == "/ploscica/slika":
+            # Slika teksture ploščice za 3D pogled (videz.py, ploscice.py); le slike materialov v knjižnici _Ploscice
+            # ali v mapi, ki jo uporablja kak kos s polno potjo.
+            import urllib.parse
+            q = urllib.parse.parse_qs(self.path.partition("?")[2])
+            iskana = (q.get("pot") or [""])[0]
+            if not ploscice.dovoljena_slika(iskana):
+                self._odgovor(b"", "text/plain", 404)
+                return
+            with open(iskana, "rb") as f:
+                telo = f.read()
+            self._odgovor(telo, "image/png" if iskana.lower().endswith(".png") else "image/jpeg", predpomni=True)
         elif pot == "/zgradba":
             # Drevesna shema sestava čez datoteke (povezave App::Link); zgradi jo glavna nit.
             import urllib.parse
@@ -4840,6 +5231,18 @@ class Zahteva(http.server.BaseHTTPRequestHandler):
         if pot == "/mcp/odgovor":
             # stran v brskalniku odgovarja na zahtevo orodja (slika pogleda, kamera, okno Pripravi)
             self._odgovor(json.dumps({"ok": mcp_orodja.brskalnik_odgovor(podatki)}).encode("utf-8"))
+            return
+        if pot == "/sestav/premakni":
+            # vlečenje kosa sestava po tleh v brskalniku (od 2026-10-19): glavna nit premakne lego in požene reševalnik
+            odgovor = {"konec": threading.Event(), "izpis": "", "napaka": "", "rezultat": None}
+            STANJE.vrsta.put(("premik", podatki, odgovor))
+            if not odgovor["konec"].wait(30):
+                telo = {"ok": False, "sporocilo": "FreeCAD še premika kos."}
+            elif odgovor["napaka"]:
+                telo = {"ok": False, "sporocilo": odgovor["napaka"].strip().splitlines()[-1]}
+            else:
+                telo = odgovor["rezultat"] or {"ok": False, "sporocilo": "Brez odgovora."}
+            self._odgovor(json.dumps(telo, ensure_ascii=False).encode("utf-8"))
             return
         if pot == "/meritev":
             # Mere trenutne izbire (statusna vrstica, kot Onshape): glavna nit izmeri, brskalnik počaka največ 30 s.

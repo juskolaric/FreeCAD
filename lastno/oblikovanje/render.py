@@ -12,6 +12,8 @@
 # Scena se normira: središče modela v izhodišče, polmer 1. Luči, tla in kamera so zato neodvisni od velikosti kosa
 # (FreeCAD riše v mm, Oblikovanje tudi). Ozadje se doda šele na sliki (numpy): render ima prozorno ozadje in tla, ki
 # lovijo le senco, zato senca pade na katerokoli ozadje. Izpis "NAPREDEK a/b" in "SLICICA i/n" bere upodabljanje.py.
+# Ploščice: objekt posnetka z `teksture` in `uv` (UV že v merilu, lastno/splet/ploscice.py) dobi PBR material iz tekstur
+# (material_ploscice); ploskev pove svojo teksturo z indeksom 11 (1 + indeks, 0 = brez).
 
 import json
 import math
@@ -125,6 +127,78 @@ def material_videza(r, g, b, kov, hrap, zrn, vzorec):
     return mat
 
 
+IZBOKLINE = []        # vozli Bump ploščic: Distance (svetovne enote) se nastavi po normiranju scene (normiraj)
+GLOBINA_FUGE = 1.5    # mm: višina, ki jo pomeni bela barva slike Displacement
+
+
+def _vticnica(vozel, ime, vrsta, izhod=False):
+    """Vtičnica vozla po imenu in vrsti (ShaderNodeMix ima več vhodov A in B za različne vrste podatkov)."""
+    for v in (vozel.outputs if izhod else vozel.inputs):
+        if v.name == ime and v.type == vrsta:
+            return v
+    return None
+
+
+def material_ploscice(t):
+    """PBR material ploščice iz tekstur ambientCG (posnetek: teksture[i] = {ime, slike, hrapavost}); slike gredo po
+    preslikavi UV »UV« (posnetek nosi UV v merilu, 1 = ena slika). Barva (krat AO), hrapavost, normala (OpenGL) in
+    izboklina iz slike Displacement."""
+    mat = bpy.data.materials.new("Ploscica " + (t.get("ime") or ""))
+    bsdf = principled(mat)
+    drevo, povezi = mat.node_tree.nodes, mat.node_tree.links
+    slike = t.get("slike") or {}
+
+    def slika(vloga, barvna):
+        pot = slike.get(vloga)
+        if not pot or not os.path.isfile(pot):
+            return None
+        n = drevo.new("ShaderNodeTexImage")
+        n.image = bpy.data.images.load(pot, check_existing=True)
+        if not barvna:
+            n.image.colorspace_settings.name = "Non-Color"
+        n.interpolation = "Cubic"
+        return n
+
+    vhod(bsdf, "Metallic").default_value = 0.0
+    vhod(bsdf, "Roughness").default_value = float(t.get("hrapavost") or 0.35)
+    barva = slika("barva", True)
+    if barva:
+        izhod_barve = barva.outputs["Color"]
+        ao = slika("ao", False)
+        if ao:
+            mesaj = drevo.new("ShaderNodeMix")
+            mesaj.data_type = "RGBA"
+            mesaj.blend_type = "MULTIPLY"
+            mesaj.inputs["Factor"].default_value = 0.6   # path tracing senči kote sam; AO le poudari fuge
+            povezi.new(barva.outputs["Color"], _vticnica(mesaj, "A", "RGBA"))
+            povezi.new(ao.outputs["Color"], _vticnica(mesaj, "B", "RGBA"))
+            izhod_barve = _vticnica(mesaj, "Result", "RGBA", izhod=True)
+        povezi.new(izhod_barve, vhod(bsdf, "Base Color"))
+    hrap = slika("hrapavost", False)
+    if hrap:
+        povezi.new(hrap.outputs["Color"], vhod(bsdf, "Roughness"))
+    normala = None
+    nslika = slika("normala", False)
+    if nslika:
+        normala = drevo.new("ShaderNodeNormalMap")
+        normala.space = "TANGENT"
+        normala.uv_map = "UV"
+        normala.inputs["Strength"].default_value = 1.0
+        povezi.new(nslika.outputs["Color"], normala.inputs["Color"])
+    visina = slika("visina", False)
+    if visina:
+        izb = drevo.new("ShaderNodeBump")
+        izb.inputs["Strength"].default_value = 0.6
+        povezi.new(visina.outputs["Color"], izb.inputs["Height"])
+        if normala:
+            povezi.new(normala.outputs["Normal"], izb.inputs["Normal"])
+        povezi.new(izb.outputs["Normal"], vhod(bsdf, "Normal"))
+        IZBOKLINE.append(izb)
+    elif normala:
+        povezi.new(normala.outputs["Normal"], vhod(bsdf, "Normal"))
+    return mat
+
+
 # ---------------------------------------------------------------------------------------------------------------
 # Scena iz posnetka spletnega FreeCAD-a
 
@@ -144,8 +218,19 @@ def scena_iz_posnetka(pot, premiki):
         # indeks materiala po trikotnikih iz ploskev posnetka
         indeksi = np.zeros(len(trik), dtype=np.int32)
         sloti = []
+        teksture = o.get("teksture") or []
         for p in o.get("ploskve", []):
             t0, nt = int(p[2]), int(p[3])
+            ti = int(p[11]) if len(p) > 11 else 0      # ploščica: 1 + indeks v teksture objekta
+            if 0 < ti <= len(teksture):
+                kljuc = ("ploscica", teksture[ti - 1].get("mapa"))
+                if kljuc not in materiali:
+                    materiali[kljuc] = material_ploscice(teksture[ti - 1])
+                mat = materiali[kljuc]
+                if mat not in sloti:
+                    sloti.append(mat)
+                indeksi[t0:t0 + nt] = sloti.index(mat)
+                continue
             videz = list(p[4:11])
             videz = tuple(round(float(x), 3) for x in videz + [0.8, 0.8, 0.8, 0.15, 0.42, 0, 0][len(videz):])
             if videz not in materiali:
@@ -162,6 +247,12 @@ def scena_iz_posnetka(pot, premiki):
         mreza.polygons.add(len(trik))
         mreza.polygons.foreach_set("loop_start", np.arange(0, trik.size, 3, dtype=np.int32))
         mreza.update()
+        uv = o.get("uv")
+        if teksture and uv and len(uv) == 2 * len(tocke):
+            # UV ploščic v merilu (posnetek, ploscice.uv_objekta): na zanko iz točke trikotnika; pred validate, da
+            # ostane usklajen s trikotniki, ki jih validate morda odstrani
+            uvt = np.asarray(uv, dtype=np.float32).reshape(-1, 2)
+            mreza.uv_layers.new(name="UV").data.foreach_set("uv", uvt[trik.ravel()].ravel())
         mreza.validate()
         for m in sloti:
             mreza.materials.append(m)
@@ -223,6 +314,8 @@ def normiraj(objekti):
     bpy.context.view_layer.update()
     preslikaj = lambda p: (Vector(p) - sredisce) * s  # noqa: E731
     dno = (mn.z - sredisce.z) * s
+    for izb in IZBOKLINE:   # globina fug ploščic v mm -> svetovne enote normirane scene
+        izb.inputs["Distance"].default_value = GLOBINA_FUGE * s
     izpis("NORMIRANO polmer %.3f, dno %.3f" % (polmer, dno))
     return preslikaj, s, dno
 

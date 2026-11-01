@@ -122,6 +122,9 @@ def drevo_dokumenta(doc, ikona_uri=None, kljuc_oblike=None):
                                            "sestav": cilj.TypeId in ("Assembly::AssemblyObject", "App::Part")}
             if cilj.TypeId != "Assembly::AssemblyObject":   # del: sestav ga lahko vstavi kot vrsto več kosov
                 vozli[obj.Name]["kosov"] = max(1, int(getattr(obj, "ElementCount", 0) or 0))
+            mere = _mere_povezave(obj)
+            if mere:   # nastavljiva mera kosa iz baze (dolžina letve, kanala) samo za to povezavo
+                vozli[obj.Name]["mere"] = mere
             if je_napajalnik(obj, cilj):   # napajalnik v sestavu: kaj napaja (lastnost Napaja na povezavi)
                 vozli[obj.Name]["napajalnik"] = True
                 vozli[obj.Name]["napaja"] = list(getattr(obj, "Napaja", []) or [])
@@ -129,7 +132,8 @@ def drevo_dokumenta(doc, ikona_uri=None, kljuc_oblike=None):
             std = oznaka_vozla(obj, tarce)   # kos v svoji datoteki: standardni / v bazi (meni Standardni del)
             if std is not None:
                 vozli[obj.Name]["standardni"] = std
-    koreni = [o.Name for o in doc.Objects if o.Name not in zahtevani]
+    skrite = _skrite_kopije(doc)
+    koreni = [o.Name for o in doc.Objects if o.Name not in zahtevani and o.Name not in skrite]
     return {"koreni": koreni, "vozli": vozli, "telesa": _telesa(doc, koreni, kljuc_oblike)}
 
 
@@ -261,15 +265,100 @@ def _v_urejanju(doc):
 
 
 def _cilj_povezave(obj):
-    """Objekt v drugem dokumentu, na katerega kaže povezava (App::Link na podsestav ali del), sicer None."""
+    """Objekt v drugem dokumentu, na katerega kaže povezava (App::Link na podsestav ali del), sicer None.
+    Povezava z lastno mero (LinkCopyOnChange) kaže na zasebno kopijo v sestavu; takrat je cilj izvirnik v bazi."""
     if obj.TypeId != "App::Link":
         return None
     cilj = getattr(obj, "LinkedObject", None)
     if isinstance(cilj, tuple):
         cilj = cilj[0]
+    if cilj is not None and cilj.Document is obj.Document:
+        cilj = getattr(obj, "LinkCopyOnChangeSource", None)
     if cilj is None or cilj.Document is obj.Document:
         return None
     return cilj
+
+
+# ---------------------------------------------------------------------------- nastavljive mere (od 2026-10-29)
+# Kos v bazi ima mero z oznako CopyOnChange (npr. Dolzina letve DIN in kabelskega kanala, lastna_elektro._nastavljiva).
+# Povezava v sestavu z LinkCopyOnChange = Tracking pokaže to lastnost tudi na sebi; ob spremembi FreeCAD v sestavu
+# naredi zasebno kopijo kosa (skrita skupina CopyOnChangeGroup), ostale lastnosti kopija prevzema od izvirnika.
+# Tako je v bazi en kos, sestav pa vzame tako dolžino, kot jo rabi (kot konfiguracija v SolidWorksu).
+OZNAKE_MER = {"Dolzina": "Dolžina", "Sirina": "Širina", "Visina": "Višina"}
+TIPI_MER = ("App::PropertyLength", "App::PropertyDistance", "App::PropertyFloat")
+
+
+def _stevilo(x):
+    return float(getattr(x, "Value", x))
+
+
+def _mere_povezave(obj):
+    """[{lastnost, oznaka, vrednost, privzeto}] nastavljivih mer kosa, na katerega kaže povezava, sicer []."""
+    vir = _cilj_povezave(obj)
+    if vir is None:
+        return []
+    mere = []
+    for ime in vir.PropertiesList:
+        try:
+            if "CopyOnChange" not in vir.getPropertyStatus(ime) or vir.getTypeIdOfProperty(ime) not in TIPI_MER:
+                continue
+            privzeto = _stevilo(getattr(vir, ime))
+            vrednost = _stevilo(getattr(obj, ime)) if ime in obj.PropertiesList else privzeto
+        except Exception:  # noqa: BLE001
+            continue
+        mere.append({"lastnost": ime, "oznaka": OZNAKE_MER.get(ime, ime), "vrednost": round(vrednost, 3),
+                     "privzeto": round(privzeto, 3)})
+    return mere
+
+
+def _skrite_kopije(doc):
+    """Imena zasebnih kopij povezav z lastno mero in njihovih skupin: v drevesu niso koreni (kos je povezava)."""
+    imena = set()
+    for o in doc.Objects:
+        if getattr(o, "LinkCopyOnChangeSource", None) is None:
+            continue
+        cilj = getattr(o, "LinkedObject", None)
+        if cilj is not None and getattr(cilj, "Document", None) is doc:
+            imena.add(cilj.Name)
+        g = getattr(o, "LinkCopyOnChangeGroup", None)
+        if g is not None:
+            imena.add(g.Name)
+            for x in list(getattr(g, "ElementList", None) or []) + list(getattr(g, "OutList", None) or []):
+                imena.add(x.Name)
+    return imena
+
+
+def nastavi_mero(obj, lastnost, vrednost):
+    """Nastavi mero kosa samo za to povezavo; vrne (ok, sporočilo). Kliče tudi knjižnica ob vstavljanju."""
+    mere = {m["lastnost"]: m for m in _mere_povezave(obj)}
+    if lastnost not in mere:
+        return False, "»%s« nima nastavljive mere %s." % (obj.Label, lastnost)
+    try:
+        v = float(str(vrednost).replace(",", ".").replace("mm", "").strip())
+    except ValueError:
+        return False, "Neveljavna mera: %s" % vrednost
+    if v <= 0:
+        return False, "Mera mora biti večja od 0."
+    doc = obj.Document
+    doc.openTransaction("Mera " + mere[lastnost]["oznaka"])
+    try:
+        if obj.LinkCopyOnChange == "Disabled":
+            obj.LinkCopyOnChange = "Tracking"
+        if lastnost not in obj.PropertiesList:
+            doc.recompute()
+        setattr(obj, lastnost, v)
+        doc.recompute()
+        # zasebna kopija ob prvi spremembi (ali ponovni uskladitvi z izvirnikom) ostane z obliko izvirnika, dokler je
+        # ne preračunaš sama: doc.recompute je preskoči (preverjeno 29. 10. na letvi DIN)
+        kopija = obj.LinkedObject
+        if kopija is not None and kopija.Document is doc:
+            kopija.touch()
+            kopija.recompute()
+            doc.recompute()
+    finally:
+        doc.commitTransaction()
+    return True, "»%s«: %s %s mm." % (obj.Label, mere[lastnost]["oznaka"].lower(),
+                                         ("%.3f" % v).rstrip("0").rstrip(".").replace(".", ","))
 
 
 def _odpri_povezano(stanje, cilj):
@@ -401,7 +490,8 @@ def _nastavi_kosov(stanje, obj, n):
 
 def drevo_dejanje(stanje, podatki):
     """POST /drevo: {dejanje: vidnost, ime, vidno} | {dejanje: lastnost, ime, lastnost, vrednost} | {dejanje: uredi, ime}
-    | {dejanje: kosov, ime, stevilo} | {dejanje: napaja, ime, porabniki: [imena ali besedilo]}."""
+    | {dejanje: kosov, ime, stevilo} | {dejanje: napaja, ime, porabniki: [imena ali besedilo]}
+    | {dejanje: mera, ime, lastnost, vrednost} (nastavljiva mera kosa samo za to povezavo)."""
     doc = App.ActiveDocument
     if doc is None:
         return
@@ -426,6 +516,9 @@ def drevo_dejanje(stanje, podatki):
         _uredi(stanje, obj)
     elif dejanje == "kosov":
         _nastavi_kosov(stanje, obj, podatki.get("stevilo", 1))
+    elif dejanje == "mera":
+        ok, sporocilo = nastavi_mero(obj, podatki.get("lastnost", ""), podatki.get("vrednost"))
+        stanje.oddaj("obvestilo", {"sporocilo": sporocilo, "slabo": not ok})
     elif dejanje == "napaja":
         _nastavi_napaja(obj, podatki.get("porabniki", []))
     stanje.umazano = True

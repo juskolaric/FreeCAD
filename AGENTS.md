@@ -231,3 +231,20 @@ FreeCAD je motor, vmesnik in grafika nastajata v brskalniku (plan, korak 8 napre
   `src/Gui/MainWindow.cpp`), `src/Main` ime programa, ikona, splash (`MainGui.cpp`), `src/Mod/<Ime>` delovne mize
   (C++ v `App/` in `Gui/`, Python ob njih; Python del ne potrebuje prevajanja).
 - Uradna navodila: https://freecad.github.io/DevelopersHandbook/ (gradnja, slog kode, prispevanje).
+
+<!-- glasnik:začetek — vpisuje Glasnik (Orodja/zaganjalnik/glasnik/src/projekti.ts); ne urejaj tu -->
+## Glasnik: ko rabiš Juša, ga pokliči na glas
+
+Na tem računalniku ves čas teče **Glasnik** (MCP strežnik `glasnik`, `http://127.0.0.1:3046/mcp`): kar mu pošlješ,
+prebere na glas skozi zvočnik; Juš odgovori na strani Glasnika in odgovor dobiš nazaj.
+
+- **Vsakič, ko od Juša karkoli rabiš** (potrditev, odločitev, podatek, prijava ali drugo dejanje) ali končaš daljše
+  delo, na katero čaka, mu to pošlji v Glasnik — **tudi, če ga vprašaš v pogovoru**, ker ne gleda vedno zaslona.
+- `vprasaj` / `ask` (vrsta `potrditev`, `izbira` z `moznosti` ali `odgovor`; `cakaj_sekund` 120–600), `sporoci` /
+  `notify` za obvestilo, `odgovor` / `get_answer`, `preklici` / `cancel`. V `od` napiši, kdo si in v katerem projektu.
+  Ko Juš odgovori v pogovoru, vprašanje v Glasniku umakni s `preklici`.
+- Besedilo za uho: ena do dve kratki slovenski povedi brez poti in kode; podrobnosti v `podrobnosti`. Nujnost
+  `pomembno` za vprašanja, `nujno` samo, ko res gori.
+- Brez orodij `glasnik` (seja starejša od Glasnika):
+  `node "C:\Users\Uporabnik\Desktop\GitHub\Orodja\zaganjalnik\glasnik\src\index.ts" povej "besedilo" --od "kdo" --pomembno`.
+<!-- glasnik:konec -->

@@ -111,7 +111,8 @@ FreeCAD je motor, vmesnik in grafika nastajata v brskalniku (plan, korak 8 napre
   ~3 min in ~300 MB; preklop na sestav nato 0,03–0,4 s namesto do 1 min ob prvem obisku.
 - Pogled (3D) se vodi kot v SolidWorksu (lasten nadzor `nadzor` v `index.html`, ne OrbitControls): srednji gumb vrti
   prosto okoli središča modela (ko je ves v pogledu), sicer okoli točke na vidni geometriji blizu sredine zaslona
-  (kot SolidWorks; vijolična oznaka med vlekom, da povečan detajl ne odleti), ali okoli točke, ki jo določi klik srednjega na model; Ctrl/Shift/Alt + srednji = premik,
+  (kot SolidWorks, da povečan detajl ne odleti), ali okoli točke, ki jo določi klik srednjega na model (vijolične oznake središča
+  vrtenja od 2026-10-29 ni več, želja uporabnika: `oznakaVrtenja` ni dodana v sceno, v `index.html` in `oblikovanje.html`); Ctrl/Shift/Alt + srednji = premik,
   povečava, sukanje; kolešček naprej oddalji (`OBRNI_KOLESCEK`), proti kazalcu; levi gumb samo izbira. Projekcija je privzeto
   **pravokotna** kot v SolidWorksu (gumb Perspektiva v vrstici pogledov ali v meniju na preslednico, stanje v `localStorage`):
   lega pogleda živi v perspektivni `camera`, pravokotna kamera se pred izrisom in žarki uskladi z njo (`kameraPogleda()`),
@@ -146,6 +147,9 @@ FreeCAD je motor, vmesnik in grafika nastajata v brskalniku (plan, korak 8 napre
   FreeCAD-ove knjižnice (Std_SetAppearance: Steel, Chrome ...) se prepozna po vrednostih (`KNJIZNICA_PBR`); (3) sicer
   satenast. **Sestav**: povezava na podsestav je en objekt posnetka, njene ploskve gredo po vrsti `getSubObjects()`
   (le vidni elementi, `isElementVisible`), zato `listi()` sestavi videz po kosih (prej je cel podsestav dobil eno barvo).
+  Ko se vsota ploskev kosov ne ujema z obliko, je bil FreeCAD-ov `_Part_ShapeCache` sestava zastarel (ne sprazni se ob spremembi
+  kosa globlje v drugi datoteki; 28. 10. Slim A brez »Ključavnica Nastavek« in ves siv): `_osvezi_obliko_sestava` v `_geometrija_kljuc`
+  ga sprazni in ključ sestava nosi število ploskev.
   Kovinske ploskve (kovinskost >= 0,5) imajo v brskalniku svoj material z okoljem ×3,2 (skupine geometrije), ker je
   okolje (0,35) za kovino pretemno. **Barva robov kosa** (od 2026-10-19): če ima kos `ViewObject.LineColor` svetlejšo od
   privzete temne (največji kanal ≥ 0,2), posnetek nosi `robBarva` in brskalnik ter rezervni izris `slika` rišeta njegove robove
@@ -154,6 +158,31 @@ FreeCAD je motor, vmesnik in grafika nastajata v brskalniku (plan, korak 8 napre
   dokumentu in vseh povezanih datotekah, nerjavno/aluminij izbere po `MaterialSW`. Vroča zamenjava funkcij v tekočem
   strežniku (brez ponovnega zagona): ast iz `streznik.py` -> `exec` v `sys.modules["streznik"].__dict__`, metode s `setattr`
   na razred; `_PREDPOMNILNIK.clear()` sproži ponovno teselacijo vseh ~140 dokumentov (minute), zato ga ne prazni brez potrebe.
+- **Ploščice (PBR teksture v merilu)** (od 2026-10-16, `lastno/splet/ploscice.py`, `videz.py`, `render.py`, `index.html`):
+  materiali ambientCG (Color, NormalGL, Roughness, Displacement, po želji AmbientOcclusion) so mape v
+  `Standardni deli/<kategorija>/_Ploscice/<id> - <opis>/` z opisom `ploscica.json` (`ploscic` [nx, ny] = koliko ploščic je
+  na sliki, `privzeto_mm`, `faza` = lega fuge od spodnjega levega kota, `barva`/`hrapavost` = povprečje). ambientCG velikosti ne
+  navaja, štetje je ročno (17 kopalniških 16. 10.); nov material: `python lastno/splet/ploscice.py zapisi "<mapa>" --ploscic NX NY
+  --privzeto Š V --pregled p.png` (sistemski Python z numpy/Pillow izmeri fazo in barvo; mrežo na `p.png` preveri na oko,
+  samodejno štetje s FFT/avtokorelacijo je zanesljivo le pri polovici tekstur). **Na kosu** (skupina Videz):
+  `Ploscica` (id »Tiles036«, ime mape ali polna pot), `PloscicaSirina`/`PloscicaVisina` (mm ene ploščice, 0 = privzeto / po
+  razmerju), `PloscicaZasuk` (°), `PloscicaPloskve` (vrstice »Face3: Tiles032 300x100 90«, »Face4: -«; prepišejo cel kos);
+  na vsebniku (App::Part) velja za vse kose. Nastavi `videz.nastavi_ploscico(obj, ime, š, v, zasuk, ploskve=None)` (ShapeAppearance
+  dobi povprečno barvo, izvirnik v `VidezIzvirni`), `POST /videz {dejanje: ploscica, ime, ploscica, sirina, visina, zasuk, ploskve}`
+  ali `{dejanje: ploscice}` (seznam), v drevesu desni klik → ◐ Videz → Ploščice (izbrane ploskve kosa → le zanje).
+  **Posnetek**: `videz.ploskve_videza` vrne 8. element (ključ ploščice), `_geometrija` → `_dodaj_ploscice`: objekt dobi
+  `teksture` [{mapa, ime, slike, hrapavost, ponovitev}], `uv` (2 na točko) in ploskev indeks 11 = 1 + indeks teksture.
+  **UV v mm** (`ploscice.uv_objekta`, en izračun za render in brskalnik): ravna ploskev v svoji ravnini (v = navpičnica kosa,
+  u = desno gledano od zunaj; vodoravna u = lokalni X kosa iz `getGlobalPlacement`), ukrivljena škatlasto po osi kosa; izhodišče
+  = najmanjši u, v ploskev iste smeri na objektu (ploščice začnejo spodaj levo s fugo, čez koplanarne ploskve zvezno);
+  1 UV = ena slika = ploscic × velikost. **Render** (`material_ploscice`): Image Texture (Cubic) po UV »UV« → Principled
+  (barva × AO 0,6, hrapavost, Normal Map tangentno, Bump iz Displacement 1,5 mm × merilo normirane scene, `IZBOKLINE`);
+  UV se zapiše pred `validate`. **Brskalnik**: `materialPloscice` (map, normalMap, roughnessMap, en material na mapo,
+  `GET /ploscica/slika?pot=` le slike materialov iz `_Ploscice`), skupine geometrije 2 + i, ploskve s ploščico imajo bele
+  barve oglišč (izbira jih še obarva). Ključ predpomnilnika (`kljuc_videza`) se spremeni le pri kosih s ploščico, `_videz_kljuc`
+  vsako sekundo vidi tudi lastnosti Ploscica* (sprememba v urejevalniku lastnosti ne spremeni oblike ne barve). Preverjeno:
+  stena 2000 × 100 × 2500 (Tiles032 300 × 100 spredaj, Tiles030 150 × 75 desno, Tiles036 200 × 200 ostalo) — na renderju
+  izmerjene vrste 100,3 mm, ploščice 299–302 mm; zgled `Standardni deli/Kopalnica/_Ploscice/_Zgled - stena s ploscicami.FCStd`.
 - Ukazi v brskalniku so tisti iz orodnih vrstic okolij `DELOVNA_OKOLJA` (Snovanje delov, Skica, Del, od 2026-10-08 Pločevina =
   dodatek SheetMetal `SMWorkbench`, če je nameščen; znanje v `lastno/raziskava/plocevina.md`) in `HITRI_DOSTOP`.
   Od 2026-10-09 so v brskalniku **vsa** nameščena okolja (Sestav, TechDraw, Draft, BIM, FEM, CAM, Mesh ... in dodatki, ki
@@ -269,6 +298,10 @@ FreeCAD je motor, vmesnik in grafika nastajata v brskalniku (plan, korak 8 napre
   v imenskem prostoru `bpy, bmesh, np, Vector, Matrix, math, C, D` in pomočniki `dodaj_obliko(vrsta, velikost, lega)` (kocka = gladka kletka,
   krogla, valj, torus, stozec, kaplja), `gladko(obj)`, `material(ime, barva sRGB, kovinskost, hrapavost)`, `pocisti()`. Datoteke `.blend` in STL
   (`Izvoz/`) gredo v `Oblak/3D modeliranje/Oblikovanje` (`SPLET_OBLIKOVANJE_MAPA`). Posnetek mreže: točke po (oglišče, normala), skupine po materialih.
+  **Slike na materialih** (od 2026-10-29, grafika ozadja na Podestu G10): Principled, katerega Base Color je neposredno Image Texture
+  (JPEG/PNG, zapakirana ali datoteka; UV iz vozla UV Map ali aktivni sloj), gre v pogled s teksturo — posnetek nosi `uv` (točke se
+  združujejo še po UV) in material `tekstura` (ključ, barva bela); slika se zapiše v `FreeCAD-splet/teksture/<ključ>.jpg|png`,
+  streže `GET /tekstura?k=` (le zapisane). Drugi vozli (Mix, Normal Map ...) pred sliko pomenijo staro vedenje (ena barva).
   **Render** (`upodabljanje.py` + `render.py`): vsak render je ločen proces Blenderja (vrsta, en naenkrat), vir je posnetek `/model` aktivnega
   dokumenta FreeCAD-a ali kopija `.blend` iz Oblikovanja; scena se normira na polmer 1, studio (tri luči + Blenderjevo vgrajeno okolje), tla lovijo le
   senco, ozadje (preliv, belo, temno) se doda z numpy. Okno `render-plosca.js` je skupno obema stranema (gumb s fotoaparatom v vrstici pogledov
@@ -447,6 +480,25 @@ FreeCAD je motor, vmesnik in grafika nastajata v brskalniku (plan, korak 8 napre
   preklopi dokument, vstavljanje ne sme zadeti (2026-10-09 je kos po pomoti pristal v »Elektro TV - A«). Ime povezave je
   ASCII (`newObject` z ne-ASCII imenom pade, #12164), oznaka = oznaka kosa. `baza.tarca` korene išče po `InList` znotraj
   dokumenta: `RootObjects` je za kos, na katerega kaže povezava iz drugega odprtega dokumenta, prazen.
+  **Manjkajoče sličice** (od 2026-10-28): kose brez sličice (nikoli odprti, npr. uvoženi iz STEP-a) stran izriše sama, dokler je
+  okno odprto (`izrisiSliciceKnjiznice`, po vrsti): `GET /posnetek?pot=` (vrsta ozadja; zaprt kos iz baze glavna nit odpre skrito,
+  zgradi posnetek in ga zapre, aktivni dokument vrne), izris kot sličice dokumentov, `POST /slicica`. Ventilator ~8 s, 12 MB.
+  **Dobavitelj na kartici** (od 2026-10-29): `_lastnosti_fcstd` iz Document.xml prebere prvo neprazno lastnost `Dobavitelj` in
+  `Proizvajalec` (skupina Kos); kartica pokaže dobavitelja do prve vejice (celota in proizvajalec v namigu, sicer »dobavitelj ni
+  vpisan«), iskanje išče tudi po njiju. Kos, odprt v spletnem FreeCAD-u, urejaj **v njem** (`python` + `shrani`), ne s FreeCADCmd na
+  disku: samodejno shranjevanje odprte kopije sicer prepiše datoteko (28.–29. 10. se je tako izgubil vpis na 7 kosih).
+  **Nastavljive mere (en kos, dolžina po sestavu)** (od 2026-10-29, `drevo._mere_povezave`, `drevo.nastavi_mero`): lastnost kosa
+  z oznako `CopyOnChange` (letev DIN in kabelski kanal: `Dolzina`, `lastna_elektro._nastavljiva`) povezava v sestavu nosi zase
+  (`LinkCopyOnChange = Tracking`; FreeCAD naredi zasebno kopijo kosa v skriti `CopyOnChangeGroup` sestava, drevo jo skrije,
+  `_cilj_povezave` vrne izvirnik iz `LinkCopyOnChangeSource`). Drevo: čip »190,5 mm« in desni klik → 📏 Dolžina
+  (`POST /drevo {dejanje: mera, ime, lastnost, vrednost}`); knjižnica ob vstavljanju takega kosa takoj vpraša za dolžino.
+  **Past:** po spremembi mere `doc.recompute()` kopije ne preračuna — `kopija.touch(); kopija.recompute()` (v `nastavi_mero`).
+  Kosi s fiksno dolžino (letve 63,5/190,5/228,6, kanal 275) so v `Standardni deli/_Arhiv/2026-10-29 nastavljive dolzine/`.
+  Letev v bazi je imela izgubljen Proxy (`null` v Document.xml: shranjena brez naloženega modula) — obnova `lastna_elektro.DinLetev(obj)`.
+  **Kosi, ki spadajo skupaj** (od 2026-10-29): lastnost `Pripada` (skupina Kos, ime glavnega kosa, več z »;«) na kosu → knjižnica
+  ga pokaže v črtkani skupini z glavnim kosom, vstavi se še vedno posebej. Desni klik na kartico: »Spada k kosu …« (`POST /knjiznica
+  {dejanje: pripni, pot, k}` → `_knjiznica_pripni`: vpiše lastnost in datoteko z `baza._prestavi` premakne v mapo glavnega kosa)
+  in »↻ Na novo izriši sličico« (vgrajena sličica FCStd je lahko samo izhodišče z osmi — kolesa Tente 29. 10.).
 - **Elektro kosi, parametrični** (od 2026-10-09, `lastno/elektro/lastna_elektro.py`, v `Mod` stičišče `lastna_elektro`):
   `Kanal` (kabelski kanal z režami in pokrovom, izhodišče spodnji vogal, dolžina +X) in `DinLetev` (TS35, X vzdolž letve,
   Z = 0 vrh letve, telo v −Z kot napajalniki Mean Well). Kosa v bazi `Standardni deli/Elektro/ELEKTRO - Kanal 25x40` in
@@ -454,6 +506,10 @@ FreeCAD je motor, vmesnik in grafika nastajata v brskalniku (plan, korak 8 napre
   prepiše obstoječa). Lastnosti ne poimenuj `Debelina` (baza po njej prepozna pločevino). Obstoječe spone v bazi so
   poenostavljeni kvadri iz SolidWorksa (8 mm korak), ne modeli proizvajalca.
 - **Pločevina** (od 2026-10-08): znanje `lastno/raziskava/plocevina.md`; dodatek SheetMetal in networkx v `%APPDATA%\FreeCAD1-1`.
+  **Vsak kos: najprej material in debelina** (od 2026-10-29, §3a, katalog Amada): odprtina V, notranji polmer in K sledijo iz
+  `lastno/plocevina/plocevina_materiali.py` (`parametri`, `opis`, `mere_plocevine` na objekt »Mere« kosa); objekti
+  `TeloVPlocevino`, `PrenovaPlocevine`, `Razgrnitev` imajo `Material` + `Samodejno` (stari kosi ob odprtju `Samodejno = False`,
+  polmer ostane). Polmera ne ugibaj (ne 0,8 »ostri«: matrica V10/V12 naredi R ≈ 2), K ne prepisuj iz drugega kosa.
   Lastna parametrična objekta `lastno/plocevina/lastna_plocevina.py` (`TeloVPlocevino`, `Razgrnitev`) ploskve in robove
   poiščeta geometrijsko ob vsakem preračunu; SheetMetal objekti s shranjenimi imeni (`Face4`, `Edge14`) se ob spremembi mer
   pod posnetimi robovi pokvarijo (`missing element reference`). Mapa je v `Mod` povezana s stičiščem `lastna_plocevina`
@@ -551,6 +607,9 @@ FreeCAD je motor, vmesnik in grafika nastajata v brskalniku (plan, korak 8 napre
   jo hrani v `%LOCALAPPDATA%\FreeCAD-splet\slicice`, streže `GET /slicica?pot=`). Render (`izrisiSlicico`): izometrija,
   pravokotna kamera, prilegana po projiciranih ogliščih mrež (ne po krogli), prozorno ozadje, 192 px iz dvakrat večjega izrisa
   (glajenje), brez mreže, osi in izbire; `cilj.texture.colorSpace = SRGBColorSpace`, WebGPU vrne vrstice s korakom 256 bajtov.
+  **Smer sličice po dokumentu** (od 2026-10-28): `Meta["SlicicaPogled"]` = ime standardnega pogleda (npr. »Desno«) namesto izometrije;
+  `/projekti` ga pošlje kot `slicicaPogled`, stran (`smerSlicice`) ga uporabi za sličico dokumenta, sličice odprtih in različic in ob
+  prvi seji strani dokument z izbrano smerjo izriše znova. Elektro plošče Slim A (Elektro TV, levo zgoraj, sredina, Preizkus kablov) imajo »Desno«.
   FreeCAD-ova vgrajena sličica iz FCStd je le rezerva in le, če jo `_uporabna_slicica` (Pillow) oceni kot uporabno: iz skritega
   okna nastane prazna ali sivo odrezana (vsebina ob robu), take se ne strežejo; prazen render strežnik zavrne (400) in ga ne hrani.
   Datoteke, shranjene iz skritega okna, imajo pogosto `Thumbnail.png` z **0 bajti**: ta ni uporabna (do 2026-10-09 je napaka pri
@@ -580,7 +639,8 @@ FreeCAD je motor, vmesnik in grafika nastajata v brskalniku (plan, korak 8 napre
   v svojem okvirju (prva skupina »Photobox«: Photobox Slim, Slim A, Merilnik temperature DIN, Zacasno); gumb »Skupina« na kartici (meni: obstoječe,
   nova, brez), ✎ v naslovu preimenuje ali razpusti. Hrani jih strežnik v `3D modeliranje/_skupine projektov.json` (`{"skupine": {ključ projekta: ime}}`,
   `_skupine_projektov`, polje `skupineProjektov` v `/projekti`, `POST /projekt {dejanje: skupina | preimenuj-skupino}`). Razreda `.skupina` ne uporabljaj za nove elemente (globalno je skupina traku z mrežo); iskanje išče v projektu in ponudi zadetke drugje (`.vDrugih`). Standardni deli, ki jih sestav
-  projekta uporablja, so v projektu »Standardni deli«.
+  projekta uporablja, so v projektu »Standardni deli«. Od 2026-10-27 aktiven standardni del seznama ne preklopi na knjižnico
+  (ostane delovni projekt, `prikazaniProjekt`); knjižnico pokaže le izrecna izbira v oknu projektov.
 - **Sodobna podoba** (od 2026-10-09, CSS v `index.html`): barve, sence in zaobljenost so žetoni v `:root` (`--poudarek` #2563eb,
   `--poudarekMehko`, `--crta`, `--crtaMocna`, `--besedilo2/3`, `--lebdenje`, `--senca1/2`, `--obroc`, `--steklo`); novih barv ne piši v
   posamezna pravila. **Vse tri stopnje so ena stran** (od 2026-10-10): `oblikovanje.html` in plošča Tiskaj (`3D print/tiskaj/web/style.css`)
@@ -611,9 +671,16 @@ FreeCAD je motor, vmesnik in grafika nastajata v brskalniku (plan, korak 8 napre
   2026-10-09 na željo uporabnika odstranjen iz strani; strežnik lastnosti vozlov še pošilja (stran iz njih bere vrsto spoja)
   in `POST /drevo {dejanje: lastnost, ime, lastnost, vrednost}` še deluje. Posnetek `/model` nosi ključ `drevo`
   (koreni, vozli); brez njega stran javi, da je strežnik starejši. Razprti vozli so v `localStorage` po dokumentu. Urejanje iz drevesa (od 2026-10-08): gumb ✎ v vrstici (napis Uredi ob miški in na izbrani vrstici), dvojni klik, desni klik -> Uredi -> `POST /drevo {dejanje: uredi, ime}` (`drevo._uredi`): skica se odpre v urejevalniku skic v brskalniku, sicer `ViewObject.doubleClicked()` kot v FreeCAD-ovem drevesu (značilnost odpre opravilo -> obrazec desno, telo ali App::Part postane dejavno); med odprtim urejanjem strežnik drugo zavrne z dogodkom `obvestilo {sporocilo, slabo}`. Zajem seznamov v obrazcih: `QAbstractListModel.columnCount` je v PySide zaseben, šteje se kot en stolpec. Prikaz skice (od 2026-10-08): skica se riše nad modelom (materiali `NAD`: depthTest/depthWrite false, renderOrder), črte skice so debele (`LineSegments2` + `THREE.Line2NodeMaterial` iz addons/lines/webgpu, rezerva tanke črte), črna = v celoti določena, modra = ne (posnetek skice nosi `dolocena` = `sk.FullyConstrained`). Kote (`narisiMere`): DistanceX/Y zložene nad/pod oz. levo/desno od obsega skice s pomožnimi črtami in puščicami, Distance vzporedno, Radius/Diameter z vodilom; klik na koto odpre vnos na mestu (Enter ali klik drugam potrdi, Esc prekliče) -> `POST /skica {vrsta: nastaviMero, id, vrednost}` (`setDatum`, kot v °). Vlečenje kote (`zacniVlecenjeKote`, premik nad 4 px; brez premika je klik) jo premakne in shrani lego v omejitev kot FreeCAD (`POST /skica {vrsta: polozajMere, id, razmik, polozaj}` -> `setLabelDistance`/`setLabelPosition`, brez preračuna): razdalje: kotirna črta odmaknjena za LabelDistance po normali (-dir.y, dir.x) od druge točke, napis za LabelPosition vzdolž dir od sredine; polmer/premer: LabelPosition = kot vodila, LabelDistance = napis od kroga navzven. Privzeti vrednosti (10 in 0, pri polmeru 10 in 10) pomenita samodejno razporeditev okrog skice. `prilagodiPogledSkice` pusti prostor za kote. Skripte skic (npr. `nosilec_telo.py`) kotirajo obrise in odvečne omejitve pobrišejo po `RedundantConstraints`.
-- **Prostor »3D modeliranje« v oblaku obstaja šele od 2026-10-15** (skupni, brez skupine, lastnik jus.kolaric@gmail.com; ustvarjen prek
-  `POST /v1/nadzorna/prostori` lokalnega oblaka). Prej mapa ni bila prostor, odjemalec je ni sinhroniziral in različice so
-  javljale »ni prostora«. Različice delajo le, ko tečeta lokalni oblak (`predzagon zazeni oblak`, 8790) in odjemalec Oblak.
+- **Prostor »3D modeliranje« je od 2026-10-17 v pravem oblaku** (https://oblak.masterhub.si, prostor `3b2dcb0f-…`, skupni,
+  brez skupine, lastnik jus.kolaric@gmail.com; ustvarjen prek `POST /v1/nadzorna/prostori` z `NADZORNA_TOKEN` iz
+  `Podjetje/oblak/packages/api/.dev.vars`, ki ga sprejme tudi produkcija). Isti dan ob 9:01 je odjemalec Oblak (1.7.0) preklopil
+  z lokalnega oblaka (8790) na produkcijo; od takrat lokalni oblak ni več potreben. Zgodovina različic do 17. 10. 9:01 ostaja v
+  lokalnem oblaku, stanje starega lokalnega prostora je umaknjeno v `C:\Users\Uporabnik\Oblak-stanje-lokalnih-prostorov\`.
+  **Past ob preklopu strežnika:** mapo s `.oblak/state.sqlite` drugega strežnika odjemalec ne prevzame (naredi `<ime> (2)`), če
+  pa ji oznako prostora ročno zamenjaš, staro stanje ob praznem strežniku pomeni »izbrisano na strežniku« → briše z diska.
+  Pred novim prostorom zato `.oblak` premakni iz mape: novo stanje vse samo naloži. Seja FreeCAD-a nosi naslov oblaka iz
+  prijave; `oblak.py` od 17. 10. ob razhajanju z odjemalcem to pove (`drugOblak` v `/oblak/stanje`, noga plošče različic,
+  sporočilo komentarja), nova prijava gre vedno v oblak odjemalca.
 - Različice iz oblaka (od 2026-10-07, PDM korak 2, `lastno/splet/oblak.py`, plan `PDM-PLAN.md`): ob odprtem dokumentu
   iz mape odjemalca oblaka (privzeto iz `%APPDATA%\Oblak\nastavitve.json`: `folder`, `api`; prepis `SPLET_OBLAK_MAPA`,
   `SPLET_OBLAK_API`) je gumb ⟲, ki odpre ploščo z različicami: prijava v oblak (strežnik se prijavi kot **lastna**
@@ -625,7 +692,9 @@ FreeCAD je motor, vmesnik in grafika nastajata v brskalniku (plan, korak 8 napre
   novo revizijo pošlje odjemalec. Samodejni zaklepi ob odprtju: največ 3 klici hkrati, `/v1/me` enkrat naenkrat (ob ~100 odprtih
   dokumentih je oblak sicer odgovarjal s časovno omejitvijo). Seznam (`GET /oblak/zgodovina?pot=`),
   Odpri (`POST /oblak/odpri {pot, rev}`: prenos v `%LOCALAPPDATA%/FreeCAD-splet/razlicice/` in odprtje kot
-  »ime · različica N«, oznaka »ogled različice«; Label se ne nastavlja, ker bi dokument označil kot spremenjen), Povrni
+  »ime · različica N«, oznaka »ogled različice«; od 28. 10. `preusmeri_povezave` v kopiji relativne `<XLink file=>`
+  naredi absolutne proti mapi izvirnika, sicer sestav išče `razlicice/Sestavi/...` in javi desetine manjkajočih datotek;
+  deli so trenutni iz projekta, ne iste različice; Label se ne nastavlja, ker bi dokument označil kot spremenjen), Povrni
   (`POST /oblak/obnovi {pot, rev}`: nova revizija v oblaku; strežnik nato do 3 min opazuje lokalno datoteko, ki jo
   zamenja odjemalec oblaka, odprt dokument brez neshranjenih sprememb osveži in pošlje dogodek `oblak`). Klici v oblak
   tečejo na niti strežnika (brez FreeCAD API-ja), odpiranje in osvežitev prek vrste (`projekt`: `odpri-razlicico`,
@@ -756,3 +825,20 @@ FreeCAD je motor, vmesnik in grafika nastajata v brskalniku (plan, korak 8 napre
   `src/Gui/MainWindow.cpp`), `src/Main` ime programa, ikona, splash (`MainGui.cpp`), `src/Mod/<Ime>` delovne mize
   (C++ v `App/` in `Gui/`, Python ob njih; Python del ne potrebuje prevajanja).
 - Uradna navodila: https://freecad.github.io/DevelopersHandbook/ (gradnja, slog kode, prispevanje).
+
+<!-- glasnik:začetek — vpisuje Glasnik (Orodja/zaganjalnik/glasnik/src/projekti.ts); ne urejaj tu -->
+## Glasnik: ko rabiš Juša, ga pokliči na glas
+
+Na tem računalniku ves čas teče **Glasnik** (MCP strežnik `glasnik`, `http://127.0.0.1:3046/mcp`): kar mu pošlješ,
+prebere na glas skozi zvočnik; Juš odgovori na strani Glasnika in odgovor dobiš nazaj.
+
+- **Vsakič, ko od Juša karkoli rabiš** (potrditev, odločitev, podatek, prijava ali drugo dejanje) ali končaš daljše
+  delo, na katero čaka, mu to pošlji v Glasnik — **tudi, če ga vprašaš v pogovoru**, ker ne gleda vedno zaslona.
+- `vprasaj` / `ask` (vrsta `potrditev`, `izbira` z `moznosti` ali `odgovor`; `cakaj_sekund` 120–600), `sporoci` /
+  `notify` za obvestilo, `odgovor` / `get_answer`, `preklici` / `cancel`. V `od` napiši, kdo si in v katerem projektu.
+  Ko Juš odgovori v pogovoru, vprašanje v Glasniku umakni s `preklici`.
+- Besedilo za uho: ena do dve kratki slovenski povedi brez poti in kode; podrobnosti v `podrobnosti`. Nujnost
+  `pomembno` za vprašanja, `nujno` samo, ko res gori.
+- Brez orodij `glasnik` (seja starejša od Glasnika):
+  `node "C:\Users\Uporabnik\Desktop\GitHub\Orodja\zaganjalnik\glasnik\src\index.ts" povej "besedilo" --od "kdo" --pomembno`.
+<!-- glasnik:konec -->

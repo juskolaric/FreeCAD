@@ -142,6 +142,60 @@ def preliv_po_visini(mat):
     return None
 
 
+TEKSTURE = {}          # ključ -> pot slike v FreeCAD-splet/teksture (nit HTTP streže le te, GET /tekstura?k=)
+_TEKSTURE_SLIK = {}    # (ime slike, velikost zapakirane, pot, čas) -> ključ
+
+
+def tekstura_materiala(mat):
+    """(slika, ime UV sloja ali "") za Principled, katerega osnovna barva je neposredno Image Texture, sicer None."""
+    if mat is None or mat.node_tree is None:
+        return None
+    for n in mat.node_tree.nodes:
+        if n.type != "BSDF_PRINCIPLED":
+            continue
+        vir = n.inputs["Base Color"]
+        if not vir.is_linked or vir.links[0].from_node.type != "TEX_IMAGE" or vir.links[0].from_node.image is None:
+            return None
+        tex = vir.links[0].from_node
+        vektor = tex.inputs["Vector"]
+        uv = vektor.links[0].from_node.uv_map if vektor.is_linked and vektor.links[0].from_node.type == "UVMAP" else ""
+        return tex.image, uv
+    return None
+
+
+def kljuc_teksture(slika):
+    """Sliko (JPEG ali PNG; zapakirano kot je, sicer kopija datoteke) zapiše v FreeCAD-splet/teksture, vrne ključ ali None."""
+    pf = slika.packed_file
+    pot = "" if pf else bpy.path.abspath(slika.filepath)
+    oznaka = (slika.name, pf.size if pf else 0, pot, os.path.getmtime(pot) if pot and os.path.isfile(pot) else 0)
+    if oznaka in _TEKSTURE_SLIK:
+        return _TEKSTURE_SLIK[oznaka]
+    if pf:
+        podatki = bytes(pf.data)
+    elif os.path.isfile(pot):
+        with open(pot, "rb") as f:
+            podatki = f.read()
+    else:
+        return None
+    if podatki[:3] == b"\xff\xd8\xff":
+        pripona = ".jpg"
+    elif podatki[:4] == b"\x89PNG":
+        pripona = ".png"
+    else:
+        return None      # EXR, TGA ...: brskalnik jih ne zna, material ostane v barvi
+    kljuc = hashlib.blake2b(podatki, digest_size=8).hexdigest()
+    mapa = os.path.join(LOKALNO, "teksture")
+    os.makedirs(mapa, exist_ok=True)
+    cilj = os.path.join(mapa, kljuc + pripona)
+    if not os.path.isfile(cilj):
+        with open(cilj + ".delno", "wb") as f:
+            f.write(podatki)
+        os.replace(cilj + ".delno", cilj)
+    TEKSTURE[kljuc] = cilj
+    _TEKSTURE_SLIK[oznaka] = kljuc
+    return kljuc
+
+
 def posnetek_objekta(obj, dg):
     """Mreža objekta (z modifikatorji) v svetovnih koordinatah: točke, normale (gladko/ostro po robovih), trikotniki
     po materialih. Točke so podvojene le, kjer se normale ločijo (ostri robovi)."""
@@ -178,11 +232,23 @@ def posnetek_objekta(obj, dg):
         nm = np.linalg.inv(m[:3, :3]).T
         normale = normale @ nm.T
         normale /= np.maximum(np.linalg.norm(normale, axis=1, keepdims=True), 1e-12)
-        # trikotniki po materialih, oglišča zank združena po (oglišče, normala)
+        # material s sliko (Image Texture na osnovni barvi): točke nosijo še UV iz njegovega sloja
+        teksture = [tekstura_materiala(sl.material) for sl in obj.material_slots]
+        uv_ime = next((t[1] for t in teksture if t), None)
+        uvji = None
+        if uv_ime is not None:
+            sloj = mreza.uv_layers.get(uv_ime) if uv_ime else mreza.uv_layers.active
+            if sloj is not None:
+                uvji = np.empty(nl * 2, dtype=np.float32)
+                sloj.data.foreach_get("uv", uvji)
+                uvji = uvji.reshape(-1, 2)
+        # trikotniki po materialih, oglišča zank združena po (oglišče, normala[, UV])
         red = np.argsort(mat_idx, kind="stable")
         mat_idx = mat_idx[red]
         zanke = zanke.reshape(-1, 3)[red].ravel()
         kljuc = np.concatenate([oglisce[zanke, None], np.round(normale[zanke] * 1000).astype(np.int32)], axis=1)
+        if uvji is not None:
+            kljuc = np.concatenate([kljuc, np.round(uvji[zanke] * 100000).astype(np.int32)], axis=1)
         _, prvi, inverz = np.unique(kljuc, axis=0, return_index=True, return_inverse=True)
         izbrane = zanke[prvi]
         tocke = co[oglisce[izbrane]]
@@ -199,6 +265,10 @@ def posnetek_objekta(obj, dg):
         for i in range(max(len(obj.material_slots), 1)):
             mat = obj.material_slots[i].material if i < len(obj.material_slots) else None
             materiali.append(videz_materiala(mat))
+            tk = kljuc_teksture(teksture[i][0]) if uvji is not None and i < len(teksture) and teksture[i] else None
+            if tk:
+                materiali[-1]["tekstura"] = tk
+                materiali[-1]["barva"] = [1.0, 1.0, 1.0]
             preliv = preliv_po_visini(mat)
             if preliv is None:
                 continue
@@ -216,6 +286,8 @@ def posnetek_objekta(obj, dg):
             barve[ogl] = np.stack([np.interp(t, tabela_t, tabela[:, k]) for k in range(3)], axis=1)
         mn, mx = tocke.min(axis=0), tocke.max(axis=0)
         dodatno = {"barve": np.round(barve.astype(np.float64), 3).ravel().tolist()} if barve is not None else {}
+        if uvji is not None:
+            dodatno["uv"] = np.round(uvji[izbrane].astype(np.float64), 5).ravel().tolist()
         return {
             **dodatno,
             "ime": obj.name,
@@ -1028,6 +1100,13 @@ class Zahteva(http.server.BaseHTTPRequestHandler):
                 self._odgovor(f.read(), "text/javascript; charset=utf-8")
         elif pot == "/stanje":
             self._odgovor(STANJE.stanje())
+        elif pot == "/tekstura":
+            pot_slike = TEKSTURE.get(q.get("k", ""))
+            if not pot_slike or not os.path.isfile(pot_slike):
+                self._odgovor(b"", "text/plain", 404)
+                return
+            with open(pot_slike, "rb") as f:
+                self._odgovor(f.read(), "image/jpeg" if pot_slike.endswith(".jpg") else "image/png")
         elif pot == "/model":
             imam = set(filter(None, q.get("imam", "").split(",")))
             self._odgovor(posnetek_brez(imam) if imam else STANJE.posnetek)

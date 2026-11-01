@@ -106,12 +106,22 @@ def stanje(q):
         projekti = sorted(d for d in os.listdir(_oblak()) if os.path.isdir(os.path.join(_oblak(), d)) and not d.startswith((".", "_")))
     except OSError:
         projekti = []
+
+    def cas_rezultatov(d):   # najnovejši rezultat toplote projekta (0 = brez)
+        t = os.path.join(_oblak(), d, "Toplota")
+        return max([os.path.getmtime(f) for f in (os.path.join(t, "nastavitve.json"), os.path.join(t, "rezultati.json"),
+                                                   os.path.join(t, "mke", "rezultati.json")) if os.path.isfile(f)] or [0])
+    s_toploto = [d for d in projekti if cas_rezultatov(d)]
+    samodejno = False
+    if projekt is None and not rocno and s_toploto:
+        # aktivni dokument ni v projektu (neshranjen, zunaj Oblaka): zadnji projekt s toplotnimi rezultati
+        projekt, samodejno = os.path.join(_oblak(), max(s_toploto, key=cas_rezultatov)), True
     out = {"ok": True, "projekt": projekt, "ime_projekta": os.path.basename(projekt) if projekt else "", "projekti": projekti,
-           "s_toploto": [d for d in projekti if os.path.isdir(os.path.join(_oblak(), d, "Toplota"))], "oblak": _oblak(),
+           "s_toploto": s_toploto, "samodejno": samodejno, "oblak": _oblak(),
            "dokument": pot_dok, "izracun": {k: v for k, v in STANJE["izracun"].items()},
            "mke_tece": STANJE["mke"]["proces"] is not None and STANJE["mke"]["proces"].poll() is None}
     if projekt:
-        mapa = _mapa_toplote(projekt)
+        mapa = os.path.join(os.path.normpath(projekt), "Toplota")   # brez makedirs: ogled projekta ne ustvari prazne mape
         out["mapa"] = mapa
         sestavi = []
         try:

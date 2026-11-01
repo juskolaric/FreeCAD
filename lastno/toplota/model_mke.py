@@ -31,6 +31,9 @@ SKUPINE = [
     ("MIkrotik nosilec", "Mikrotik"), ("TV Basi", "TV"), ("DISPLAX", "TV"), ("Elektro TV - A", "Elektro TV"),
     ("Elektro levo zgoraj A", "Elektro levo"), ("LED RING", "LED"), ("NEXGO", "POS"), ("Canon M50", "Kamera"),
     ("Steklo basi A", "Steklo"), ("ZVOČNIK", "Zvočnik"),
+    # imena po preureditvi sestava (oktober 2026: Ohišje zadaj, Vrata spredaj, Kapa)
+    ("Klima - ohišje", "Klima"), ("Mikrotik LTE", "Mikrotik"), ("Zaslon z nosilci", "TV"), ("Zaslon - steklo", "Steklo"),
+    ("Elektro plošča - TV", "Elektro TV"), ("Elektro plošča - levo zgoraj", "Elektro levo"), ("LED obroč", "LED"),
 ]
 MOC_KLJUC = {"PC": "PC", "TV": "TV", "Tiskalnik": "tiskalnik", "Mikrotik": "Mikrotik", "LED": "LED obroči", "POS": "POS",
              "Elektro TV": "elektronika TV", "Elektro levo": "napajalniki"}   # ključ se ujema po začetku imena v naprave_W
@@ -48,20 +51,28 @@ def _moc(moci, kljuc):
     return 0.0
 # material po skupini: (prevodnost W/mK, gostota kg/m3, spec. toplota J/kgK)
 MATERIALI = {"Plašč": (33.3, 2700, 900), "Steklo": (1.0, 2500, 840), "Okno kamere": (1.0, 2500, 840),
-             "Zrak": (1.0, 1.15, 1005), "Klima": (50.0, 2700, 900), "naprava": (10.0, 1500, 1000)}
+             "Zrak": (1.0, 1.15, 1005), "Klima": (50.0, 2700, 900), "Izolacija": (0.04, 30, 1500), "naprava": (10.0, 1500, 1000)}
 # skupine, ki gredo v model s pravo obliko (če je kos veljaven in ne prevelik); ostale kot blok
 # Prave oblike naprav: tiskalnik (STEP Sinfonia ima prekrivajoče se ploskve), PC (tanki deli) in LED obroč Gmsh-u podrejo mrežo
 # (»overlapping facets«), TV in zvočnik imata preveč ploskev; zanesljivo gre le POS. Ostale naprave so bloki (okvirji), plašč
 # pa ima pravi obris boxa (zaobljeni robovi, nos vrat).
-REALNE = {"POS"}   # Mikrotik s pravo obliko (nosilec + SXT, 258 ploskev) Gmsh-u prav tako podre mrežo
+REALNE = set()   # POS je bil prav do 28. 10.; nova vrata (ščit POS) dajo ploskve brez prostornine -> »overlapping facets«. Mikrotik (258 ploskev) prav tako
 NAJVEC_PLOSKEV = 300   # TV (656 ploskev) in zvočnik (551) kot blok: s pravo obliko Netgen ni dal prostorninske mreže (164k površinskih vozlišč, 0 teles)
-VRATA = "Slim spredaj A"
+VRATA = ("Slim spredaj A", "Vrata spredaj")
 TECAJ = "42-1-4349"
-OBRIS_DELI = ("Slim zadaj A", "Slim spredaj A", "Kapa A")
+# obris zaprtega boxa: stari sestav (deli na vrhu) ali novi (pločevina v podsestavih Ohišje zadaj, Vrata spredaj, Kapa)
+OBRIS_SPODAJ = ("Slim zadaj A", "Ohišje zadaj - pločevina")
+OBRIS_ZGORAJ = ("Kapa A", "Kapa-", "Kama basi")
+OBRIS_DELI = OBRIS_SPODAJ + OBRIS_ZGORAJ + ("Slim spredaj A", "Vrata spredaj - pločevina")
+IZOLACIJA = "Izolacija"   # podsestavi »Izolacija zadaj A«, »Izolacija vrata A« (pena 10 mm na notranji strani plašča)
 
 
 def _okvir(sh):
-    b = sh.BoundBox
+    # natančen okvir: ploskve po rezu z raztegnjeno izolacijo so zlepki, katerih BoundBox zajame celo neobrezano ploskev
+    try:
+        b = sh.optimalBoundingBox(False, False)
+    except Exception:  # noqa: BLE001
+        b = sh.BoundBox
     return [b.XMin, b.YMin, b.ZMin, b.XMax, b.YMax, b.ZMax]
 
 
@@ -100,6 +111,43 @@ def _poenostavi(poligon, najmanj_mm=4.0):
     return out
 
 
+def _kot_vrat(koren, tecaj, log=print):
+    """Kot zapiranja vrat (okoli Z skozi tečaj): zasuk, pri katerem se pločevina vrat po širini (X) poravna z ohišjem in leži
+    pred njim. Vrata v sestavu niso vedno odprta za točno 90° (28. 10. 2026 okoli 80°)."""
+    vrata = zadaj = None
+    for sub in koren.getSubObjects():
+        try:
+            otrok = koren.getSubObject(sub, retType=1)
+        except Exception:  # noqa: BLE001
+            continue
+        if otrok is None:
+            continue
+        kandidati = [(otrok.Label, sub)]
+        if hasattr(otrok, "getSubObjects"):
+            kandidati += [(c.Label, sub + s2) for s2 in otrok.getSubObjects()
+                          for c in [koren.getSubObject(sub + s2, retType=1)] if c is not None]
+        for lab, pot in kandidati:
+            je_vrata_lab = otrok.Label.startswith(VRATA) and (lab == otrok.Label or "pločevina" in lab)
+            if (je_vrata_lab and vrata is None) or (je_vrata_lab and "pločevina" in lab):
+                vrata = Part.getShape(koren, pot, needSubElement=False)
+            if lab.startswith(OBRIS_SPODAJ):
+                zadaj = Part.getShape(koren, pot, needSubElement=False)
+    if vrata is None or zadaj is None:
+        log("kot vrat: ne najdem vrat ali ohišja, privzeto 90°")
+        return 90.0
+    bz = zadaj.BoundBox
+    import numpy as np
+    xy = np.array([(x - tecaj[0], y - tecaj[1]) for x, y in _ovojnica([(v.X, v.Y) for v in vrata.Vertexes])])   # ovojnica: malo točk
+    a = np.radians(np.arange(0, 3601) / 10.0)[:, None]
+    xs = tecaj[0] + xy[:, 0] * np.cos(a) - xy[:, 1] * np.sin(a)
+    ys = tecaj[1] + xy[:, 0] * np.sin(a) + xy[:, 1] * np.cos(a)
+    napaka = np.abs(xs.min(axis=1) - bz.XMin) + np.abs(xs.max(axis=1) - bz.XMax) + np.where(ys.max(axis=1) < bz.YMin + 20, 0, 1000)
+    i = int(np.argmin(napaka))
+    naj = (float(napaka[i]), i / 10.0)
+    log("kot vrat: %.1f° (odstopanje širine %.1f mm)" % (naj[1], naj[0]))
+    return naj[1]
+
+
 def preberi_sestav(doc, log=print):
     """Kosi sestava po skupinah (oblika v zaprti legi), obris zaprtega boxa in okvirji. Vrne slovar za gradnjo."""
     koreni = [o for o in doc.Objects if o.TypeId == "Assembly::AssemblyObject"]
@@ -118,14 +166,16 @@ def preberi_sestav(doc, log=print):
     if tecaj is None:
         raise ValueError("V sestavu ne najdem tečaja »%s«." % TECAJ)
 
+    kot = _kot_vrat(koren, tecaj, log)
+
     def zapri(sh, je_vrata):
         if not je_vrata:
             return sh
         k = sh.copy()
-        k.rotate(Vector(tecaj[0], tecaj[1], 0), Vector(0, 0, 1), 90)
+        k.rotate(Vector(tecaj[0], tecaj[1], 0), Vector(0, 0, 1), kot)
         return k
 
-    kosi, obrisi, z_obseg = {}, [], None
+    kosi, obrisi, izolacija, z_obseg = {}, [], [], None
     for sub in koren.getSubObjects():
         try:
             otrok = koren.getSubObject(sub, retType=1)
@@ -136,13 +186,11 @@ def preberi_sestav(doc, log=print):
             continue
         oznaka = otrok.Label
         # na vratih so tudi elektronika TV in tiskanina osvetlitve (v sestavu Slim A niso pod podsestavom vrat, a se vrtijo z njimi)
-        je_vrata = oznaka.startswith(VRATA) or oznaka.startswith("Elektro TV - A") or oznaka.startswith("ELEKTRO - TV PCB")
-        if any(oznaka.startswith(z) for z in OBRIS_DELI):
-            obrisi.append(zapri(sh, je_vrata))
-            if oznaka.startswith("Slim zadaj A"):
-                z_obseg = [sh.BoundBox.ZMin, z_obseg[1] if z_obseg else sh.BoundBox.ZMax]
-            if oznaka.startswith("Kapa A"):
-                z_obseg = [z_obseg[0] if z_obseg else sh.BoundBox.ZMin, sh.BoundBox.ZMax]
+        je_vrata = (oznaka.startswith(VRATA) or oznaka.startswith(("Elektro TV - A", "Elektro plošča - TV")) or oznaka.startswith("ELEKTRO - TV PCB")
+                    or (oznaka.startswith(IZOLACIJA) and "vrata" in oznaka.lower()))
+        if oznaka.startswith(IZOLACIJA):
+            izolacija += zapri(sh, je_vrata).Solids
+            continue
         kandidati = [(oznaka, sub, sh)]
         if hasattr(otrok, "getSubObjects") and otrok.getSubObjects():
             for sub2 in otrok.getSubObjects():
@@ -154,6 +202,13 @@ def preberi_sestav(doc, log=print):
                 if c2 is not None and not sh2.isNull() and sh2.Volume >= 1:
                     kandidati.append((c2.Label, sub + sub2, sh2))
         for lab, pot, sh_k in kandidati:
+            if lab.startswith(OBRIS_DELI):
+                obrisi.append(zapri(sh_k, je_vrata))
+                b = sh_k.BoundBox
+                if lab.startswith(OBRIS_SPODAJ):
+                    z_obseg = [b.ZMin, z_obseg[1] if z_obseg else b.ZMax]
+                if lab.startswith(OBRIS_ZGORAJ):
+                    z_obseg = [z_obseg[0] if z_obseg else b.ZMin, b.ZMax]
             for zacetek, skupina in SKUPINE:
                 if lab.startswith(zacetek):
                     # LED obroča sta dva (okoli vsakega okna kamere): vsak svoj blok, ne združena v enega
@@ -192,7 +247,8 @@ def preberi_sestav(doc, log=print):
     bloki.sort(key=lambda b: (b["skupina"], b["kos"]))
     xs, ys = [p[0] for p in obris], [p[1] for p in obris]
     zunanji = [min(xs), min(ys), z_obseg[0], max(xs), max(ys), z_obseg[1]]
-    return {"zunanji": [round(v, 1) for v in zunanji], "obris": obris, "tecaj": tecaj, "bloki": bloki, "sestav": doc.Label}
+    return {"zunanji": [round(v, 1) for v in zunanji], "obris": obris, "tecaj": tecaj, "bloki": bloki, "sestav": doc.Label,
+            "izolacija": izolacija}
 
 
 def _skatla(o):
@@ -220,7 +276,8 @@ def _notranji_obris(poligon, t):
 
 BARVE = {"Plašč": (0.82, 0.84, 0.87), "Steklo": (0.55, 0.75, 0.95), "Okno kamere": (0.55, 0.75, 0.95), "PC": (0.85, 0.35, 0.3),
          "TV": (0.2, 0.25, 0.3), "Tiskalnik": (0.5, 0.5, 0.55), "Klima": (0.3, 0.6, 0.9), "Mikrotik": (0.9, 0.6, 0.2), "LED": (0.95, 0.85, 0.3),
-         "POS": (0.3, 0.3, 0.35), "Kamera": (0.25, 0.25, 0.25), "Elektro levo": (0.4, 0.7, 0.4), "Elektro TV": (0.4, 0.7, 0.4), "Zvočnik": (0.45, 0.4, 0.4)}
+         "POS": (0.3, 0.3, 0.35), "Kamera": (0.25, 0.25, 0.25), "Elektro levo": (0.4, 0.7, 0.4), "Elektro TV": (0.4, 0.7, 0.4), "Zvočnik": (0.45, 0.4, 0.4),
+         "Izolacija": (0.95, 0.95, 0.75)}
 
 
 def uredi_prikaz(doc, deli, Z):
@@ -253,11 +310,13 @@ def _ascii(s):
     return re.sub(r"[^A-Za-z0-9_]", "_", s)
 
 
-def zgradi(doc_sestava, nast, mapa_mke, log=print):
-    """Zgradi dokument »<sestav> toplota« (kosi, Boolean Fragments, analiza z mrežo), shrani v mapa_mke. Vrne (opis, dokument)."""
+def zgradi(doc_sestava, nast, mapa_mke, log=print, pod=None, pena=None):
+    """Zgradi dokument »<sestav> toplota« (kosi, Boolean Fragments, analiza z mrežo), shrani v mapa_mke. Vrne (opis, dokument).
+    pod: že prebran sestav (preberi_sestav) namesto doc_sestava; pena: že pripravljena izolacija (oblika v modelu)."""
     t_zac = time.time()
     os.makedirs(mapa_mke, exist_ok=True)
-    pod = preberi_sestav(doc_sestava, log)
+    if pod is None:
+        pod = preberi_sestav(doc_sestava, log)
     mke = nast.get("mke", {})
     t = float(mke.get("debelina_plasca_mm", 12))
     sc = mke.get("scenarij", {})
@@ -297,9 +356,44 @@ def zgradi(doc_sestava, nast, mapa_mke, log=print):
         deli.append((ime_o, skupina, okno, {"okvir": [round(v, 1) for v in _okvir(okno)]}))
     deli.insert(0, ("Plašč", "Plašč", plasc, {}))
 
-    # naprave: prava oblika ali blok
+    # izolacija: prava oblika pene (zaprta lega), raztegnjena tako, da zunanja ploskev pene (v resnici ob 2 mm pločevini)
+    # leži ob notranji ploskvi enakovrednega plašča debeline t; nato le del znotraj notranjosti
     bloki_opis, naprave = [], []
     zasedeno = []   # naprave se ne smejo prekrivati (zvočnik je v okvirju tiskalnika ...): vsaka nova odšteje prejšnje
+    izolacija_opis = []
+    if pena is not None:
+        pod["izolacija"] = []
+        pena = pena.common(notranjost)
+        if not pena.isNull() and pena.Volume > 1000:
+            deli.append(("Izolacija", "Izolacija", pena, {}))
+            izolacija_opis.append({"ime": "Izolacija", "skupina": "Izolacija", "okvir": [round(v, 1) for v in _okvir(pena)],
+                                   "prostornina_l": round(pena.Volume / 1e6, 2), "teles": len(pena.Solids)})
+            naprave.append(pena)
+            zasedeno.append(pena)
+            log("izolacija (pripravljena): %d teles, %.1f l" % (len(pena.Solids), pena.Volume / 1e6))
+    if pod.get("izolacija"):
+        p = float(nast.get("box", {}).get("plocevina_mm", 2.0))
+        c = [(Z[0] + Z[3]) / 2, (Z[1] + Z[4]) / 2, (Z[2] + Z[5]) / 2]
+        sk = [(Z[3 + i] - Z[i] - 2 * t) / (Z[3 + i] - Z[i] - 2 * p) for i in range(3)]
+        m = App.Matrix()
+        m.move(Vector(-c[0], -c[1], -c[2]))
+        m.scale(Vector(*sk))
+        m.move(Vector(*c))
+        try:
+            pena = Part.makeCompound(pod["izolacija"]).transformGeometry(m).common(notranjost)
+        except Exception as e:  # noqa: BLE001
+            log("izolacija: preoblikovanje ni uspelo (%s), model brez izolacije" % e)
+            pena = None
+        if pena is not None and not pena.isNull() and pena.Volume > 1000:
+            deli.append(("Izolacija", "Izolacija", pena, {}))
+            izolacija_opis.append({"ime": "Izolacija", "skupina": "Izolacija", "okvir": [round(v, 1) for v in _okvir(pena)],
+                                   "prostornina_l": round(pena.Volume / 1e6, 2), "teles": len(pena.Solids)})
+            naprave.append(pena)
+            zasedeno.append(pena)
+            log("izolacija: %d teles, %.1f l (izvirno %.1f l)" % (len(pena.Solids), pena.Volume / 1e6,
+                                                                 sum(s.Volume for s in pod["izolacija"]) / 1e6))
+
+    # naprave: prava oblika ali blok
     for b in pod["bloki"]:
         if b["skupina"] == "Steklo":
             continue
@@ -321,6 +415,9 @@ def zgradi(doc_sestava, nast, mapa_mke, log=print):
         if zasedeno:
             try:
                 sh2 = sh.cut(Part.makeCompound(zasedeno))
+                # rez z več telesi (izolacija) lahko pusti ploskve brez prostornine: le telesa,
+                # in drobne rezine (pena odreže 3 mm od PC), ki jih Gmsh ne zmreži dobro
+                sh2 = Part.makeCompound([s_ for s_ in sh2.Solids if s_.Volume > 20000]) if len(sh2.Solids) != 1 else sh2.Solids[0]
                 if not sh2.isNull() and sh2.Volume > 500:
                     sh = sh2.removeSplitter() if b["realna"] else sh2
                 else:
@@ -409,7 +506,10 @@ def zgradi(doc_sestava, nast, mapa_mke, log=print):
         b_["W"] = round(P * b_["prostornina_l"] / V, 1)
         b_["objekt"] = imena_objektov[b_["ime"]]
     okna_opis = [{"ime": d[0], "skupina": d[1], "okvir": d[3]["okvir"], "objekt": imena_objektov[d[0]]} for d in deli if d[1] in ("Steklo", "Okno kamere")]
+    for iz_ in izolacija_opis:
+        iz_["objekt"] = imena_objektov[iz_["ime"]]
     skupina_obmocja = {b_["ime"]: b_["skupina"] for b_ in bloki_opis}
+    skupina_obmocja.update({iz_["ime"]: "Izolacija" for iz_ in izolacija_opis})
     skupina_obmocja.update({o_["ime"]: o_["skupina"] for o_ in okna_opis})
     skupina_obmocja.update({"Plašč": "Plašč", "Zrak": "Zrak"})
     materiali = {}
@@ -419,12 +519,14 @@ def zgradi(doc_sestava, nast, mapa_mke, log=print):
             k = float(mke.get("prevodnost_plasca", k))
         elif sk == "Zrak":
             k = float(mke.get("prevodnost_zraka", k))
+        elif sk == "Izolacija":
+            k = float(nast.get("izolacija", {}).get("prevodnost", k))
         elif sk not in MATERIALI:
             k = float(mke.get("prevodnost_naprav", k))
         materiali[ime_o] = {"k": k, "rho": rho, "cp": cp}
     T_amb = float(sc.get("T_zunaj_C", 35))
     opis = {"sestav": pod["sestav"], "zunanji_mm": Z, "notranji_mm": [round(v, 1) for v in N], "obris": obris, "obris_notranji": obris_n,
-            "debelina_mm": t, "tecaj": pod["tecaj"], "bloki": bloki_opis, "okna": okna_opis, "skupina_obmocja": skupina_obmocja,
+            "debelina_mm": t, "tecaj": pod["tecaj"], "bloki": bloki_opis, "okna": okna_opis, "izolacija": izolacija_opis, "skupina_obmocja": skupina_obmocja,
             "materiali": materiali, "eps": float(nast.get("plasc", {}).get("emisivnost", 0.9)),
             "alpha": float(nast.get("plasc", {}).get("barve", {}).get(mke.get("barva", "bela"), 0.25)),
             "alpha_steklo": float(nast.get("steklo", {}).get("absorptivnost", 0.1)), "mke": mke, "scenarij": sc,

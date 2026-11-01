@@ -898,6 +898,9 @@ PyObject* Application::sListDocuments(PyObject* /*self*/, PyObject* args)
             PyDict_SetItem(pDict, pKey, pValue);
             // now we can decrement again as PyDict_SetItem also has incremented
             pValue->DecRef();
+            // PyDict_SetItem does not steal the key either: without this every call leaked one
+            // string per open document
+            Py_DECREF(pKey);
         }
 
         return pDict;
