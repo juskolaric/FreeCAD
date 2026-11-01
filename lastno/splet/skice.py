@@ -251,6 +251,7 @@ def t_skice(a):
     zagotovi()
     if akcija == "seznam":
         skice = _json("GET", "/api/skice" + ("?stanje=" + a["stanje"] if a.get("stanje") else "")).get("skice", [])
+        skice = [s for s in skice if s.get("namen") != "podpis"]   # liste za podpis prevzame Podpisnik
         if not a.get("stanje"):
             skice = [s for s in skice if s.get("stanje") != "arhiv"]
         if not skice:
@@ -260,7 +261,7 @@ def t_skice(a):
     if akcija == "pokazi":
         sid = a.get("id")
         if not sid:
-            poslane = _json("GET", "/api/skice?stanje=poslana").get("skice", [])
+            poslane = [s for s in _json("GET", "/api/skice?stanje=poslana").get("skice", []) if s.get("namen") != "podpis"]
             if not poslane:
                 raise M.Napaka("Ni poslanih skic. Seznam: skice {\"akcija\": \"seznam\"}.")
             sid = poslane[0]["id"]
