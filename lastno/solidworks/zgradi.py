@@ -554,8 +554,13 @@ def talni_spoj(asm, obj):
 
 def zgradi_sestav(z, otroci, vse):
     pot = z["datoteka"]
-    lasten = z.get("projekt") == KLJUC or bool(z.get("razlicica_od"))
-    if os.path.exists(pot) and not (lasten and (PREGRADI or os.environ.get("SW_PREGRADI_SESTAVE") == "1")):
+    # lasten sestav (iz mape tega projekta) se VEDNO zgradi iz drevesa, odprtega kot koren: lahko ga je prej zgradil
+    # drug projekt po svoji pojavitvi (Malibu S je 18:51 zgradil RUDEL G2 - A iz Photolandia opreme, 1 telo mimo);
+    # povezave nanj ostanejo (ista pot, isti objekt »Assembly«). Različice (ime = podpis lege) se le odprejo.
+    lasten = z.get("projekt") == KLJUC and not z.get("razlicica_od")
+    razlicica = bool(z.get("razlicica_od"))
+    znova = lasten or (razlicica and (PREGRADI or os.environ.get("SW_PREGRADI_SESTAVE") == "1"))
+    if os.path.exists(pot) and not znova:
         doc = odpri(pot)                 # sestav drugega projekta se nikoli ne gradi znova (njegova osnova je tam)
         z["dok"], z["objekt"] = doc.Name, tarca_sestava(doc).Name
         z["obstojec"] = True
