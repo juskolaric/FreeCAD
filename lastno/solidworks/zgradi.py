@@ -204,6 +204,26 @@ def definicije_sestavov(S, vse):
     for p, s in S["sestavi"].items():                       # sestav, odprt kot koren: lege otrok so že lokalne
         if "drevo" in s:
             defi[kljuc(s["pot"], s["cfg"])] = [(x, matrika(x["lega"])) for x in s["drevo"] if x["lega"]]
+    # podsestav iz drugega projekta, ki je tam že zgrajen: osnova je njegovo drevo kot koren (iz struktura.json tistega
+    # projekta), da pojavitev z drugačno lego kosov (pant, plinska vzmet) dobi različico in ne obvelja za osnovo
+    tuji = 0
+    for pot_s in cfg.vse_strukture():
+        if _nc(pot_s) == _nc(os.path.join(PODATKI, "struktura.json")):
+            continue
+        try:
+            T = json.load(open(pot_s, encoding="utf-8"))
+        except Exception:  # noqa: BLE001
+            continue
+        for s in T.get("sestavi", {}).values():
+            if "drevo" not in s:
+                continue
+            k = kljuc(s["pot"], s["cfg"])
+            if k in defi or k not in vse or not os.path.exists(vse[k]["datoteka"]):
+                continue
+            defi[k] = [(x, matrika(x["lega"])) for x in s["drevo"] if x["lega"]]
+            tuji += 1
+    if tuji:
+        log("osnovne definicije %d podsestavov iz drugih projektov (datoteke že obstajajo)" % tuji)
 
     def lokalne(x):
         g_inv = matrika(x["lega"]).inverse()
@@ -388,7 +408,7 @@ def tarca_sestava(doc):
 def zgradi_del(z):
     import ImportGui
     pot = z["datoteka"]
-    if os.path.exists(pot) and not PREGRADI:
+    if os.path.exists(pot) and not (PREGRADI and z.get("projekt") == KLJUC):
         doc = odpri(pot)
         z["dok"], z["objekt"] = doc.Name, tarca_dela(doc).Name
         z["obstojec"] = True
@@ -467,8 +487,9 @@ def talni_spoj(asm, obj):
 
 def zgradi_sestav(z, otroci, vse):
     pot = z["datoteka"]
-    if os.path.exists(pot) and not (PREGRADI or os.environ.get("SW_PREGRADI_SESTAVE") == "1"):
-        doc = odpri(pot)
+    lasten = z.get("projekt") == KLJUC or bool(z.get("razlicica_od"))
+    if os.path.exists(pot) and not (lasten and (PREGRADI or os.environ.get("SW_PREGRADI_SESTAVE") == "1")):
+        doc = odpri(pot)                 # sestav drugega projekta se nikoli ne gradi znova (njegova osnova je tam)
         z["dok"], z["objekt"] = doc.Name, tarca_sestava(doc).Name
         z["obstojec"] = True
         return doc
