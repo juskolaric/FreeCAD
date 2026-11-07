@@ -1,0 +1,49 @@
+{
+  "_opis": "Prenos map SolidWorks iz Dropboxa PROJEKTI v Oblak/3D modeliranje. Ključ = mapa pod PROJEKTI, cilj = mapa projekta v Oblaku (ista zgradba podmap). Kos, ki ga sestav uporablja iz druge mape PROJEKTI, dobi FCStd v projektu te mape (ne kopije v Zunanji deli); Zunanji deli le za poti zunaj PROJEKTI ali nenaštetih map. Vrstni red = odvisnosti najprej.",
+  "izvor_koren": "C:\\Users\\Uporabnik\\PHOTOLANDIA Dropbox\\PHOTOLANDIA\\PROJEKTI",
+  "cilj_koren": "C:\\Users\\Uporabnik\\Oblak\\3D modeliranje",
+  "delovna": "C:\\Users\\Uporabnik\\Prenos SolidWorks",
+  "step": "C:\\Users\\Uporabnik\\Prenos SolidWorks\\STEP",
+  "ze_preneseni": {
+    "DJ DARMAR": "DJ DarMar",
+    "PHOTOBOX/Airpix": "Photobox Airpix"
+  },
+  "projekti": [
+    {"kljuc": "STANDARD BOX", "cilj": "Standard box", "skupina": "Standard box"},
+    {"kljuc": "TOOLBOX", "cilj": "Toolbox", "skupina": "Standard box"},
+    {"kljuc": "WELDMENTS", "cilj": "Weldments", "skupina": "Standard box"},
+    {"kljuc": "PHOTOBOX/Mini 3", "cilj": "Photobox Mini 3", "skupina": "Photobox"},
+    {"kljuc": "PHOTOBOX/Mirror Wedding 8", "cilj": "Photobox Mirror Wedding 8", "skupina": "Photobox"},
+    {"kljuc": "PHOTOBOX/MirrorW 5", "cilj": "Photobox MirrorW 5", "skupina": "Photobox"},
+    {"kljuc": "PHOTOBOX/Mirror 4", "cilj": "Photobox Mirror 4", "skupina": "Photobox"},
+    {"kljuc": "PHOTOBOX/Mirror BigBoy", "cilj": "Photobox Mirror BigBoy", "skupina": "Photobox"},
+    {"kljuc": "PHOTOBOX/Sky 6", "cilj": "Photobox Sky 6", "skupina": "Photobox"},
+    {"kljuc": "PHOTOBOX/Space 7", "cilj": "Photobox Space 7", "skupina": "Photobox"},
+    {"kljuc": "PHOTOBOX/Malibu F", "cilj": "Photobox Malibu F", "skupina": "Photobox"},
+    {"kljuc": "PHOTOBOX/Malibu S", "cilj": "Photobox Malibu S", "skupina": "Photobox"},
+    {"kljuc": "PHOTOBOX/Milestone 2", "cilj": "Photobox Milestone 2", "skupina": "Photobox"},
+    {"kljuc": "PHOTOBOX/Basi box", "cilj": "Photobox Basi box", "skupina": "Photobox"},
+    {"kljuc": "PHOTOBOX/Srček", "cilj": "Photobox Srček", "skupina": "Photobox"},
+    {"kljuc": "PHOTOBOX/Srček Bled", "cilj": "Photobox Srček Bled", "skupina": "Photobox"},
+    {"kljuc": "PHOTOBOX/Elegent", "cilj": "Photobox Elegent", "skupina": "Photobox"},
+    {"kljuc": "PHOTOBOX/Events", "cilj": "Photobox Events", "skupina": "Photobox"},
+    {"kljuc": "PHOTOBOX/Straža", "cilj": "Photobox Straža", "skupina": "Photobox"},
+    {"kljuc": "PHOTOBOX/Totem", "cilj": "Photobox Totem", "skupina": "Photobox"},
+    {"kljuc": "PODEST", "cilj": "Podest", "skupina": "Podest", "brez_podmap": ["ARHIV PODEST"]},
+    {"kljuc": "KOMBI", "cilj": "Kombi", "skupina": "DJ DarMar"},
+    {"kljuc": "PHOTOLANIDA", "cilj": "Photolandia oprema", "skupina": "Photolandia oprema"},
+    {"kljuc": "DELAVNICA", "cilj": "Delavnica", "skupina": "Delavnica"},
+    {"kljuc": "USLUGE", "cilj": "Usluge", "skupina": "Usluge", "projekt_na_podmapo": true},
+    {"kljuc": "PHOTOBOX/ARHIV Airpix", "cilj": "Photobox ARHIV Airpix", "skupina": "Photobox arhiv"},
+    {"kljuc": "PHOTOBOX/ARHIV Slim", "cilj": "Photobox ARHIV Slim", "skupina": "Photobox arhiv"},
+    {"kljuc": "PHOTOBOX/ARHIV Space", "cilj": "Photobox ARHIV Space", "skupina": "Photobox arhiv"},
+    {"kljuc": "PHOTOBOX/ARHIV Mailstone", "cilj": "Photobox ARHIV Mailstone", "skupina": "Photobox arhiv"},
+    {"kljuc": "PHOTOBOX/ARHIV Malibu", "cilj": "Photobox ARHIV Malibu", "skupina": "Photobox arhiv"},
+    {"kljuc": "PODEST/ARHIV PODEST", "cilj": "Podest/ARHIV PODEST", "skupina": "Podest"}
+  ],
+  "ostalo": {
+    "_opis": "datoteke v korenu PROJEKTI in mape brez modelov (nastavitve SolidWorksa, predloge) se prepišejo v to mapo Oblaka",
+    "cilj": "Dropbox PROJEKTI (ostalo)",
+    "mape": ["ARDUINO PROJEKTI", "DESIGNA LIBRARY", "SOLIDWORKS FORMATI", "SOLIDWORKS NASTAVITVE", "SOLIDWORKS TEMPLATE", "TABLE"]
+  }
+}
