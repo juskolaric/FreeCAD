@@ -26,7 +26,7 @@ import traceback
 import types
 
 import pythoncom
-from win32com.client import dynamic
+from win32com.client import VARIANT, dynamic
 
 IZVOR, PODATKI, STEP = (os.path.abspath(a) for a in sys.argv[1:4])   # SolidWorks relativne poti razreši po svoje
 if not os.path.isdir(IZVOR):
@@ -238,6 +238,24 @@ def izvozi_step(m, cfg, k):
     return ok, koda
 
 
+def izvozi_pdf(m, cilj):
+    """Risba -> PDF z ExportPdfData in ViewPdfAfterSaving = False: navaden SaveAs3 upošteva uporabnikovo možnost
+    »View PDF after saving« in odpre Foxit, ki uporabniku krade fokus (7. 11. 2026). Errors/Warnings sta byref."""
+    pdf = sw.GetExportFileData(1)                      # swExportPdfData
+    pdf.ViewPdfAfterSaving = False
+    try:
+        pdf.SetSheets(1, None)                         # swExportData_ExportAllSheets
+    except Exception:  # noqa: BLE001
+        pass
+    err = VARIANT(pythoncom.VT_BYREF | pythoncom.VT_I4, 0)
+    warn = VARIANT(pythoncom.VT_BYREF | pythoncom.VT_I4, 0)
+    try:
+        ok = m.Extension.SaveAs(cilj, 0, 1, pdf, err, warn)          # SaveAs3 z None za AdvancedSaveAsOptions: Type mismatch
+    except Exception:  # noqa: BLE001
+        ok = m.Extension.SaveAs3(cilj, 0, 1, pdf, None, err, warn)
+    return "%s/%s/%s" % (ok, err.value, warn.value)
+
+
 # ---------------------------------------------------------------- 1) sestavi
 def obhod(comp, oce_pot, globina):
     vozli = []
@@ -420,7 +438,7 @@ def main():
         log("RISBA", os.path.relpath(pot, IZVOR))
         try:
             m = odpri(pot, 3)
-            koda = m.SaveAs3(cilj, 0, 1)
+            koda = izvozi_pdf(m, cilj)
             zapri(m)
             S["risbe"][pot.lower()] = {"pot": pot, "pdf": cilj, "izvoz": True, "ok": os.path.exists(cilj), "koda": koda}
         except Exception as e:  # noqa: BLE001
