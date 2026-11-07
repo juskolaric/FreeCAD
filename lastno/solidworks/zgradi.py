@@ -46,7 +46,40 @@ STEP = cfg.STEP
 PREGRADI = os.environ.get("SW_PREGRADI") == "1"
 PRIVZETE = {"default", "privzeto", "standard"}
 TRANSP = True            # SolidWorks ArrayData: p' = p R + t -> stolpci FreeCAD = vrstice R
-NAJVEC_ODPRTIH = 120     # čez to se po shranjevanju sestava zaprejo vsi dokumenti
+NAJVEC_ODPRTIH = 40      # čez to se po shranjevanju sestava zaprejo vsi dokumenti
+PRAG_GB = float(os.environ.get("SW_PRAG_GB") or 4)   # zasebni pomnilnik procesa; čez prag se gradnja konča in zažene znova
+
+
+class PomnilnikPoln(Exception):
+    """Proces FreeCAD-a je prerasel prag: zagon_gradnje.py zapiše »pomnilnik«, prenos.py gradnjo nadaljuje v novem procesu."""
+
+
+def pomnilnik_gb():
+    try:
+        import ctypes
+        from ctypes import wintypes
+
+        class PMC(ctypes.Structure):
+            _fields_ = [("cb", wintypes.DWORD), ("PageFaultCount", wintypes.DWORD),
+                        ("PeakWorkingSetSize", ctypes.c_size_t), ("WorkingSetSize", ctypes.c_size_t),
+                        ("QuotaPeakPagedPoolUsage", ctypes.c_size_t), ("QuotaPagedPoolUsage", ctypes.c_size_t),
+                        ("QuotaPeakNonPagedPoolUsage", ctypes.c_size_t), ("QuotaNonPagedPoolUsage", ctypes.c_size_t),
+                        ("PagefileUsage", ctypes.c_size_t), ("PeakPagefileUsage", ctypes.c_size_t),
+                        ("PrivateUsage", ctypes.c_size_t)]
+        pmc = PMC()
+        pmc.cb = ctypes.sizeof(PMC)
+        ctypes.windll.psapi.GetProcessMemoryInfo(ctypes.windll.kernel32.GetCurrentProcess(), ctypes.byref(pmc), pmc.cb)
+        return pmc.PrivateUsage / 1e9
+    except Exception:  # noqa: BLE001
+        return 0.0
+
+
+def preveri_pomnilnik(kje):
+    gb = pomnilnik_gb()
+    if gb > PRAG_GB:
+        zapri_vse()
+        log("POMNILNIK %.1f GB > prag %.1f GB po %s: gradnja se konča in nadaljuje v novem procesu" % (gb, PRAG_GB, kje))
+        raise PomnilnikPoln("%.1f GB" % gb)
 
 R = App.Matrix()
 R.rotateX(1.5707963267948966)            # SolidWorks Y navzgor -> FreeCAD Z navzgor
@@ -576,6 +609,10 @@ def zgradi():
                 log("del %d/%d %s (%.1f s)" % (i + 1, len(deli), os.path.relpath(z["datoteka"], cfg.CILJ_KOREN),
                                                time.time() - t0))
             App.closeDocument(doc.Name)
+            if i % 25 == 0:
+                preveri_pomnilnik("delu %d" % (i + 1))
+        except PomnilnikPoln:
+            raise
         except Exception:  # noqa: BLE001
             z.setdefault("opombe", []).append("uvoz ni uspel: " + traceback.format_exc().splitlines()[-1])
             log("NAPAKA del", z["ime"], z["opombe"][-1])
@@ -608,11 +645,14 @@ def zgradi():
             if not z.get("obstojec"):
                 log("sestav %s%s" % (os.path.relpath(z["datoteka"], cfg.CILJ_KOREN),
                                      (" (manjka: %s)" % ", ".join(z["manjka"])) if z.get("manjka") else ""))
+        except PomnilnikPoln:
+            raise
         except Exception:  # noqa: BLE001
             z.setdefault("opombe", []).append("gradnja ni uspela: " + traceback.format_exc().splitlines()[-1])
             log("NAPAKA sestav", z["ime"], z["opombe"][-1])
         if len(App.listDocuments()) > NAJVEC_ODPRTIH:
             zapri_vse()
+        preveri_pomnilnik("sestavu %s" % z["ime"])
     zapri_vse()
     rez = {k: {kk: vv for kk, vv in z.items() if kk not in ("model",)} for k, z in vse.items()}
     json.dump(rez, open(os.path.join(PODATKI, "rezultat.json"), "w", encoding="utf-8"), ensure_ascii=False, indent=1)

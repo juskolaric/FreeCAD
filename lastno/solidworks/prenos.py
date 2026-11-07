@@ -111,7 +111,7 @@ def gradi(p):
     zadnji_pot = os.path.join(pod, "zadnji.txt")
     preskoci_pot = os.path.join(pod, "preskoci.json")
     brez_krivca = 0
-    for poskus in range(1, 26):
+    for poskus in range(1, 60):
         try:
             os.remove(zadnji_pot)
         except OSError:
@@ -124,6 +124,9 @@ def gradi(p):
         log("GRADI konec", kljuc, "koda", r.returncode, "%.0f min" % ((time.time() - t0) / 60), "|", (k or "ni gradnja.konec")[:200])
         if k == "ok":
             return True
+        if k and k.startswith("pomnilnik"):
+            log("POMNILNIK", kljuc, k, "-> nadaljujem v novem procesu")
+            continue                             # ni sesutje: obstoječe datoteke se le odprejo
         if k:
             return False                         # napaka v skripti (sled v gradnja.konec), ponavljanje ne pomaga
         # FreeCAD se je sesul: kos iz zadnji.txt dobi točko v preskoci.json (1 = še enkrat brez razgrnitve, 2 = preskoči)

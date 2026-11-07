@@ -33,8 +33,11 @@ def teci():
         Gui.getMainWindow().hide()
         App.ParamGet("User parameter:BaseApp/Preferences/Document").SetBool("CreateBackupFiles", False)
         import zgradi
-        zgradi.zgradi()
-        izid = "ok"
+        try:
+            zgradi.zgradi()
+            izid = "ok"
+        except zgradi.PomnilnikPoln as e:
+            izid = "pomnilnik %s" % e        # prenos.py gradnjo nadaljuje v novem procesu
     except Exception:  # noqa: BLE001
         izid = traceback.format_exc()
     with open(KONEC, "w", encoding="utf-8") as f:
