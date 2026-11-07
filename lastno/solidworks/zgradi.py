@@ -208,22 +208,43 @@ def razvrsti(S):
         if "drevo" in s:
             dodaj(kljuc(s["pot"], s["cfg"]), s["pot"], s["cfg"], "sestav")
             obhod(s["drevo"])
-    # enolična imena v mapi; obstoječa datoteka (iz prejšnje gradnje tega ali drugega projekta) obdrži ime
+    # enolična imena v mapi; obstoječa datoteka (iz prejšnje gradnje tega ali drugega projekta) obdrži ime;
+    # datoteka, ki ni nastala s prenosom (npr. STEP uvoz Podesta 29. 10.), je zasedena: naša dobi pripono
     zasedena = set()
     for k, z in sorted(vse.items(), key=lambda t: (t[1]["navidezno"], t[1]["vrsta"] != "del", t[0])):
         ime, n = z["osnova"], 2
+        if tuja(os.path.join(z["mapa"], ime + ".FCStd")):
+            ime = z["osnova"] = ime + (" (sestav)" if z["vrsta"] == "sestav" else " (SolidWorks)")
         if z["vrsta"] == "sestav" and not ime.endswith(" (sestav)"):
             if os.path.exists(os.path.join(z["mapa"], ime + " (sestav).FCStd")) and \
                     not os.path.exists(os.path.join(z["mapa"], ime + ".FCStd")):
                 ime = z["osnova"] = ime + " (sestav)"              # prejšnja gradnja (DJ DarMar, Airpix) je tako imenovala
             elif (z["mapa"].lower(), ime.lower()) in zasedena:
                 ime = z["osnova"] = ime + " (sestav)"
-        while (z["mapa"].lower(), ime.lower()) in zasedena:
+        while (z["mapa"].lower(), ime.lower()) in zasedena or tuja(os.path.join(z["mapa"], ime + ".FCStd")):
             ime, n = "%s %d" % (z["osnova"], n), n + 1
         zasedena.add((z["mapa"].lower(), ime.lower()))
         z["ime"] = ime
         z["datoteka"] = os.path.join(z["mapa"], ime + ".FCStd")
     return vse
+
+
+_tuje = {}
+
+
+def tuja(pot):
+    """FCStd obstaja in ni nastal s prenosom (v Document.xml ni lastnosti Izvor iz skupine SolidWorks)."""
+    if pot not in _tuje:
+        if not os.path.exists(pot):
+            _tuje[pot] = False
+        else:
+            try:
+                import zipfile
+                x = zipfile.ZipFile(pot).read("Document.xml")
+                _tuje[pot] = b'name="Izvor"' not in x
+            except Exception:  # noqa: BLE001
+                _tuje[pot] = False
+    return _tuje[pot]
 
 
 def definicije_sestavov(S, vse):
