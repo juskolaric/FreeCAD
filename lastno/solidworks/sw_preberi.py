@@ -440,8 +440,10 @@ def main():
     log("delov za izvoz:", len(potrebe))
     for pl, (pot, cfgs) in sorted(potrebe.items()):
         dej = S.get("dejavne", {}).get(pl)
+        if dej is not None and dej.get("dejavna") is None and dej.get("poskusi", 1) >= 2:
+            continue                       # del se dvakrat ni odprl (napaka je zapisana)
         if dej is not None and dej.get("dejavna") is None:
-            continue                       # del se ni odprl (napaka je zapisana)
+            dej = None                     # 2. poskus (npr. 65536 = dokument z istim imenom je že odprt)
         if dej is not None:
             manjka = [c for c in cfgs if not S["deli"].get(kljuc(pot, c or dej["dejavna"]), {}).get("step")]
             if not manjka:
@@ -451,7 +453,8 @@ def main():
             preberi_del(pot, cfgs)
         except Exception as e:  # noqa: BLE001
             S["napake"].append({"pot": pot, "faza": "del", "napaka": str(e)})
-            S.setdefault("dejavne", {})[pl] = {"dejavna": None, "napaka": str(e)}
+            prej = S.setdefault("dejavne", {}).get(pl) or {}
+            S["dejavne"][pl] = {"dejavna": None, "napaka": str(e), "poskusi": prej.get("poskusi", 0) + 1}
             log("  NAPAKA", e)
             ponovno()
         shrani_stanje()
