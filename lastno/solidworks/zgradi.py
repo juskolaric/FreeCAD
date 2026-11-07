@@ -334,12 +334,24 @@ def definicije_sestavov(S, vse):
 
     for s in S["sestavi"].values():
         vsi(s.get("drevo", []))
-    # različice: zapis za gradnjo v podmapi »Gibljivi podsestavi« ob osnovnem sestavu, enolično ime
+    def podpis(sez):
+        """Podpis lege poddrevesa: ključi, imena in lokalne lege otrok (0,1 mm / 1e-4), rekurzivno. Enaka lega v drugem
+        projektu da isto ime datoteke (se le poveže), drugačna lega drugo (prej so se imena prekrivala)."""
+        vrstice = []
+        for o, M in sorted(sez, key=lambda t: t[0]["ime"].split("/")[-1]):
+            A = M.A
+            vrstice.append("%s|%s|%d|%s" % (o["ime"].split("/")[-1], o["kljuc"], 1 if o["zatrto"] else 0,
+                                           ",".join("%.1f" % A[i] if i in (3, 7, 11) else "%.4f" % A[i] for i in range(12))))
+            if o["vrsta"] == "SESTAV" and not o["zatrto"] and o["lega"]:
+                vrstice.append("[" + podpis(lokalne(o)) + "]")
+        return hashlib.sha1("\n".join(vrstice).encode("utf-8")).hexdigest()
+
+    # različice: zapis za gradnjo v podmapi »Gibljivi podsestavi« ob osnovnem sestavu; ime nosi podpis lege
     zasedena = set()
     for vk, (osnovni, sez, nad) in sorted(razlicice.items(), key=lambda t: (t[1][0], int(t[0].rsplit("~", 1)[1]))):
         b = vse[osnovni]
         mapa = os.path.join(b["mapa"], "Gibljivi podsestavi")
-        osnova = cisto("%s (v %s)" % (b["osnova"], nad or "drugem sestavu"))
+        osnova = cisto("%s (v %s) %s" % (b["osnova"], nad or "drugem sestavu", podpis(sez)[:6]))
         ime, n = osnova, 2
         while (mapa.lower(), ime.lower()) in zasedena:
             ime, n = "%s %d" % (osnova, n), n + 1
