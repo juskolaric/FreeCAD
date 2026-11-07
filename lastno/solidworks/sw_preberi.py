@@ -414,7 +414,14 @@ def main():
             continue
         log("SESTAV", os.path.relpath(pot, IZVOR), "(2. poskus)" if prej else "")
         try:
-            S["sestavi"][pot.lower()] = preberi_sestav(pot)
+            try:
+                S["sestavi"][pot.lower()] = preberi_sestav(pot)
+            except Exception as e1:  # noqa: BLE001
+                if "65536" not in str(e1):
+                    raise
+                log("  isto ime že odprto: SolidWorks na novo, 2. poskus")
+                ponovno()
+                S["sestavi"][pot.lower()] = preberi_sestav(pot)
         except Exception as e:  # noqa: BLE001
             S["napake"].append({"pot": pot, "faza": "sestav", "napaka": str(e)})
             S["sestavi"][pot.lower()] = {"pot": pot, "napaka": str(e), "poskusi": (prej or {}).get("poskusi", 0) + 1}
@@ -450,7 +457,15 @@ def main():
                 continue
         log("DEL", pot.replace(IZVOR, "~"))
         try:
-            preberi_del(pot, cfgs)
+            try:
+                preberi_del(pot, cfgs)
+            except Exception as e1:  # noqa: BLE001
+                if "65536" not in str(e1):
+                    raise
+                # 65536: dokument z istim imenom je že odprt (kopije map v arhivih) -> SolidWorks na novo in takoj še enkrat
+                log("  isto ime že odprto: SolidWorks na novo, 2. poskus")
+                ponovno()
+                preberi_del(pot, cfgs)
         except Exception as e:  # noqa: BLE001
             S["napake"].append({"pot": pot, "faza": "del", "napaka": str(e)})
             prej = S.setdefault("dejavne", {}).get(pl) or {}
