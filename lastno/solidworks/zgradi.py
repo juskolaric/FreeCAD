@@ -284,7 +284,7 @@ def definicije_sestavov(S, vse):
             return False
         for ime, (oa, ma) in a.items():
             ob, mb = b[ime]
-            if bool(oa["zatrto"]) != bool(ob["zatrto"]) or oa["kljuc"] != ob["kljuc"]:
+            if bool(oa["zatrto"]) != bool(ob["zatrto"]) or oa["kljuc"] != ob["kljuc"] or                     bool(oa.get("skrito")) != bool(ob.get("skrito")):      # vidnost kosa je del različice (Malibu F)
                 return False
             if oa["zatrto"]:
                 continue
@@ -340,7 +340,8 @@ def definicije_sestavov(S, vse):
         vrstice = []
         for o, M in sorted(sez, key=lambda t: t[0]["ime"].split("/")[-1]):
             A = M.A
-            vrstice.append("%s|%s|%d|%s" % (o["ime"].split("/")[-1], o["kljuc"], 1 if o["zatrto"] else 0,
+            vrstice.append("%s|%s|%d%d|%s" % (o["ime"].split("/")[-1], o["kljuc"], 1 if o["zatrto"] else 0,
+                                             1 if o.get("skrito") else 0,
                                            ",".join("%.1f" % A[i] if i in (3, 7, 11) else "%.4f" % A[i] for i in range(12))))
             if o["vrsta"] == "SESTAV" and not o["zatrto"] and o["lega"]:
                 vrstice.append("[" + podpis(lokalne(o)) + "]")
