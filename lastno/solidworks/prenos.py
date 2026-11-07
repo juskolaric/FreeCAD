@@ -108,13 +108,50 @@ def gradi(p):
         except OSError:
             pass
     log("GRADI", kljuc, "->", cfg.cilj(kljuc))
-    t0 = time.time()
-    r = pixi(FREECAD, ["--user-cfg", USER_CFG, os.path.join(TU, "zagon_gradnje.py")], env)
-    with open(os.path.join(pod, "gradnja.stdout.log"), "ab") as f:
-        f.write(r.stdout or b"")
-    k = konec(kljuc, "gradnja.konec")
-    log("GRADI konec", kljuc, "koda", r.returncode, "%.0f min" % ((time.time() - t0) / 60), "|", (k or "ni gradnja.konec")[:200])
-    return bool(k) and k == "ok"
+    zadnji_pot = os.path.join(pod, "zadnji.txt")
+    preskoci_pot = os.path.join(pod, "preskoci.json")
+    brez_krivca = 0
+    for poskus in range(1, 26):
+        try:
+            os.remove(zadnji_pot)
+        except OSError:
+            pass
+        t0 = time.time()
+        r = pixi(FREECAD, ["--user-cfg", USER_CFG, os.path.join(TU, "zagon_gradnje.py")], env)
+        with open(os.path.join(pod, "gradnja.stdout.log"), "ab") as f:
+            f.write(r.stdout or b"")
+        k = konec(kljuc, "gradnja.konec")
+        log("GRADI konec", kljuc, "koda", r.returncode, "%.0f min" % ((time.time() - t0) / 60), "|", (k or "ni gradnja.konec")[:200])
+        if k == "ok":
+            return True
+        if k:
+            return False                         # napaka v skripti (sled v gradnja.konec), ponavljanje ne pomaga
+        # FreeCAD se je sesul: kos iz zadnji.txt dobi točko v preskoci.json (1 = še enkrat brez razgrnitve, 2 = preskoči)
+        zadnji = None
+        try:
+            if os.path.getsize(zadnji_pot) > 2:
+                zadnji = json.load(open(zadnji_pot, encoding="utf-8"))
+        except Exception:  # noqa: BLE001
+            zadnji = None
+        if zadnji:
+            try:
+                presk = dict(json.load(open(preskoci_pot, encoding="utf-8")))
+            except Exception:  # noqa: BLE001
+                presk = {}
+            n = presk.get(zadnji["kljuc"], 0) + 1
+            if n > 2:
+                log("SESUTJE", kljuc, "tretjič pri", zadnji["ime"], "- odneham")
+                return False
+            presk[zadnji["kljuc"]] = n
+            json.dump(presk, open(preskoci_pot, "w", encoding="utf-8"), ensure_ascii=False, indent=1)
+            log("SESUTJE", kljuc, "pri", zadnji["vrsta"], zadnji["ime"], "(%d.) -> %s, ponovni zagon %d" % (
+                n, "še enkrat brez razgrnitve" if n == 1 and zadnji["vrsta"] == "del" else "preskočim", poskus))
+        else:
+            brez_krivca += 1
+            log("SESUTJE", kljuc, "brez znanega kosa, ponovni zagon %d" % poskus)
+            if brez_krivca >= 3:
+                return False
+    return False
 
 
 def preveri(p):

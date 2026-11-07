@@ -54,6 +54,8 @@ R_INV = App.Matrix(R)
 R_INV.transpose()                        # rotacija: inverz = transponirana
 
 DNEVNIK = os.path.join(PODATKI, "gradnja.log")
+ZADNJI = os.path.join(PODATKI, "zadnji.txt")          # kos, ki se gradi (ob sesutju FreeCAD-a pove, kateri je kriv)
+PRESKOCI = os.path.join(PODATKI, "preskoci.json")     # ključ -> število sesutij FreeCAD-a pri tem kosu (piše prenos.py)
 
 
 def log(*a):
@@ -422,7 +424,9 @@ def zgradi_del(z):
     tarca.Label = z["ime"]
     oznaci(tarca, z)
     doc.recompute()
-    if "FlatPattern" in z["model"].get("tipi", []):
+    if z.get("brez_razgrnitve"):
+        z.setdefault("opombe", []).append("razgrnitev izpuščena: FreeCAD se je pri njej sesul")
+    elif "FlatPattern" in z["model"].get("tipi", []):
         try:
             import lastna_plocevina as lp
             kos = max((o for o in doc.Objects if o.isDerivedFrom("Part::Feature") and o.Shape.Solids),
@@ -502,6 +506,19 @@ def zgradi_sestav(z, otroci, vse):
     return doc
 
 
+def zadnji(z=None):
+    with open(ZADNJI, "w", encoding="utf-8") as f:
+        if z is not None:
+            json.dump({"kljuc": z["kljuc"], "ime": z["ime"], "vrsta": z["vrsta"], "datoteka": z["datoteka"]}, f, ensure_ascii=False)
+
+
+def preskoceni():
+    try:
+        return dict(json.load(open(PRESKOCI, encoding="utf-8")))
+    except Exception:  # noqa: BLE001
+        return {}
+
+
 def zgradi():
     for p in (os.path.join(App.getUserAppDataDir(), "Mod", "lastna_plocevina"),
               os.path.join(App.getUserAppDataDir(), "Mod", "sheetmetal")):
@@ -515,15 +532,25 @@ def zgradi():
     samo_deli = os.environ.get("SW_SAMO_DELI") == "1"         # preizkus: le deli, ki že imajo STEP
     omeji = int(os.environ.get("SW_OMEJI") or 0)
     narejenih = 0
+    presk = preskoceni()
     for i, z in enumerate(sorted(deli, key=lambda z: z["datoteka"])):
         if samo_deli and not os.path.exists(os.path.join(STEP, z["kljuc"] + ".step")):
             continue
         if omeji and narejenih >= omeji:
             break
+        sesutij = presk.get(z["kljuc"], 0)
+        if sesutij >= 2 and not os.path.exists(z["datoteka"]):
+            z.setdefault("opombe", []).append("preskočeno: FreeCAD se je pri uvozu tega kosa sesul (%d-krat)" % sesutij)
+            log("PRESKOČEN del (sesutje)", z["ime"])
+            continue
+        if sesutij == 1:
+            z["brez_razgrnitve"] = True
         narejenih += 1
         t0 = time.time()
         try:
+            zadnji(z)
             doc = zgradi_del(z)
+            zadnji()
             if not z.get("obstojec"):
                 log("del %d/%d %s (%.1f s)" % (i + 1, len(deli), os.path.relpath(z["datoteka"], cfg.CILJ_KOREN),
                                                time.time() - t0))
@@ -549,8 +576,14 @@ def zgradi():
             z.setdefault("opombe", []).append("drevo sestava ni prebrano")
             log("PRESKOČEN sestav brez drevesa", z["ime"])
             continue
+        if presk.get(z["kljuc"], 0) >= 1 and not os.path.exists(z["datoteka"]):
+            z.setdefault("opombe", []).append("preskočeno: FreeCAD se je pri gradnji tega sestava sesul")
+            log("PRESKOČEN sestav (sesutje)", z["ime"])
+            continue
         try:
+            zadnji(z)
             zgradi_sestav(z, defi[z["kljuc"]], vse)
+            zadnji()
             if not z.get("obstojec"):
                 log("sestav %s%s" % (os.path.relpath(z["datoteka"], cfg.CILJ_KOREN),
                                      (" (manjka: %s)" % ", ".join(z["manjka"])) if z.get("manjka") else ""))
