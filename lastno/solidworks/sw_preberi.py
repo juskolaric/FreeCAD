@@ -20,7 +20,9 @@ import hashlib
 import json
 import os
 import re
+import subprocess
 import sys
+import threading
 import time
 import traceback
 import types
@@ -128,6 +130,7 @@ def vrni_nastavitve():
 
 def ponovno():
     global sw
+    cuvaj_koncaj()
     try:
         sw.CloseAllDocuments(True)
         sw.ExitApp()
@@ -138,7 +141,32 @@ def ponovno():
     zazeni()
 
 
+CAS_DOK = float(os.environ.get("SW_CAS_DOK") or 600)
+_cuvaj = [None]
+
+
+def cuvaj_zacni(pot):
+    """Če dokument ni prebran v CAS_DOK s, SolidWorks najverjetneje čaka na nevidno pogovorno okno: ustavi ga."""
+    cuvaj_koncaj()
+
+    def ustavi():
+        log("ČASOVNA OMEJITEV %.0f s pri %s: ustavljam obviseli SolidWorks" % (CAS_DOK, os.path.basename(pot)))
+        subprocess.run(["taskkill", "/F", "/IM", "SLDWORKS.exe"], capture_output=True, creationflags=0x08000000)
+
+    t = threading.Timer(CAS_DOK, ustavi)
+    t.daemon = True
+    t.start()
+    _cuvaj[0] = t
+
+
+def cuvaj_koncaj():
+    if _cuvaj[0] is not None:
+        _cuvaj[0].cancel()
+        _cuvaj[0] = None
+
+
 def odpri(pot, vrsta):
+    cuvaj_zacni(pot)
     global odprtih
     if odprtih >= NA_ZAGON:
         ponovno()
@@ -155,6 +183,7 @@ def odpri(pot, vrsta):
 
 
 def zapri(m):
+    cuvaj_koncaj()
     try:
         sw.CloseDoc(v(m, "GetTitle"))
     except Exception:  # noqa: BLE001
@@ -380,14 +409,15 @@ def main():
     zazeni()
     # 1) sestavi
     for pot in datoteke(".sldasm"):
-        if pot.lower() in S["sestavi"]:
+        prej = S["sestavi"].get(pot.lower())
+        if prej is not None and ("drevo" in prej or prej.get("poskusi", 1) >= 2):
             continue
-        log("SESTAV", os.path.relpath(pot, IZVOR))
+        log("SESTAV", os.path.relpath(pot, IZVOR), "(2. poskus)" if prej else "")
         try:
             S["sestavi"][pot.lower()] = preberi_sestav(pot)
         except Exception as e:  # noqa: BLE001
             S["napake"].append({"pot": pot, "faza": "sestav", "napaka": str(e)})
-            S["sestavi"][pot.lower()] = {"pot": pot, "napaka": str(e)}
+            S["sestavi"][pot.lower()] = {"pot": pot, "napaka": str(e), "poskusi": (prej or {}).get("poskusi", 0) + 1}
             log("  NAPAKA", e)
             ponovno()
         shrani_stanje()
