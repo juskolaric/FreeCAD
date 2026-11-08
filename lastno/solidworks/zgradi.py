@@ -158,6 +158,18 @@ def ima_soimenjaka(pot):
     return os.path.exists(os.path.splitext(pot)[0] + ".SLDPRT") or os.path.exists(os.path.splitext(pot)[0] + ".sldprt")
 
 
+NAJVEC_POT_SESTAV = 200   # FreeCAD sestava s potjo nad ~222 znakov ne shrani (ARHIV Mailstone 8. 11.: 30 sestavov)
+
+
+def kratko_ime(mapa, ime, najvec=NAJVEC_POT_SESTAV):
+    """Ime sestava, da pot ne preseže `najvec` znakov: odreže konec in doda »~« + 6 znakov podpisa celega imena."""
+    if len(os.path.join(mapa, ime + ".FCStd")) <= najvec:
+        return ime
+    h = hashlib.sha1(ime.encode("utf-8")).hexdigest()[:6]
+    prostor = najvec - len(os.path.join(mapa, "")) - len(".FCStd") - 8
+    return (ime[:max(prostor, 12)].rstrip(" .(") + " ~" + h)
+
+
 def razvrsti(S):
     """ključ -> zapis (vrsta, pot, cfg, mapa, ime, model, meritve). Vse, kar je v mapi, in vse, kar sestavi rabijo."""
     dejavne = dejavne_konfiguracije(S)
@@ -224,6 +236,8 @@ def razvrsti(S):
         while (z["mapa"].lower(), ime.lower()) in zasedena or tuja(os.path.join(z["mapa"], ime + ".FCStd")):
             ime, n = "%s %d" % (z["osnova"], n), n + 1
         zasedena.add((z["mapa"].lower(), ime.lower()))
+        if z["vrsta"] == "sestav":
+            ime = kratko_ime(z["mapa"], ime)
         z["ime"] = ime
         z["datoteka"] = os.path.join(z["mapa"], ime + ".FCStd")
     return vse
@@ -374,6 +388,9 @@ def definicije_sestavov(S, vse):
         b = vse[osnovni]
         mapa = os.path.join(b["mapa"], "Gibljivi podsestavi")
         osnova = cisto("%s (v %s) %s" % (b["osnova"], nad or "drugem sestavu", podpis(sez)[:6]))
+        if len(os.path.join(mapa, osnova + ".FCStd")) > NAJVEC_POT_SESTAV:      # najprej brez »(v <nadsestav>)«
+            osnova = cisto("%s %s" % (b["osnova"], podpis(sez)[:6]))
+        osnova = kratko_ime(mapa, osnova)
         ime, n = osnova, 2
         while (mapa.lower(), ime.lower()) in zasedena:
             ime, n = "%s %d" % (osnova, n), n + 1
