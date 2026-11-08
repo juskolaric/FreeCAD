@@ -420,12 +420,27 @@ def shrani(doc, pot):
             doc.saveAs(pot)
             break
         except OSError:
+            # dolga pot (FreeCAD piše začasno datoteko z daljšim imenom; ARHIV Mailstone 8. 11.: 223 znakov ni šlo):
+            # del (brez povezav) se shrani na kratko pot in premakne; sestav ne, ker bi relativne povezave kazale narobe
+            if len(pot) > 200 and tarca_sestava(doc) is None:
+                import shutil
+                import tempfile
+                zac = os.path.join(tempfile.gettempdir(), "swdel_%d.FCStd" % os.getpid())
+                doc.saveAs(zac)
+                App.closeDocument(doc.Name)
+                shutil.move(zac, pot)
+                doc = App.openDocument(pot, True)
+                break
             if poskus == 19:
                 raise
             time.sleep(1.5)
     if App.GuiUp:
         import FreeCADGui
-        FreeCADGui.getDocument(doc.Name).Modified = False
+        try:
+            FreeCADGui.getDocument(doc.Name).Modified = False
+        except Exception:  # noqa: BLE001
+            pass
+    return doc
 
 
 def oznaci(obj, z):
@@ -535,8 +550,8 @@ def zgradi_del(z):
             for o in list(doc.Objects):
                 if o.Name.startswith("Razgrnitev"):
                     doc.removeObject(o.Name)
-    shrani(doc, pot)
-    z["dok"], z["objekt"] = doc.Name, tarca.Name
+    doc = shrani(doc, pot) or doc
+    z["dok"], z["objekt"] = doc.Name, tarca_dela(doc).Name
     return doc
 
 
