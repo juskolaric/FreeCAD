@@ -23,6 +23,14 @@ TU = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, TU)
 import prenos_cfg as cfg  # noqa: E402
 
+# izpis v datoteko (preusmerjen stdout) je v Windows cp1250: znak iz imena datoteke, ki ga cp1250 nima (»┬«),
+# je 8. 11. 2026 ustavil branje ARHIV Mailstone -> nadomestni znak namesto napake
+try:
+    sys.stdout.reconfigure(errors="replace")
+    sys.stderr.reconfigure(errors="replace")
+except Exception:  # noqa: BLE001
+    pass
+
 REPO = os.path.dirname(os.path.dirname(TU))                          # CAD in 3D/FreeCAD
 FREECAD = os.path.join(REPO, ".pixi", "envs", "default", "Library", "bin", "FreeCAD.exe")
 FREECADCMD = os.path.join(REPO, ".pixi", "envs", "default", "Library", "bin", "FreeCADCmd.exe")

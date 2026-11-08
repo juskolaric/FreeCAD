@@ -28,6 +28,14 @@ import traceback
 import types
 
 import pythoncom
+
+# izpis v datoteko (preusmerjen stdout) je v Windows cp1250: znak iz imena datoteke, ki ga cp1250 nima (»┬«),
+# je 8. 11. 2026 ustavil branje ARHIV Mailstone -> nadomestni znak namesto napake
+try:
+    sys.stdout.reconfigure(errors="replace")
+    sys.stderr.reconfigure(errors="replace")
+except Exception:  # noqa: BLE001
+    pass
 from win32com.client import VARIANT, dynamic
 
 IZVOR, PODATKI, STEP = (os.path.abspath(a) for a in sys.argv[1:4])   # SolidWorks relativne poti razreši po svoje
