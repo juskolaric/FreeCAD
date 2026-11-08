@@ -12,6 +12,11 @@ import sys
 import FreeCAD as App
 import Part
 
+try:                                     # izpis imen z znaki, ki jih cp1250 nima, ne sme ustaviti kontrole (8. 11. 2026)
+    sys.stdout.reconfigure(errors="replace")
+except Exception:  # noqa: BLE001
+    pass
+
 try:
     TU = os.path.dirname(os.path.abspath(__file__))
 except NameError:
@@ -116,6 +121,8 @@ povzetek = {
 }
 izid["povzetek"] = povzetek
 json.dump(izid, open(os.path.join(PODATKI, "kontrola.json"), "w", encoding="utf-8"), ensure_ascii=False, indent=1)
+with open(os.path.join(PODATKI, "kontrola.konec"), "w", encoding="utf-8") as f:
+    f.write("ok\n")
 print("DELI: preverjenih %d, odstopa %d" % (len(izid["deli"]), len(slabi_deli)))
 for x in slabi_deli[:40]:
     print("   ", x)

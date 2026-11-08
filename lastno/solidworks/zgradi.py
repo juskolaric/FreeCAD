@@ -387,6 +387,8 @@ def definicije_sestavov(S, vse):
     for vk, (osnovni, sez, nad) in sorted(razlicice.items(), key=lambda t: (t[1][0], int(t[0].rsplit("~", 1)[1]))):
         b = vse[osnovni]
         mapa = os.path.join(b["mapa"], "Gibljivi podsestavi")
+        if len(mapa) > 170:              # globoka mapa (arhivi): različica gre v »Gibljivi podsestavi« v korenu projekta
+            mapa = os.path.join(cfg.cilj(b.get("projekt") or KLJUC), "Gibljivi podsestavi")
         osnova = cisto("%s (v %s) %s" % (b["osnova"], nad or "drugem sestavu", podpis(sez)[:6]))
         if len(os.path.join(mapa, osnova + ".FCStd")) > NAJVEC_POT_SESTAV:      # najprej brez »(v <nadsestav>)«
             osnova = cisto("%s %s" % (b["osnova"], podpis(sez)[:6]))
