@@ -124,7 +124,18 @@ def _visina(obj):
     return float(o[:, 2].max() - o[:, 2].min())
 
 
+def pokazi(obj):
+    """Plahta vidna, trda prevleka (vir), iz katere je nastala, skrita."""
+    obj.hide_set(False)
+    obj.hide_render = False
+    vir = bpy.data.objects.get(obj.get("plahta_vir", "") or "")
+    if vir is not None:
+        vir.hide_set(True)
+        vir.hide_render = True
+
+
 def dvigni(obj):
+    pokazi(obj)
     o = osnova(obj)
     o[:, 2] += _visina(obj) + NAD_TOVOROM
     _nastavi(obj.data, o)
@@ -229,6 +240,7 @@ def simuliraj(obj, okvirjev=96, fps=24, vsak=2):
 
 
 def spusti(obj, okvirjev=96):
+    pokazi(obj)
     okvirji, konec, cas, fps = simuliraj(obj, okvirjev)
     _nastavi(obj.data, konec)
     obj[LASTNOST] = "dol"
