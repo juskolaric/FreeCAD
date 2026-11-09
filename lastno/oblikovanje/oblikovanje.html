@@ -1059,12 +1059,20 @@ $('gIzo').addEventListener('click', () => { nadzor.sredisceVrtenja = null; stand
 const platno = renderer.domElement;
 platno.addEventListener('mousedown', e => { if (e.button === 1) e.preventDefault(); });   // brez samodejnega drsenja brskalnika
 platno.addEventListener('contextmenu', e => e.preventDefault());
+// Kazalec nad pogledom: okno dobi fokus, da puščice in tipke delujejo brez klika (2026-11-09). Ne krade fokusa vnosnim poljem.
+platno.addEventListener('pointerenter', () => {
+  const a = document.activeElement;
+  if (a && a !== document.body && a.closest && a.closest('input, textarea, select, [contenteditable]')) return;
+  try { window.focus(); } catch (_) { /* okvir brez dovoljenja */ }
+});
+// Vrtenje: srednja ali desna tipka (desna od 2026-11-09, po želji uporabnika). Kratek klik desne ne naredi nič.
 platno.addEventListener('pointerdown', e => {
-  if (e.button !== 1) return;
+  if (e.button !== 1 && e.button !== 2) return;
+  if (nadzor.vlek) return;
   e.preventDefault(); koncajAnimacijo();
   try { platno.setPointerCapture(e.pointerId); } catch (_) { /* umetni dogodek */ }
   const s = nadzor.sredisceVrtenja ? null : samodejnoSredisceVrtenja();
-  nadzor.vlek = { x: e.clientX, y: e.clientY, x0: e.clientX, y0: e.clientY, premaknjen: false,
+  nadzor.vlek = { gumb: e.button, x: e.clientX, y: e.clientY, x0: e.clientX, y0: e.clientY, premaknjen: false,
                   sredisce: s ? s.tocka : null, samodejno: !!(s && s.samodejno) };
 });
 platno.addEventListener('pointermove', e => {
@@ -1079,11 +1087,11 @@ platno.addEventListener('pointermove', e => {
   else zavrtiOkoli(zasukZaslona(dx * VRTENJE_NA_PIKO, dy * VRTENJE_NA_PIKO), sredisceVrtenja());
 });
 platno.addEventListener('pointerup', e => {
-  const v = nadzor.vlek; if (!v || e.button !== 1) return;
+  const v = nadzor.vlek; if (!v || e.button !== v.gumb) return;
   nadzor.vlek = null;
   if (platno.hasPointerCapture(e.pointerId)) platno.releasePointerCapture(e.pointerId);
   if (v.samodejno && !nadzor.sredisceVrtenja) oznakaVrtenja.visible = false;
-  if (v.premaknjen) return;
+  if (v.premaknjen || v.gumb !== 1) return;
   const zdaj = performance.now();
   if (zdaj - nadzor.zadnjiSrednji < 400) { nadzor.zadnjiSrednji = 0; prilagodi(); return; }
   nadzor.zadnjiSrednji = zdaj;

@@ -4639,6 +4639,12 @@ $('legaTiska').addEventListener('change', e => {
 // Tiskanju. Strežnik FreeCAD-a pove, ali teče (/oblikovanje/stanje), in ga zažene (/oblikovanje/zazeni, Blender brez okna).
 const oblikovanje = { odprto: false, stanje: null, nalozen: false, zaganjam: false };
 const oblikovanjeEl = $('oblikovanje'), oblikovanjeOkvir = $('oblikovanjeOkvir');
+// Kazalec nad okvirjem mu da fokus: vrtenje, kolešček in tipke v Oblikovanju brez prvega klika (2026-11-09).
+oblikovanjeOkvir.addEventListener('mouseenter', () => {
+  const a = document.activeElement;
+  if (a && a !== document.body && a.closest && a.closest('input, textarea, select, [contenteditable]')) return;
+  if (oblikovanje.nalozen) oblikovanjeOkvir.focus();
+});
 function oblikovanjeSporoci(sporocilo) { if (oblikovanje.nalozen && oblikovanjeOkvir.contentWindow) oblikovanjeOkvir.contentWindow.postMessage(sporocilo, '*'); }
 async function osveziOblikovanje() {
   try { oblikovanje.stanje = await (await fetch('/oblikovanje/stanje', { cache: 'no-store' })).json(); } catch (e) { oblikovanje.stanje = null; }
