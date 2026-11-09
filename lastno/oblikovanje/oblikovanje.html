@@ -919,8 +919,8 @@ renderer.domElement.addEventListener('pointerup', e => {
 
 // --- plahta iz blaga (plahta.py) ---------------------------------------------------------------------------------
 // Klik na spuščeno plahto (ali gumb) jo dvigne v napeti obliki nad tovor, pod njo urejaš; klik na dvignjeno jo spusti:
-// Blender simulira padec blaga na tovor (trki s kvadri vidnih kosov), stran predvaja okvirje v živo na isti mreži
-// (vrstni red oglišč posnetka = vrstni red oglišč mreže), nato ostane končna oblika iz posnetka.
+// zravna se na tovor z ravnimi stranicami (vrh nad najvišjo točko). Prehod se animira na isti mreži (vrstni red oglišč
+// posnetka = vrstni red oglišč mreže). Okvirje simulacije blaga (plahta-spusti s simulacija: true) zna tudi predvajati.
 const plahta = { dela: '' };   // '' ali 'gor' (dvigujem) / 'dol' (pada)
 function plahtaVSceni() { const s = (model.seznam || []).filter(o => o.plahta); return s.find(o => o.vidno) || s[0]; }   // tudi skrita: gumb jo prikaže
 function narisiGumbPlahte() {
@@ -962,7 +962,6 @@ async function preklopiPlahto(ime) {
   const gor = p.plahta === 'gor';
   plahta.dela = gor ? 'dol' : 'gor'; narisiGumbPlahte();
   const star = objekti.get(ime), prej = star ? star.geometry.attributes.position.array.slice() : null;
-  if (gor) obvesti('Plahta pada: Blender simulira blago (~10 s) …');
   try {
     const d = await post('/ukaz', { dejanje: gor ? 'plahta-spusti' : 'plahta-dvigni', ime });
     if (d.ok === false) { obvesti(d.sporocilo || 'Plahta: napaka', true); return; }

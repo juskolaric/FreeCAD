@@ -6,8 +6,10 @@ Osnovna oblika (napeta, kot iz ukroja) je v atributu oglišč »plahta_osnova« 
 
   plahta-ustvari {vir, korak, ime}   iz kvadra (npr. »Prevleka PVC«) naredi plahto iz blaga; vir skrije
   plahta-dvigni  {ime}               plahta v osnovni obliki dvignjena nad tovor (pod njo urejaš)
-  plahta-spusti  {ime, okvirjev}     simulacija blaga (Blender Cloth) od dvignjene lege do mirovanja na tovoru;
-                                     odgovor nosi okvirje animacije (lega oglišč v 0,1 mm), stran jih predvaja
+  plahta-spusti  {ime}               plahta se spusti in zravna na tovor: ravne stranice, vrh nad najvišjo točko tovora
+                                     (stran animira prehod z isto mrežo)
+  plahta-spusti  {ime, simulacija: true, okvirjev}  padec blaga (Blender Cloth), odgovor nosi okvirje animacije;
+                                     ni na gumbu (gube niso bile všeč, 2026-11-09)
 
 Simulacija teče v začasni sceni v metrih (gravitacija 9,81 m/s², fizika Blenderja ne upošteva merila enot), trki so
 kvadri (okvir vsakega vidnega objekta v njegovih oseh) in tla pod najnižjim objektom. Po simulaciji se začasni podatki
@@ -27,6 +29,8 @@ ATRIBUT = "plahta_osnova"
 KORAK = 70.0          # mm, velikost celice blaga
 NAD_TOVOROM = 400.0   # mm, dvignjena plahta je toliko nad svojo napeto lego (+ višina plahte)
 MERILO = 0.001        # mm -> m za simulacijo
+RAZMAK = 15.0         # mm med tovorom in spuščeno plahto
+ROB_TLORISA = 300.0   # mm: kos šteje v tovor, če je središče njegovega okvira v tlorisu plahte ± to
 PROSOJNOST_BLAGA = 0.6   # alfa materiala plahte (vir je lahko skoraj prozoren)
 _KVADER = ((0, 1, 2, 3), (4, 7, 6, 5), (0, 4, 5, 1), (1, 5, 6, 2), (2, 6, 7, 3), (3, 7, 4, 0))
 
@@ -142,6 +146,44 @@ def dvigni(obj):
     obj[LASTNOST] = "gor"
 
 
+def _izkljuci(obj):
+    return {obj.name, obj.get("plahta_vir", "")} | {x.name for c in obj.users_collection for x in c.objects}
+
+
+def okvir_tovora(obj):
+    """Svetovni okvir vidnih mrež pod plahto (središče okvira v tlorisu plahte ± ROB_TLORISA), brez plahte in njene zbirke."""
+    o = osnova(obj)
+    omn, omx = o.min(axis=0), o.max(axis=0)
+    izkljuci = _izkljuci(obj)
+    mn = np.full(3, np.inf)
+    mx = np.full(3, -np.inf)
+    for x in bpy.context.scene.objects:
+        if x.type != "MESH" or x.name in izkljuci or x.hide_get() or x.hide_viewport:
+            continue
+        kot = np.array([tuple(x.matrix_world @ Vector(c)) for c in x.bound_box])
+        sr = (kot.min(axis=0) + kot.max(axis=0)) / 2
+        if not (omn[0] - ROB_TLORISA <= sr[0] <= omx[0] + ROB_TLORISA and omn[1] - ROB_TLORISA <= sr[1] <= omx[1] + ROB_TLORISA):
+            continue
+        mn = np.minimum(mn, kot.min(axis=0))
+        mx = np.maximum(mx, kot.max(axis=0))
+    return (mn, mx) if np.isfinite(mn).all() else None
+
+
+def prilagojena(obj):
+    """Plahta z ravnimi stranicami, prilagojena tovoru: vrh RAZMAK nad najvišjo točko tovora, stranice navpično ob tovoru
+    (nikoli ožje od ukroja osnove), spodnji rob ostane na višini osnove. Ista mreža, oglišča premaknjena po oseh."""
+    o = osnova(obj)
+    omn, omx = o.min(axis=0), o.max(axis=0)
+    okvir = okvir_tovora(obj)
+    nmn, nmx = omn.copy(), omx.copy()
+    if okvir is not None:
+        tmn, tmx = okvir
+        nmn[:2] = np.minimum(omn[:2], tmn[:2] - RAZMAK)
+        nmx[:2] = np.maximum(omx[:2], tmx[:2] + RAZMAK)
+        nmx[2] = max(tmx[2] + RAZMAK, omn[2] + 100.0)
+    return nmn + (o - omn) / np.maximum(omx - omn, 1e-9) * (nmx - nmn)
+
+
 def _trki(izkljuci):
     """Kvadri vseh vidnih mrež (okvir v oseh objekta) v metrih in najnižja točka."""
     tocke, ploskve = [], []
@@ -166,7 +208,7 @@ def simuliraj(obj, okvirjev=96, fps=24, vsak=2):
     o = osnova(obj)
     start = o.copy()
     start[:, 2] += _visina(obj) + NAD_TOVOROM
-    izkljuci = {obj.name, obj.get("plahta_vir", "")} | {x.name for c in obj.users_collection for x in c.objects}
+    izkljuci = _izkljuci(obj)
     t, f, tla = _trki(izkljuci)
 
     # Začasni objekti v zbirki trenutne scene (depsgraph druge scene v načinu -b ni na voljo), v metrih: gravitacija
@@ -239,7 +281,15 @@ def simuliraj(obj, okvirjev=96, fps=24, vsak=2):
         sc.frame_set(stari[0])
 
 
-def spusti(obj, okvirjev=96):
+def spusti(obj):
+    """Plahta se spusti in zravna na tovor (ravne stranice)."""
+    pokazi(obj)
+    _nastavi(obj.data, prilagojena(obj))
+    obj[LASTNOST] = "dol"
+
+
+def spusti_simulacija(obj, okvirjev=96):
+    """Padec blaga (Blender Cloth); ni na gumbu, ker gube ne izgledajo dobro (uporabnik 2026-11-09)."""
     pokazi(obj)
     okvirji, konec, cas, fps = simuliraj(obj, okvirjev)
     _nastavi(obj.data, konec)
@@ -258,8 +308,11 @@ def ukaz(u):
     if d == "plahta-dvigni":
         dvigni(obj)
         return {"ok": True, "ime": obj.name, "stanje": "gor", "sporocilo": "Plahta je dvignjena; spodaj lahko urejaš."}
+    if d == "plahta-spusti" and not u.get("simulacija"):
+        spusti(obj)
+        return {"ok": True, "ime": obj.name, "stanje": "dol", "sporocilo": "Plahta je spuščena na tovor."}
     if d == "plahta-spusti":
-        okvirji, cas, fps = spusti(obj, int(u.get("okvirjev") or 96))
+        okvirji, cas, fps = spusti_simulacija(obj, int(u.get("okvirjev") or 96))
         return {"ok": True, "ime": obj.name, "stanje": "dol", "okvirji": okvirji, "fps": fps,
                 "sporocilo": "Plahta je padla (simulacija %.1f s)." % cas}
     return {"ok": False, "sporocilo": "neznano dejanje: %s" % d}
