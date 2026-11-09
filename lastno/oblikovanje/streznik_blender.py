@@ -50,6 +50,8 @@ if MAPA not in sys.path:
     sys.path.insert(0, MAPA)
 from upodabljanje import UPODABLJANJE, DELOVNA, najdi_blender  # noqa: E402
 import igrisce  # noqa: E402
+import palete  # noqa: E402
+import moznosti  # noqa: E402
 from ai_oblikovalec import AIOblikovalec  # noqa: E402
 from slicice import Slicice  # noqa: E402
 
@@ -108,6 +110,7 @@ def srgb(c):
 def videz_materiala(mat):
     """Barva (sRGB), kovinskost, hrapavost in prosojnost iz Principled BSDF (ali barve materiala)."""
     barva, kov, hrap, alfa = list(mat.diffuse_color[:3]) if mat else [0.8, 0.8, 0.8], 0.0, 0.45, 1.0
+    sij = None      # svetenje (LED): emisija Principled BSDF; stran jo nariše kot emissive (2026-11-08)
     if mat is not None and mat.node_tree is not None:
         for n in mat.node_tree.nodes:
             if n.type == "BSDF_PRINCIPLED":
@@ -120,9 +123,17 @@ def videz_materiala(mat):
                 vir_t = n.inputs.get("Transmission Weight") or n.inputs.get("Transmission")
                 if vir_t is not None and float(vir_t.default_value) > 0.5:
                     alfa = min(alfa, 0.18)    # steklo, pleksi: v pogledu prosojno (render ga riše s prepustnostjo)
+                moc = n.inputs.get("Emission Strength")
+                barva_e = n.inputs.get("Emission Color")
+                if moc is not None and barva_e is not None and float(moc.default_value) > 0 and not barva_e.is_linked:
+                    if max(barva_e.default_value[:3]) > 0:
+                        sij = [round(srgb(c), 4) for c in barva_e.default_value[:3]]
                 break
-    return {"barva": [round(srgb(c), 4) for c in barva], "kovinskost": round(kov, 3),
-            "hrapavost": round(hrap, 3), "prosojnost": round(1 - alfa, 3)}
+    izid = {"barva": [round(srgb(c), 4) for c in barva], "kovinskost": round(kov, 3),
+            "hrapavost": round(hrap, 3), "prosojnost": round(1 - alfa, 3), "ime": mat.name if mat is not None else ""}
+    if sij:
+        izid["sij"] = sij
+    return izid
 
 
 def preliv_po_visini(mat):
@@ -255,7 +266,9 @@ def _prstni_odtis(obj):
 def _kljuc_objekta(obj):
     return (obj.name, obj.data.name if obj.data else "", obj.data.library.filepath if obj.data and obj.data.library else "",
             _prstni_odtis(obj), tuple(round(x, 4) for vr in obj.matrix_world for x in vr),
-            tuple((sl.material.name if sl.material else "") for sl in obj.material_slots),
+            # barva materiala v ključu: barvna paleta spremeni barvo, ne imena (stran sicer pokaže staro barvo iz predpomnilnika)
+            tuple(((sl.material.name, tuple(round(c, 4) for c in sl.material.diffuse_color)) if sl.material else "")
+                  for sl in obj.material_slots),
             tuple((m.type, m.show_viewport) for m in obj.modifiers), obj.data.is_editmode if hasattr(obj.data, "is_editmode") else False)
 
 
@@ -320,7 +333,8 @@ def zgradi_posnetek():
         _log("kosi: " + traceback.format_exc())
         kosi = []
     glava = json.dumps({"verzija": STANJE.verzija, "seznam": seznam, "datoteka": STANJE.datoteka,
-                        "parametri": STANJE.parametri, "imaObliko": STANJE.ima_obliko, "kosi": kosi}, separators=(",", ":"))
+                        "parametri": STANJE.parametri, "imaObliko": STANJE.ima_obliko, "kosi": kosi,
+                        "palete": palete.stanje(), "moznosti": moznosti.stanje()}, separators=(",", ":"))
     STANJE.posnetek_glava = glava[:-1] + ',"objekti":['
     STANJE.posnetek_objekti = objekti      # nit HTTP sestavi odgovor sama (lahko brez objektov, ki jih stran že ima)
     STANJE.posnetek = (STANJE.posnetek_glava + ",".join(o[2] for o in objekti) + "]}").encode("utf-8")
@@ -730,6 +744,9 @@ def preveri_zunanje():
 def ukaz(p):
     d = p.get("dejanje")
     izid = ukaz_ideje(p)
+    if izid is not None:
+        return izid
+    izid = palete.ukaz(p) or moznosti.ukaz(p)     # barvne palete (palete.py), možnosti/konfiguracije (moznosti.py)
     if izid is not None:
         return izid
     if d == "nova":

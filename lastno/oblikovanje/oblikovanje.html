@@ -81,6 +81,17 @@
   .drsnik .glava { display: flex; justify-content: space-between; font-size: 12px; color: var(--besedilo2); margin-bottom: 2px; }
   .drsnik .glava b { color: var(--besedilo); font-weight: 600; font-variant-numeric: tabular-nums; }
   .drsnik input { width: 100%; accent-color: var(--poudarek); }
+  .paleta { display: flex; align-items: center; gap: 8px; width: 100%; padding: 5px 8px; border: 1px solid transparent; border-radius: 6px;
+            background: none; color: var(--besedilo); font: inherit; font-size: 12px; text-align: left; cursor: pointer; }
+  .paleta:hover { background: var(--ozadje2, rgba(127,127,127,.12)); }
+  .paleta.izbrana { border-color: var(--poudarek); }
+  .paleta .vzorci { display: flex; flex: none; }
+  .paleta .vzorci i { width: 14px; height: 14px; border-radius: 3px; margin-right: 2px; box-shadow: inset 0 0 0 1px rgba(0,0,0,.25); }
+  .paleta .vzorci i.les { background: repeating-linear-gradient(90deg, #9b6a3c 0 3px, #b4834f 3px 6px); }
+  .vlogaBarva { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 3px 8px; font-size: 12px; color: var(--besedilo2); }
+  .vlogaBarva input[type=color] { width: 30px; height: 20px; padding: 0; border: 0; background: none; cursor: pointer; }
+  .vlogaBarva button { font-size: 11px; }
+  #palete .podnaslov { padding: 8px 8px 2px; font-size: 11px; color: var(--besedilo3); }
   #info { margin: 0 6px; font-size: 12px; color: var(--besedilo2); line-height: 1.6; }
 
   /* pogled */
@@ -91,6 +102,10 @@
   #prazno div { background: rgba(255,255,255,.9); padding: 16px 20px; border-radius: 12px; color: var(--besedilo2); line-height: 1.6; text-align: center; max-width: 440px; box-shadow: var(--senca2); }
   #delaPasica { position: absolute; top: 10px; left: 50%; transform: translateX(-50%); background: rgba(37,99,235,.95); color: #fff; padding: 6px 14px; border-radius: 999px; font-size: 12px; font-weight: 600; box-shadow: var(--senca2); }
   #delaPasica.skrit { display: none; }
+  #gumbiPogleda { position: absolute; top: 10px; right: 10px; display: flex; gap: 6px; z-index: 5; }
+  #gumbiPogleda button { font: inherit; font-size: 12px; padding: 5px 10px; border: 1px solid rgba(0,0,0,.12); border-radius: 6px;
+                         background: rgba(255,255,255,.9); color: var(--besedilo); cursor: pointer; box-shadow: var(--senca2); }
+  #gumbiPogleda button:hover { border-color: var(--poudarek); }
 
   /* klepet */
   #klepet { grid-row: 2 / 4; grid-column: 3; border-left: 1px solid var(--crta); display: flex; flex-direction: column; min-height: 0; background: #fff; }
@@ -183,12 +198,15 @@
   <aside id="stranski">
     <section><h3>Ideje <span class="projektIme" id="idejeProjekt" title="Odprt projekt; drugega izbereš v stolpcu Projekti čisto desno"></span><button id="gNovaIdeja2" type="button">+ nova</button></h3><div id="ideje"></div></section>
     <section id="drsnikiOkvir"><h3>Drsniki oblike</h3><div id="drsniki"></div></section>
+    <section id="moznostiOkvir"><h3>Možnosti</h3><div id="moznosti"></div></section>
+    <section id="paleteOkvir"><h3>Barvne palete <button id="gNovaPaleta" type="button" title="Trenutne barve shrani kot novo paleto">+ shrani</button></h3><div id="palete"></div></section>
     <section id="objektiOkvir"><h3>Objekti <button id="gVstaviKos" type="button" title="Vstavi kos iz druge ideje kot vezavo: sestav se na kos sklicuje (ideja + revizija), kopije ni">+ kos</button></h3><div id="seznam"></div><div id="info"></div></section>
   </aside>
   <div id="pogled">
     <div id="prazno"><div><b>Oblikovanje</b><br>Opiši idejo Claudu v klepetu desno (npr. »ergonomska ročka za vrtno lopatko, 120 mm«) —
       zgradil bo obliko z drsniki, jo pogledal in popravil. Lahko dodaš tudi skico ali fotografijo. Vsak odgovor je nova različica spodaj.</div></div>
     <div id="delaPasica" class="skrit">Claude oblikuje …</div>
+    <div id="gumbiPogleda"><button id="gSredina" type="button" title="Model na sredino pogleda, smer ostane (F)">⌖ Na sredino</button><button id="gIzo" type="button" title="Izometrični pogled na celoten model (7)">Izometrija</button></div>
     <div id="namig">Kot v SolidWorksu: srednji gumb vrti · Ctrl + srednji premik · Shift + srednji povečava · Alt + srednji sukanje · kolešček: povečava proti kazalcu · klik srednjega na model: središče vrtenja · levi: izbira · F prilagodi · 1–7 pogledi · puščice 15°</div>
   </div>
   <aside id="klepet">
@@ -301,11 +319,16 @@ let model = { objekti: [], seznam: [], parametri: [] }, verzija = -1, prilagodiO
 const okvirModela = new THREE.Box3();
 
 function material(m) {
-  return new THREE.MeshPhysicalMaterial({
+  const mat = new THREE.MeshPhysicalMaterial({
     color: new THREE.Color().setRGB(...m.barva, THREE.SRGBColorSpace), metalness: m.kovinskost, roughness: m.hrapavost,
     transparent: m.prosojnost > 0.01, opacity: 1 - m.prosojnost, clearcoat: m.kovinskost < 0.5 ? 0.15 : 0,
     envMapIntensity: m.kovinskost >= 0.5 ? 2.2 : 1.0, side: THREE.DoubleSide, vertexColors: !!m.poOgliscih,
   });
+  // svetenje (LED trak, svetleč pleksi): emisija iz Blenderja; izbira jo začasno zamenja z barvo izbire (osveziIzbiro)
+  mat.userData.sij = m.sij ? new THREE.Color().setRGB(...m.sij, THREE.SRGBColorSpace) : new THREE.Color(0x000000);
+  mat.emissive.copy(mat.userData.sij);
+  if (m.sij) mat.emissiveIntensity = 1.6;
+  return mat;
 }
 function zgradiGeometrijo(o) {
   const g = new THREE.BufferGeometry();
@@ -365,7 +388,7 @@ async function naloziModel() {
   } else tla.visible = false;
   $('prazno').style.display = model.objekti.length ? 'none' : '';
   if (prilagodiOb && model.objekti.length) { prilagodi(); prilagodiOb = false; }
-  osveziIzbiro(); narisiSeznam(); narisiDrsnike();
+  osveziIzbiro(); narisiSeznam(); narisiDrsnike(); narisiPalete(); narisiMoznosti();
   preveriSlicico();
 }
 
@@ -426,7 +449,7 @@ function narisiSeznam() {
 }
 function osveziIzbiro() {
   const izbrani = new Set((model.seznam || []).filter(o => o.izbran).map(o => o.ime));
-  for (const [ime, m] of objekti) for (const mat of m.material) mat.emissive.setHex(izbrani.has(ime) ? 0x3b1d8f : 0x000000);
+  for (const [ime, m] of objekti) for (const mat of m.material) { if (izbrani.has(ime)) mat.emissive.setHex(0x3b1d8f); else mat.emissive.copy(mat.userData.sij || new THREE.Color(0x000000)); }
 }
 
 // --- drsniki parametrične oblike ---------------------------------------------------------------------------------
@@ -462,6 +485,51 @@ async function posljiDrsnik(vrednosti) {
   drsniki.poteka = false;
 }
 addEventListener('pointerup', () => { if (drsniki.vlecem) { drsniki.vlecem = false; } });
+
+// --- barvne palete (palete.py): klik na paleto prebarva vloge; barvo vloge v aktivni paleti spremeniš z izbirnikom -----
+function narisiPalete() {
+  const p = model.palete, okvir = $('palete');
+  $('paleteOkvir').style.display = p && (p.vloge || []).length ? '' : 'none';
+  if (!p || !(p.vloge || []).length) return;
+  okvir.innerHTML = '';
+  for (const pal of p.palete || []) {
+    const g = document.createElement('button'); g.type = 'button';
+    g.className = 'paleta' + (pal.ime === p.aktivna ? ' izbrana' : '');
+    const vzorci = p.vloge.map(v => { const b = pal.barve[v.id]; return b ? `<i style="background:${esc(b)}" title="${esc(v.oznaka)}"></i>` : `<i class="les" title="${esc(v.oznaka)}: izvirno"></i>`; }).join('');
+    g.innerHTML = `<span class="vzorci">${vzorci}</span><span>${esc(pal.ime)}</span>`;
+    g.addEventListener('click', () => ukaz({ dejanje: 'paleta', ime: pal.ime }, true));
+    okvir.appendChild(g);
+  }
+  const akt = (p.palete || []).find(x => x.ime === p.aktivna);
+  if (!akt) return;
+  const n = document.createElement('div'); n.className = 'podnaslov'; n.textContent = 'Barve palete »' + akt.ime + '«'; okvir.appendChild(n);
+  for (const v of p.vloge) {
+    const d = document.createElement('div'); d.className = 'vlogaBarva';
+    const b = akt.barve[v.id];
+    d.innerHTML = `<span>${esc(v.oznaka)}</span><span><input type="color"> <button type="button" title="Izvirni material (les)">les</button></span>`;
+    const vnos = d.querySelector('input'); vnos.value = b || '#a0703f'; if (!b) vnos.style.opacity = .45;
+    vnos.addEventListener('change', () => ukaz({ dejanje: 'paleta-barva', vloga: v.id, barva: vnos.value }, true));
+    d.querySelector('button').addEventListener('click', () => ukaz({ dejanje: 'paleta-barva', vloga: v.id, barva: null }, true));
+    okvir.appendChild(d);
+  }
+}
+// --- možnosti (moznosti.py): kljukica vklopi ali izklopi dele modela (npr. mizica in nabiralnik) ---------------------
+function narisiMoznosti() {
+  const s = model.moznosti || [], okvir = $('moznosti');
+  $('moznostiOkvir').style.display = s.length ? '' : 'none';
+  okvir.innerHTML = '';
+  for (const m of s) {
+    const d = document.createElement('label'); d.className = 'vlogaBarva'; d.style.cursor = 'pointer';
+    d.innerHTML = `<span>${esc(m.oznaka)}</span><input type="checkbox">`;
+    const k = d.querySelector('input'); k.checked = !!m.vklop;
+    k.addEventListener('change', () => ukaz({ dejanje: 'moznost', id: m.id, vklop: k.checked }, true));
+    okvir.appendChild(d);
+  }
+}
+$('gNovaPaleta').addEventListener('click', () => {
+  const ime = prompt('Ime nove palete (shrani trenutne barve):');
+  if (ime && ime.trim()) ukaz({ dejanje: 'paleta-shrani', ime: ime.trim() });
+});
 
 // --- strežnik --------------------------------------------------------------------------------------------------
 function obvesti(besedilo, slabo) {
@@ -986,6 +1054,8 @@ function prilagodi() {   // F: smer pogleda ostane, model napolni pogled
   const p = prileganje(); if (!p) return;
   animirajNa(camera.quaternion.clone(), p.sredisce, p.razdalja, 320);
 }
+$('gSredina').addEventListener('click', () => { nadzor.sredisceVrtenja = null; prilagodi(); });
+$('gIzo').addEventListener('click', () => { nadzor.sredisceVrtenja = null; standardniPogled(STANDARDNI_POGLEDI.length - 1); });
 const platno = renderer.domElement;
 platno.addEventListener('mousedown', e => { if (e.button === 1) e.preventDefault(); });   // brez samodejnega drsenja brskalnika
 platno.addEventListener('contextmenu', e => e.preventDefault());

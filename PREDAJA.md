@@ -154,6 +154,23 @@ in podrobnosti vsakega področja: `CLAUDE.md`.
 
 ## 9. Stanje in odprte naloge (11. 10. 2026)
 
+**Dopolnitev 8.–9. 11. 2026 (seja »Photolandia: božične barve podesta«) — Oblikovanje: barvne palete, možnosti, svetenje:**
+
+- **Barvne palete** (`lastno/oblikovanje/palete.py`, nova): vloga = material z lastnostjo `vloga`, palete v lastnosti scene `palete`
+  (JSON: vloge, palete z barvami `#rrggbb` ali null = izvirni material, aktivna). Ukazi `/ukaz` `paleta`, `paleta-barva`, `paleta-shrani`,
+  `paleta-odstrani`; razdelek »Barvne palete« na strani (vzorci, izbirnik barve na vlogo, gumb »les«, »+ shrani«). Palete so v sceni → v vsaki
+  različici. Barva materiala je v ključu posnetka objekta (`_kljuc_objekta`), da stran ne vzame stare barve iz predpomnilnika.
+- **Možnosti / konfiguracije** (`lastno/oblikovanje/moznosti.py`, nova): lastnost scene `moznosti`, kljukica pokaže zbirke `ob_vklopu` ali
+  `ob_izklopu` (pogled in render, `hide_render`). Past: `hide_set` v eni zanki ni prijel pri vseh objektih — modul ponavlja do stanja.
+- **Svetenje v pogledu**: `videz_materiala` pošlje `sij` (Emission Color pri moči > 0), stran ga riše kot `emissive` (izbira ga začasno zamenja).
+- **Gumba v pogledu** »⌖ Na sredino« (= F) in »Izometrija« (= 7), zgoraj desno.
+- **Git**: `streznik_blender.py` in `oblikovanje.html` imata poleg teh priklopov še tuje necommitane spremembe (teksture, `render.py` +93);
+  commitani so samo moji hunki prek začasnega indeksa (git log 9. 11.), tuje spremembe ostanejo necommitane. Nepushano.
+- **Past: Oblikovanje je ena skupna scena.** 8. 11. je druga seja odprla svojo idejo, moja skripta (`izvedi.py`) je tekla v njej in shranila njen R01.
+  Pred `izvedi.py` preveri `IDEJE.mapa`; ob sočasnem delu urejaj `.blend` v ozadju (`blender -b Rxx.blend --python …`, nov `Rnn.blend` + vnos v `ideja.json`).
+- Projekt Podest (Oblak, `Oblikovanje/Projekti/Podest/Skripte/PREBERI.txt`): skripte `vloge_barv.py`, `moznosti_podesta.py`, `podstavki_na_podest.py`,
+  `stebri_led.py`; zadnja različica ideje Podest G10 je **R22** (paleta »Bela, rdeč spodnji okvir«, brez mizice in nabiralnika, ALU002 v utoru stebrov).
+
 **Dopolnitev 17. 10. 2026 (predaja vseh projektov delovnega prostora, seja »Zaključek in predaja projektov«; v tej seji brez sprememb v tem repu):**
 
 - Veja `moje-spremembe` @ `8aad4f8d92` »docs(CLAUDE): Blender v ozadju po nedejavnosti ugasne sam« (17. 10. 10:11); **3 commiti pred
@@ -200,3 +217,4 @@ Vse delo do 11. 10. je commitano in potisnjeno na `moje-spremembe`. Glavne odprt
 | 2026-10-10 | Blender kot drugi motor (Oblikovanje, render); okno Blenderja dovoljeno le za »Odpri v Blenderju«. |
 | 2026-10-10 | Program je MCP strežnik; katalog orodij živi v strežniku, most je tanek. |
 | 2026-10-10 | Tri stopnje (Oblikovanje → Strojno risanje → Tiskanje) z enotno podobo. |
+| 2026-11-08 | Barvne palete in možnosti (konfiguracije) živijo v sceni ideje, ne v strežniku: vsaka različica jih nosi s seboj; dele vlogam priredi skripta projekta. |
