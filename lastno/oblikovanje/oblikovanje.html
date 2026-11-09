@@ -390,7 +390,7 @@ async function naloziModel() {
   } else tla.visible = false;
   $('prazno').style.display = model.objekti.length ? 'none' : '';
   if (prilagodiOb && model.objekti.length) { prilagodi(); prilagodiOb = false; }
-  osveziIzbiro(); narisiSeznam(); narisiDrsnike(); narisiPalete(); narisiMoznosti();
+  osveziIzbiro(); narisiSeznam(); narisiDrsnike(); narisiPalete(); narisiMoznosti(); narisiGumbPlahte();
   preveriSlicico();
 }
 
@@ -916,24 +916,6 @@ renderer.domElement.addEventListener('pointerup', e => {
   if (ime && !e.ctrlKey && (model.seznam || []).some(o => o.ime === ime && o.plahta)) { preklopiPlahto(ime); return; }   // Ctrl+klik jo izbere
   ukaz({ dejanje: 'izberi', ime, dodaj: e.ctrlKey }, true);
 });
-// --- pogled kot v SolidWorksu (isti nadzor kot Strojno risanje v spletnem FreeCAD-u, lastno/splet/index.html) ------
-// Srednji gumb: prosto vrtenje okoli središča modela (ko je ves v pogledu), sicer okoli točke na vidni geometriji blizu
-// sredine zaslona (vijolična oznaka med vlekom), ali okoli točke, ki jo določi klik srednjega na model (klik v prazno jo
-// odstrani). Ctrl+srednji premik, Shift+srednji povečava, Alt+srednji sukanje okoli osi pogleda, dvoklik srednjega
-// prilagodi. Kolešček naprej oddalji, proti kazalcu. Tipke: puščice 15°, Shift 90°, Alt sukanje, Ctrl premik,
-// 1..7 standardni pogledi, F prilagodi, Z oddalji, Shift+Z približa. Levi gumb samo izbira.
-const nadzor = { cilj: new THREE.Vector3(), sredisceVrtenja: null, vlek: null, animacija: null, zadnjiSrednji: 0 };
-camera.lookAt(nadzor.cilj);
-const KORAK_VRTENJA = THREE.MathUtils.degToRad(15);
-const VRTENJE_NA_PIKO = 0.008;
-const OBRNI_KOLESCEK = false;   // true: kolešček naprej približa
-const oznakaVrtenja = new THREE.Mesh(new THREE.SphereGeometry(1, 16, 12), new THREE.MeshBasicMaterial({ color: 0xd81b9c, depthTest: false }));
-oznakaVrtenja.renderOrder = 10; oznakaVrtenja.visible = false; scene.add(oznakaVrtenja);
-const STANDARDNI_POGLEDI = [   // Z gor, spredaj gledamo v smeri +Y (kot FreeCAD in Blender)
-  { nazaj: [0, -1, 0], gor: [0, 0, 1] }, { nazaj: [0, 1, 0], gor: [0, 0, 1] },
-  { nazaj: [-1, 0, 0], gor: [0, 0, 1] }, { nazaj: [1, 0, 0], gor: [0, 0, 1] },
-  { nazaj: [0, 0, 1], gor: [0, 1, 0] }, { nazaj: [0, 0, -1], gor: [0, -1, 0] },
-  { nazaj: [1, -1, 1], gor: [0, 0, 1] },
 
 // --- plahta iz blaga (plahta.py) ---------------------------------------------------------------------------------
 // Klik na spuščeno plahto (ali gumb) jo dvigne v napeti obliki nad tovor, pod njo urejaš; klik na dvignjeno jo spusti:
@@ -1008,7 +990,7 @@ const KORAK_VRTENJA = THREE.MathUtils.degToRad(15);
 const VRTENJE_NA_PIKO = 0.008;
 const OBRNI_KOLESCEK = false;   // true: kolešček naprej približa
 const oznakaVrtenja = new THREE.Mesh(new THREE.SphereGeometry(1, 16, 12), new THREE.MeshBasicMaterial({ color: 0xd81b9c, depthTest: false }));
-oznakaVrtenja.renderOrder = 10; oznakaVrtenja.visible = false;   // ni v sceni: uporabnik je ne želi videti (2026-10-29)
+oznakaVrtenja.renderOrder = 10; oznakaVrtenja.visible = false; scene.add(oznakaVrtenja);
 const STANDARDNI_POGLEDI = [   // Z gor, spredaj gledamo v smeri +Y (kot FreeCAD in Blender)
   { nazaj: [0, -1, 0], gor: [0, 0, 1] }, { nazaj: [0, 1, 0], gor: [0, 0, 1] },
   { nazaj: [-1, 0, 0], gor: [0, 0, 1] }, { nazaj: [1, 0, 0], gor: [0, 0, 1] },
