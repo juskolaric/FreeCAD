@@ -106,6 +106,8 @@
   #gumbiPogleda button { font: inherit; font-size: 12px; padding: 5px 10px; border: 1px solid rgba(0,0,0,.12); border-radius: 6px;
                          background: rgba(255,255,255,.9); color: var(--besedilo); cursor: pointer; box-shadow: var(--senca2); }
   #gumbiPogleda button:hover { border-color: var(--poudarek); }
+  #gumbiPogleda button.skrit { display: none; }
+  #gPlahta { font-weight: 600; }
 
   /* klepet */
   #klepet { grid-row: 2 / 4; grid-column: 3; border-left: 1px solid var(--crta); display: flex; flex-direction: column; min-height: 0; background: #fff; }
@@ -206,7 +208,7 @@
     <div id="prazno"><div><b>Oblikovanje</b><br>Opiši idejo Claudu v klepetu desno (npr. »ergonomska ročka za vrtno lopatko, 120 mm«) —
       zgradil bo obliko z drsniki, jo pogledal in popravil. Lahko dodaš tudi skico ali fotografijo. Vsak odgovor je nova različica spodaj.</div></div>
     <div id="delaPasica" class="skrit">Claude oblikuje …</div>
-    <div id="gumbiPogleda"><button id="gSredina" type="button" title="Model na sredino pogleda, smer ostane (F)">⌖ Na sredino</button><button id="gIzo" type="button" title="Izometrični pogled na celoten model (7)">Izometrija</button></div>
+    <div id="gumbiPogleda"><button id="gSredina" type="button" title="Model na sredino pogleda, smer ostane (F)">⌖ Na sredino</button><button id="gIzo" type="button" title="Izometrični pogled na celoten model (7)">Izometrija</button><button id="gPlahta" type="button" class="skrit" title="Plahta iz blaga: dvigni jo, spodaj uredi, nato jo spusti in poglej, kako pade (simulacija v Blenderju). Klik na plahto naredi isto.">▲ Dvigni plahto</button></div>
     <div id="namig">Kot v SolidWorksu: srednji gumb vrti · Ctrl + srednji premik · Shift + srednji povečava · Alt + srednji sukanje · kolešček: povečava proti kazalcu · klik srednjega na model: središče vrtenja · levi: izbira · F prilagodi · 1–7 pogledi · puščice 15°</div>
   </div>
   <aside id="klepet">
@@ -910,7 +912,9 @@ renderer.domElement.addEventListener('pointerup', e => {
   const r = renderer.domElement.getBoundingClientRect();
   raycaster.setFromCamera(new THREE.Vector2((e.clientX - r.left) / r.width * 2 - 1, -(e.clientY - r.top) / r.height * 2 + 1), camera);
   const zadetek = raycaster.intersectObjects([...objekti.values()], false)[0];
-  ukaz({ dejanje: 'izberi', ime: zadetek ? zadetek.object.userData.ime : '', dodaj: e.ctrlKey }, true);
+  const ime = zadetek ? zadetek.object.userData.ime : '';
+  if (ime && !e.ctrlKey && (model.seznam || []).some(o => o.ime === ime && o.plahta)) { preklopiPlahto(ime); return; }   // Ctrl+klik jo izbere
+  ukaz({ dejanje: 'izberi', ime, dodaj: e.ctrlKey }, true);
 });
 // --- pogled kot v SolidWorksu (isti nadzor kot Strojno risanje v spletnem FreeCAD-u, lastno/splet/index.html) ------
 // Srednji gumb: prosto vrtenje okoli središča modela (ko je ves v pogledu), sicer okoli točke na vidni geometriji blizu
@@ -930,6 +934,68 @@ const STANDARDNI_POGLEDI = [   // Z gor, spredaj gledamo v smeri +Y (kot FreeCAD
   { nazaj: [-1, 0, 0], gor: [0, 0, 1] }, { nazaj: [1, 0, 0], gor: [0, 0, 1] },
   { nazaj: [0, 0, 1], gor: [0, 1, 0] }, { nazaj: [0, 0, -1], gor: [0, -1, 0] },
   { nazaj: [1, -1, 1], gor: [0, 0, 1] },
+
+// --- plahta iz blaga (plahta.py) ---------------------------------------------------------------------------------
+// Klik na spuščeno plahto (ali gumb) jo dvigne v napeti obliki nad tovor, pod njo urejaš; klik na dvignjeno jo spusti:
+// Blender simulira padec blaga na tovor (trki s kvadri vidnih kosov), stran predvaja okvirje v živo na isti mreži
+// (vrstni red oglišč posnetka = vrstni red oglišč mreže), nato ostane končna oblika iz posnetka.
+const plahta = { dela: '' };   // '' ali 'gor' (dvigujem) / 'dol' (pada)
+function plahtaVSceni() { return (model.seznam || []).find(o => o.plahta && o.vidno); }
+function narisiGumbPlahte() {
+  const p = plahtaVSceni(), g = $('gPlahta');
+  g.classList.toggle('skrit', !p);
+  if (!p) return;
+  g.disabled = plahta.dela;
+  g.textContent = plahta.dela === 'dol' ? '… plahta pada' : plahta.dela === 'gor' ? '… dvigujem' : p.plahta === 'gor' ? '▼ Spusti plahto' : '▲ Dvigni plahto';
+}
+function prehod(a, b, n) {   // gladek prehod med dvema oblikama (dvig)
+  const okvirji = [];
+  for (let k = 1; k <= n; k++) {
+    const t = k / n, u = t * t * (3 - 2 * t), o = new Float32Array(a.length);
+    for (let i = 0; i < a.length; i++) o[i] = a[i] + (b[i] - a[i]) * u;
+    okvirji.push(o);
+  }
+  return okvirji;
+}
+function predvajaj(mesh, okvirji, fps, koncne, normale) {
+  return new Promise(res => {
+    const g = mesh.geometry, poz = g.attributes.position, t0 = performance.now();
+    mesh.frustumCulled = false;
+    function korak(t) {
+      const i = Math.min(okvirji.length - 1, Math.floor((t - t0) / 1000 * fps));
+      poz.array.set(okvirji[i]); poz.needsUpdate = true; g.computeVertexNormals();
+      // korak s časovnikom, ne z requestAnimationFrame (ta v skritem oknu ali okvirju ne teče); okvir se izbere po času
+      if (i < okvirji.length - 1) { setTimeout(() => korak(performance.now()), 16); return; }
+      poz.array.set(koncne); poz.needsUpdate = true;
+      g.attributes.normal.array.set(normale); g.attributes.normal.needsUpdate = true;
+      g.computeBoundingSphere(); g.computeBoundingBox(); mesh.frustumCulled = true;
+      res();
+    }
+    korak(t0);
+  });
+}
+async function preklopiPlahto(ime) {
+  const p = (model.seznam || []).find(o => o.ime === ime && o.plahta);
+  if (!p || plahta.dela) return;
+  const gor = p.plahta === 'gor';
+  plahta.dela = gor ? 'dol' : 'gor'; narisiGumbPlahte();
+  const star = objekti.get(ime), prej = star ? star.geometry.attributes.position.array.slice() : null;
+  if (gor) obvesti('Plahta pada: Blender simulira blago (~10 s) …');
+  try {
+    const d = await post('/ukaz', { dejanje: gor ? 'plahta-spusti' : 'plahta-dvigni', ime });
+    if (d.ok === false) { obvesti(d.sporocilo || 'Plahta: napaka', true); return; }
+    await osvezi(true);
+    const mesh = objekti.get(ime);
+    if (!mesh) return;
+    const poz = mesh.geometry.attributes.position, koncne = poz.array.slice(), normale = mesh.geometry.attributes.normal.array.slice();
+    if (d.okvirji && d.okvirji.length && d.okvirji[0].length === poz.array.length)
+      await predvajaj(mesh, [...(prej && prej.length === poz.array.length ? [prej] : []), ...d.okvirji.map(o => Float32Array.from(o, v => v / 10))], d.fps || 12, koncne, normale);
+    else if (prej && prej.length === poz.array.length) await predvajaj(mesh, prehod(prej, koncne, 24), 30, koncne, normale);
+    if (d.sporocilo) obvesti(d.sporocilo);
+  } catch (e) { obvesti('Blender ne odgovarja: ' + e.message, true); }
+  finally { plahta.dela = ''; narisiGumbPlahte(); }
+}
+$('gPlahta').addEventListener('click', () => { const p = plahtaVSceni(); if (p) preklopiPlahto(p.ime); });
 ];
 const meshiModela = () => [...objekti.values()].filter(m => m.visible);
 function razdaljaPogleda() { return camera.position.distanceTo(nadzor.cilj); }

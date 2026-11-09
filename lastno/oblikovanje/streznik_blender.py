@@ -52,6 +52,7 @@ from upodabljanje import UPODABLJANJE, DELOVNA, najdi_blender  # noqa: E402
 import igrisce  # noqa: E402
 import palete  # noqa: E402
 import moznosti  # noqa: E402
+import plahta  # noqa: E402
 from ai_oblikovalec import AIOblikovalec  # noqa: E402
 from slicice import Slicice  # noqa: E402
 
@@ -302,7 +303,8 @@ def zgradi_posnetek():
         nos = igrisce.nosilec_kosa(obj)
         seznam.append({"ime": obj.name, "vrsta": obj.type, "vidno": vidno,
                        "modifikatorji": [mod.type for mod in obj.modifiers],
-                       "izbran": obj.select_get(), "kos": nos.name if nos is not None else ""})
+                       "izbran": obj.select_get(), "kos": nos.name if nos is not None else "",
+                       "plahta": str(obj.get(plahta.LASTNOST, "") or "")})
         if not vidno:
             continue
         # objekti parametrične oblike se ob drsniku zgradijo znova z istim imenom in istim številom točk: brez predpomnilnika
@@ -746,7 +748,7 @@ def ukaz(p):
     izid = ukaz_ideje(p)
     if izid is not None:
         return izid
-    izid = palete.ukaz(p) or moznosti.ukaz(p)     # barvne palete (palete.py), možnosti/konfiguracije (moznosti.py)
+    izid = palete.ukaz(p) or moznosti.ukaz(p) or plahta.ukaz(p)   # barvne palete, možnosti/konfiguracije, plahta iz blaga (plahta.py)
     if izid is not None:
         return izid
     if d == "nova":
