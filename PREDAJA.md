@@ -165,7 +165,7 @@ in podrobnosti vsakega področja: `CLAUDE.md`.
 - **Svetenje v pogledu**: `videz_materiala` pošlje `sij` (Emission Color pri moči > 0), stran ga riše kot `emissive` (izbira ga začasno zamenja).
 - **Gumba v pogledu** »⌖ Na sredino« (= F) in »Izometrija« (= 7), zgoraj desno.
 - **Git**: `streznik_blender.py` in `oblikovanje.html` imata poleg teh priklopov še tuje necommitane spremembe (teksture, `render.py` +93);
-  commitani so samo moji hunki prek začasnega indeksa (git log 9. 11.), tuje spremembe ostanejo necommitane. Nepushano.
+  commitani so samo moji hunki prek začasnega indeksa (git log 9. 11.), tuje spremembe ostanejo necommitane. Commit b32a114 pushan 9. 11.
 - **Past: Oblikovanje je ena skupna scena.** 8. 11. je druga seja odprla svojo idejo, moja skripta (`izvedi.py`) je tekla v njej in shranila njen R01.
   Pred `izvedi.py` preveri `IDEJE.mapa`; ob sočasnem delu urejaj `.blend` v ozadju (`blender -b Rxx.blend --python …`, nov `Rnn.blend` + vnos v `ideja.json`).
 - Projekt Podest (Oblak, `Oblikovanje/Projekti/Podest/Skripte/PREBERI.txt`): skripte `vloge_barv.py`, `moznosti_podesta.py`, `podstavki_na_podest.py`,
