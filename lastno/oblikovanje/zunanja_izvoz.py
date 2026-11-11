@@ -114,7 +114,11 @@ def main():
         # recept "zasuki": {vrhnji kos: {os, tocka, kot}} — vrata, ki so v sestavu odprta, se za obliko zaprejo
         # (zasuk okoli osi tečaja; Malibu F 1.5 in delovno, od 2026-11-11)
         zasuk = recept.get("zasuki", {}).get(ime)
-        if zasuk and "premik" in zasuk:     # vrata, ki so v sestavu le premaknjena (Malibu S delovno): premik v mm
+        if zasuk and "premik" in zasuk and "os" in zasuk:   # zasuk in nato premik (Milestone 1.1, 2.2: vrata v splošni legi)
+            zm = App.Placement(App.Vector(*zasuk["premik"]), App.Rotation()).toMatrix().multiply(
+                App.Placement(App.Vector(), App.Rotation(App.Vector(*zasuk["os"]), float(zasuk["kot"])),
+                              App.Vector(*zasuk["tocka"])).toMatrix())
+        elif zasuk and "premik" in zasuk:     # vrata, ki so v sestavu le premaknjena (Malibu S delovno): premik v mm
             zm = App.Placement(App.Vector(*zasuk["premik"]), App.Rotation()).toMatrix()
         else:
             zm = App.Placement(App.Vector(), App.Rotation(App.Vector(*zasuk["os"]), float(zasuk["kot"])),
@@ -126,6 +130,9 @@ def main():
                 continue
             st_teles += 1
             kos = ime + "/" + podime if podime else ime
+            # recept "izpusti_kose": deli imena »vrhnji/kos« (male črke), ki niso zunanjost (Malibu S: lij za kable pod dnom)
+            if any(x.lower() in kos.lower() for x in recept.get("izpusti_kose", [])):
+                continue
             b = telo.BoundBox
             nalepka = kos in nalepke and min(b.XLength, b.YLength, b.ZLength) <= nalepka_debelina
             if nalepka:                 # tanko telo na pločevini = nalepka: svoj objekt, ne zakriva pločevine
