@@ -31,12 +31,13 @@ def smeri(n=64):
     return np.stack([np.cos(th) * np.sin(fi), np.sin(th) * np.sin(fi), np.cos(fi)], axis=1)
 
 
-def vidne_ploskve(V, T, P, N, prag, korak=50.0, najvec=300):
+def vidne_ploskve(V, T, P, N, prag, korak=50.0, najvec=300, Z=None):
     """Vrne (vidna[ploskev] bool, smer[ploskev] vsota smeri, v katere žarki uidejo). N[trikotnik] = nalepka: nalepke
     ne zakrivajo ničesar (pločevina pod njimi ostane), same pa so preverjene proti vsemu."""
     tocke = [tuple(v) for v in V.tolist()]
     drevo_vse = BVHTree.FromPolygons(tocke, [tuple(t) for t in T.tolist()], epsilon=0.0)
-    drevo_osnova = BVHTree.FromPolygons(tocke, [tuple(t) for t in T[~N].tolist()], epsilon=0.0) if N.any() else drevo_vse
+    nezakriva = N | Z if Z is not None else N      # nalepke in prozorni kosi (pleksi) ne zakrivajo
+    drevo_osnova = BVHTree.FromPolygons(tocke, [tuple(t) for t in T[~nezakriva].tolist()], epsilon=0.0) if nezakriva.any() else drevo_vse
     a, b, c = V[T[:, 0]], V[T[:, 1]], V[T[:, 2]]
     plosc = 0.5 * np.linalg.norm(np.cross(b - a, c - a), axis=1)
     st = int(P.max()) + 1
@@ -116,8 +117,81 @@ def material(ime, m):
     bsdf.inputs["Base Color"].default_value = barva
     bsdf.inputs["Metallic"].default_value = float(m.get("kovinskost", 0.0))
     bsdf.inputs["Roughness"].default_value = float(m.get("hrapavost", 0.45))
-    mat.diffuse_color = barva
+    alfa = float(m.get("alfa", 1.0))
+    if "prepustnost" in m:          # pleksi, steklo (od 2026-11-11)
+        for vhod in ("Transmission Weight", "Transmission"):
+            if vhod in bsdf.inputs:
+                bsdf.inputs[vhod].default_value = float(m["prepustnost"])
+                break
+        if "IOR" in bsdf.inputs:
+            bsdf.inputs["IOR"].default_value = float(m.get("ior", 1.49))
+    if alfa < 1.0:
+        bsdf.inputs["Alpha"].default_value = alfa
+        for atr, vr in (("surface_render_method", "BLENDED"), ("blend_method", "BLEND")):
+            if hasattr(mat, atr):
+                try:
+                    setattr(mat, atr, vr)
+                except Exception:  # noqa: BLE001
+                    pass
+    mat.diffuse_color = barva[:3] + [alfa]
     return mat
+
+
+def nalepka_iz_ploskev(scena, spec, materiali, kosi=()):
+    """Nalepka iz zunanjih ploskev (recept "nalepke_ploskve", od 2026-11-11): ploskve objektov, katerih ime se začne z enim
+    od `skupine`, z normalo v smeri `smer` (kosinus > `prag`), brez prozornih (pleksi), premaknjene `odmik` mm ven.
+    Svoj objekt `ime` z materialom `material` in UV kot ravninska projekcija (u vodoravno, v navpično, 0..1 po okvirju), da
+    se pozneje nanj položi grafika lokacije."""
+    smer = Vector(spec["smer"]).normalized()
+    prag = float(spec.get("prag", 0.5))
+    odmik = float(spec.get("odmik", 0.5))
+    predpone = [x.lower() for x in spec["skupine"]]
+    bm = bmesh.new()
+    for o in list(scena.objects):
+        if o.type != "MESH" or not o.name.lower().startswith(tuple(predpone)):
+            continue
+        prozorni = {i for i, m in enumerate(o.data.materials) if m and m.name == materiali.get("_prozorno", {}).get("ime")}
+        src = bmesh.new()
+        src.from_mesh(o.data)
+        src.transform(o.matrix_world)
+        src.normal_update()
+        sloj = src.faces.layers.int.get("kos")
+        brez = [x.lower() for x in spec.get("brez", [])]      # deli imen kosov brez nalepke (ključavnica, zaklep)
+        izbrane = [f for f in src.faces if f.material_index not in prozorni and f.normal.dot(smer) > prag
+                   and not (brez and sloj is not None and any(x in kosi[f[sloj]].lower() for x in brez))]
+        preslikava = {}
+        for f in izbrane:
+            vs = []
+            for v in f.verts:
+                if v.index not in preslikava:
+                    preslikava[v.index] = bm.verts.new(v.co + smer * odmik)
+                vs.append(preslikava[v.index])
+            try:
+                bm.faces.new(vs)
+            except ValueError:
+                pass
+        src.free()
+    if not bm.faces:
+        bm.free()
+        return None
+    gor = Vector((0, 0, 1))
+    u_os = gor.cross(smer).normalized() if abs(smer.dot(gor)) < 0.99 else Vector((1, 0, 0))
+    us = [v.co.dot(u_os) for v in bm.verts]
+    vs_ = [v.co.z for v in bm.verts]
+    u0, u1, v0, v1 = min(us), max(us), min(vs_), max(vs_)
+    uv = bm.loops.layers.uv.new("UVMap")
+    for f in bm.faces:
+        for lp in f.loops:
+            lp[uv].uv = ((lp.vert.co.dot(u_os) - u0) / max(u1 - u0, 1e-6), (lp.vert.co.z - v0) / max(v1 - v0, 1e-6))
+    me = bpy.data.meshes.new(spec["ime"])
+    bm.to_mesh(me)
+    bm.free()
+    m = spec.get("material", {"ime": "Nalepka", "barva": [0.9, 0.9, 0.9]})
+    me.materials.append(bpy.data.materials.get(m.get("ime", "Nalepka")) or material(m.get("ime", "Nalepka"), m))
+    obj = bpy.data.objects.new(spec["ime"], me)
+    obj["nalepka"] = json.dumps({"smer": list(smer), "okvir_u": [u0, u1], "okvir_v": [v0, v1], "u_os": list(u_os)})
+    scena.collection.objects.link(obj)
+    return obj
 
 
 def main():
@@ -130,13 +204,14 @@ def main():
     V, T, P, G, K = d["tocke"].astype(np.float64), d["trikotniki"], d["ploskev"], d["skupina"], d["telo"]
     M = d["kos"]
     N = d["nalepka"] if "nalepka" in d else np.zeros(len(T), dtype=bool)
+    Z = d["prozoren"] if "prozoren" in d else np.zeros(len(T), dtype=bool)
 
     t0 = time.time()
-    vidna, smer = vidne_ploskve(V, T, P, N, float(recept.get("prag_vidnosti", 0.01)))
+    vidna, smer = vidne_ploskve(V, T, P, N, float(recept.get("prag_vidnosti", 0.01)), Z=Z)
     print("vidnost: %d od %d ploskev, %.1f s" % (int(vidna.sum()), len(vidna), time.time() - t0), flush=True)
 
     ostane = vidna[P]
-    T, P, G, K, M = T[ostane], P[ostane], G[ostane], K[ostane], M[ostane]
+    T, P, G, K, M, Z = T[ostane], P[ostane], G[ostane], K[ostane], M[ostane], Z[ostane]
     nrm = np.cross(V[T[:, 1]] - V[T[:, 0]], V[T[:, 2]] - V[T[:, 0]])
     obrni = (nrm * smer[P]).sum(axis=1) < 0          # normala naj kaže ven (v smer, kamor žarki uidejo)
     T[obrni] = T[obrni][:, ::-1]
@@ -151,16 +226,20 @@ def main():
     for sid, ime in enumerate(meta["skupine"]):
         if not (G == sid).any():
             continue
-        tocke, lica, st, reze, snovi = [], [], 0, [], []
+        tocke, lica, st, reze, snovi, kos_lic = [], [], 0, [], [], []
         for kos in np.unique(K[G == sid]):         # vsako telo posebej: gosto mrežo (ključavnica, gumb) razredči
             izbor = (G == sid) & (K == kos)
             v, t = poenostavi(V, T[izbor], gosto)
             if len(t):
                 ime_kosa = meta["kosi"][int(M[izbor][0])]
                 snov = next(k for k in (ime_kosa, ime, "*") if k in materiali or k == "*")
+                if Z[izbor].any() and "prozorno" in recept:      # pleksi (recept "prozorni")
+                    snov = "_prozorno"
+                    materiali.setdefault("_prozorno", recept["prozorno"])
                 if snov not in snovi:
                     snovi.append(snov)
                 reze.extend([snovi.index(snov)] * len(t))
+                kos_lic.extend([int(M[izbor][0])] * len(t))
                 tocke.append(v)
                 lica.append(t + st)
                 st += len(v)
@@ -174,12 +253,17 @@ def main():
             ime_mat = materiali.get(snov, {}).get("ime") or ("Osnova" if snov == "*" else snov)
             me.materials.append(bpy.data.materials.get(ime_mat) or material(ime_mat, materiali.get(snov) or {}))
         me.polygons.foreach_set("material_index", reze)
+        me.attributes.new("kos", "INT", "FACE").data.foreach_set("value", kos_lic)   # indeks v meta["kosi"] (nalepke: brez)
         me.update()
         obj = bpy.data.objects.new(ime, me)
         scena.collection.objects.link(obj)
         if ime == "Nalepke":            # nalepke se modelirajo posebej; osnovna oblika je brez njih
             obj.hide_viewport = obj.hide_render = True
         povzetek.append("%s %d" % (ime, len(me.polygons)))
+    for spec in recept.get("nalepke_ploskve", []):
+        obj = nalepka_iz_ploskev(scena, spec, materiali, meta["kosi"])
+        if obj is not None:
+            povzetek.append("%s %d" % (obj.name, len(obj.data.polygons)))
     ploskev = sum(len(o.data.polygons) for o in scena.objects)
     scena["zunanja_oblika"] = json.dumps({"sestav": meta["sestav"], "odtis": meta["odtis"]}, ensure_ascii=False)
 

@@ -80,7 +80,10 @@ def main():
 
     tocke, trikotniki, ploskev_tri, skupina_tri, telo_tri = [], [], [], [], []
     st_teles = 0
-    kosi, kos_tri, nalepka_tri = [], [], []
+    kosi, kos_tri, nalepka_tri, prozoren_tri = [], [], [], []
+    # recept "prozorni": deli imena kosa (»vrhnji/kos«, male črke), ki so prozorni (pleksi): ne zakrivajo ničesar in
+    # dobijo prozoren material (Malibu F: steklo zaslona, posodi za slike, lopute; od 2026-11-11)
+    prozorni = [x.lower() for x in recept.get("prozorni", [])]
     nalepke = set(recept.get("nalepke", []))
     nalepka_debelina = float(recept.get("nalepka_debelina", 1.5))
     skupine, st_tock, st_ploskev, zaprtih = [], 0, 0, 0
@@ -120,6 +123,7 @@ def main():
                 if "Nalepke" not in skupine:
                     skupine.append("Nalepke")
             gid = skupine.index("Nalepke") if nalepka else sid
+            prozoren = any(x in kos.lower() for x in prozorni)
             if kos not in kosi:
                 kosi.append(kos)
             kid = kosi.index(kos)
@@ -151,6 +155,7 @@ def main():
                 ploskev_tri.extend([st_ploskev] * len(t))
                 skupina_tri.extend([gid] * len(t))
                 nalepka_tri.extend([nalepka] * len(t))
+                prozoren_tri.extend([prozoren] * len(t))
                 telo_tri.extend([st_teles] * len(t))
                 kos_tri.extend([kid] * len(t))
                 st_tock += len(v)
@@ -162,7 +167,8 @@ def main():
     odtis = hashlib.sha1(np.round(V, 1).tobytes() + T.tobytes()).hexdigest()[:16]
     np.savez_compressed(izhod, tocke=V, trikotniki=T, ploskev=np.asarray(ploskev_tri, dtype=np.int32),
                         skupina=np.asarray(skupina_tri, dtype=np.int16), telo=np.asarray(telo_tri, dtype=np.int32),
-                        kos=np.asarray(kos_tri, dtype=np.int32), nalepka=np.asarray(nalepka_tri, dtype=bool))
+                        kos=np.asarray(kos_tri, dtype=np.int32), nalepka=np.asarray(nalepka_tri, dtype=bool),
+                        prozoren=np.asarray(prozoren_tri, dtype=bool))
     okvir = [[float(x) for x in V.min(axis=0)], [float(x) for x in V.max(axis=0)]] if len(V) else []
     with open(os.path.splitext(izhod)[0] + ".json", "w", encoding="utf-8") as f:
         json.dump({"skupine": skupine, "kosi": kosi, "odtis": odtis, "sestav": pot, "sestav_mtime": os.path.getmtime(pot),
