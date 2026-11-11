@@ -631,6 +631,10 @@ FreeCAD je motor, vmesnik in grafika nastajata v brskalniku (plan, korak 8 napre
   (»Izdaja 1.4«). **Revizije:** po izdaji se boxi vračajo v delavnico in popravki gredo tudi v datoteke izdaje — izdajo spremeni samo za
   tak popravek in shrani s komentarjem »Revizija: …« (različica v oblaku); novosti gredo v delovne datoteke za naslednjo izdajo
   (Malibu F: 1.6 v delu). Delovne datoteke so kot pri Spaceu v eni mapi s kratkimi imeni (`Oblak/3D modeliranje/Malibu F/PREBERI.txt`).
+  **Izdaja = prva številka (generacija), verzija = druga** (uporabnik 2026-11-11). Tretji projekt »Malibu S« (prej »Photobox
+  Malibu S«): mape `Izdaje/Izdaja 1.1` … `Izdaja 4.2` (ime mape = verzija; strežnik jo s številko poveže prek `izdaje.json`,
+  `_st_izdaje`; gumb kaže `napis`), revizije verzije v podmapah `Revizija …`; arhivski projekt »Photobox ARHIV Malibu« je v
+  `Arhiv/`. Postopek za naslednji box: `Oblak/3D modeliranje/Malibu S/PREBERI.txt` in skripte v njegovih `Skripte/`.
 - Različice iz oblaka (od 2026-10-07, PDM korak 2, `lastno/splet/oblak.py`, plan `PDM-PLAN.md`): ob odprtem dokumentu
   iz mape odjemalca oblaka (privzeto iz `%APPDATA%\Oblak\nastavitve.json`: `folder`, `api`; prepis `SPLET_OBLAK_MAPA`,
   `SPLET_OBLAK_API`) je gumb ⟲, ki odpre ploščo z različicami: prijava v oblak (strežnik se prijavi kot **lastna**
