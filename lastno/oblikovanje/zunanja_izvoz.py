@@ -77,6 +77,13 @@ def main():
     print("odprto v %.1f s: %s" % (time.time() - t0, pot), flush=True)
     sestav = next((o for o in doc.Objects if o.TypeId == "Assembly::AssemblyObject"), None)
     vrhnji = list(sestav.Group) if sestav else list(doc.RootObjects)
+    # recept "dodaj_iz": [{sestav, kosi}] — vrhnji kosi iz drugega sestava (iste koordinate), ko jih ta sestav nima
+    # (Malibu F 1.5: POS terminal iz delovnega sestava; od 2026-11-11)
+    for dod in recept.get("dodaj_iz", []):
+        drugi = App.openDocument(os.path.join(mapa, dod["sestav"]))
+        sd = next((o for o in drugi.Objects if o.TypeId == "Assembly::AssemblyObject"), None)
+        zeleni = set(dod["kosi"])
+        vrhnji += [o for o in (sd.Group if sd else drugi.RootObjects) if re.sub(r"-\d+$", "", o.Label) in zeleni]
 
     tocke, trikotniki, ploskev_tri, skupina_tri, telo_tri = [], [], [], [], []
     st_teles = 0

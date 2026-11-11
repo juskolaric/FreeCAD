@@ -233,6 +233,11 @@ def main():
             if len(t):
                 ime_kosa = meta["kosi"][int(M[izbor][0])]
                 snov = next(k for k in (ime_kosa, ime, "*") if k in materiali or k == "*")
+                for i_v, (vzorec, m_v) in enumerate(recept.get("materiali_vzorci", [])):   # del imena kosa -> material
+                    if vzorec.lower() in ime_kosa.lower():
+                        snov = "_vzorec%d" % i_v
+                        materiali.setdefault(snov, m_v)
+                        break
                 if Z[izbor].any() and "prozorno" in recept:      # pleksi (recept "prozorni")
                     snov = "_prozorno"
                     materiali.setdefault("_prozorno", recept["prozorno"])
