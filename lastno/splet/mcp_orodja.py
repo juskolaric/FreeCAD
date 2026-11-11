@@ -587,6 +587,10 @@ KONCNE_TOCKE = [
     ("POST", "/oblak/revizija", "komentar ali stanje revizije", "{pot, rev, komentar?, stanje?: osnutek|v_pregledu|izdano}"),
     ("POST", "/oblak/zakleni", "zakleni datoteko v oblaku", "{pot}"),
     ("POST", "/oblak/odkleni", "odkleni datoteko v oblaku", "{pot}"),
+    ("GET", "/izdaje", "izdaje projekta (zamrznjeni posnetki v <projekt>/Izdaje): seznam z glavnimi sestavi in razlike med "
+                       "izdajami; izdajo pokažeš z `dokumenti odpri` na potGlavnega", "?projekt=<mapa projekta, npr. Photobox Space 7>"),
+    ("POST", "/izdaje", "nova izdaja: zamrzne delovne datoteke projekta kot naslednjo številko (prej shrani odprte dokumente)",
+     "{dejanje: nova, projekt, opis, glavni?}"),
 ]
 PREPOVEDANE_POTI = {"/izhod": "uporabi orodje `izhod`", "/python": "uporabi orodje `python`",
                     "/events": "tok dogodkov SSE ni za orodja", "/model": "posnetek geometrije je prevelik; uporabi "

@@ -614,6 +614,23 @@ FreeCAD je motor, vmesnik in grafika nastajata v brskalniku (plan, korak 8 napre
 - **Prostor »3D modeliranje« v oblaku obstaja šele od 2026-10-15** (skupni, brez skupine, lastnik jus.kolaric@gmail.com; ustvarjen prek
   `POST /v1/nadzorna/prostori` lokalnega oblaka). Prej mapa ni bila prostor, odjemalec je ni sinhroniziral in različice so
   javljale »ni prostora«. Različice delajo le, ko tečeta lokalni oblak (`predzagon zazeni oblak`, 8790) in odjemalec Oblak.
+- **Izdaje projekta** (od 2026-11-10, `lastno/splet/izdaje.py`, brez FreeCAD API-ja): različice v oblaku so zgodovina ene datoteke,
+  izdaja je zamrznjen posnetek CELEGA projekta v `<projekt>/Izdaje/Izdaja N (datum)/` z isto razporeditvijo map (seznam in povezava
+  kosov med izdajami v `Izdaje/izdaje.json`). Povezave znotraj izdaje ostanejo relativne, povezave navzven (Standard box, Standardni
+  deli) se preračunajo in ti kosi **niso zamrznjeni**. Strežnik datotekam izdaj doda `izdaja: N` in pošlje `izdaje` po projektih v
+  seznamu projektov; stran jih med delovnimi ne kaže (gumbi Delovno / Izdaja N v `#izdajeVrstica`, klik odpre glavni sestav).
+  `GET /izdaje?projekt=`, `POST /izdaje {dejanje: nova, projekt, opis, glavni?}`; ukazna vrstica `python izdaje.py nova|seznam|preveri`.
+  Prvi projekt: »Space« (do 10. 11. 2026 »Photobox Space 7«; od tega dne vse datoteke v eni mapi brez podmap, kratka imena; Izdaja 1 = nekdanji projekt »Photobox ARHIV Space«, Izdaja 2 = stanje ob prenosu; `Oblak/3D modeliranje/Space/PREBERI.txt`). **Datotek v
+  `Izdaje/` ne spreminjaj.** Isti dan: `PREDPOMNILNIK_DATOTEK` 5000 → 100000 (pri ~17.000 datotekah se je seznam projektov bral
+  ~100 s po vsaki sličici) in čakanje `/posnetek` 60 → 600 s (veliki sestavi niso dobili sličice).
+  Drugi projekt (2026-11-11): »Malibu F« (do 11. 11. »Photobox Malibu F«; delovne datoteke in vsaka izdaja v eni mapi, kratka
+  imena po isti logiki povsod — `Oblak/3D modeliranje/Malibu F/Skripte/imena.py`, preimenovanje z vezavo povezav `uredi_imena.py`)
+  — Izdaje 1.1–1.5 iz SolidWorks arhiva »ARHIV Malibu/Malibu F G1« (prej v projektu
+  Photobox ARHIV Malibu). **Izdaja = zadnja številka serijske boxa v plošči** (box.model.generacija.izdaja; Malibu F = model 6, gen. 1;
+  box 27.6.1.4 = Izdaja 1.4); v `izdaje.json` polja `oznaka` (1.4), `serijska`, `boxi`, ki jih strežnik pošlje in gumb pokaže
+  (»Izdaja 1.4«). **Revizije:** po izdaji se boxi vračajo v delavnico in popravki gredo tudi v datoteke izdaje — izdajo spremeni samo za
+  tak popravek in shrani s komentarjem »Revizija: …« (različica v oblaku); novosti gredo v delovne datoteke za naslednjo izdajo
+  (Malibu F: 1.6 v delu). Delovne datoteke so kot pri Spaceu v eni mapi s kratkimi imeni (`Oblak/3D modeliranje/Malibu F/PREBERI.txt`).
 - Različice iz oblaka (od 2026-10-07, PDM korak 2, `lastno/splet/oblak.py`, plan `PDM-PLAN.md`): ob odprtem dokumentu
   iz mape odjemalca oblaka (privzeto iz `%APPDATA%\Oblak\nastavitve.json`: `folder`, `api`; prepis `SPLET_OBLAK_MAPA`,
   `SPLET_OBLAK_API`) je gumb ⟲, ki odpre ploščo z različicami: prijava v oblak (strežnik se prijavi kot **lastna**

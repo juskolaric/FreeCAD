@@ -96,6 +96,11 @@
                     color: var(--besedilo); transition: border-color .12s; }
   .kartaRazlicice:hover { border-color: var(--crtaMocna); }
   .kartaRazlicice.trenutna { border-color: var(--poudarek); }
+  /* različice kosa čez izdaje (od 2026-11-10): kartica z značkami izdaj (I1, I2, delovno); ločilo je pokončen napis skupine */
+  .kartaRazlicice.izdajna { width: auto; min-width: 116px; max-width: 190px; }
+  .kartaRazlicice.izdajna .slika { background-size: contain, 24px; }
+  #trakRazlicic .locilo { flex: none; writing-mode: vertical-rl; transform: rotate(180deg); text-align: center; font-size: 10px; font-weight: 600;
+                          letter-spacing: .06em; text-transform: uppercase; color: var(--besedilo3); border-right: 1px solid var(--crta); padding-right: 4px; }
   .kartaRazlicice .slika { height: 52px; background: var(--plosca2) center / contain no-repeat; position: relative; }
   .kartaRazlicice .slika.brez { background-size: 24px; opacity: .6; }
   .kartaRazlicice .povrni { position: absolute; top: 2px; right: 3px; width: 20px; height: 20px; border: 0; border-radius: 50%; background: rgba(255,255,255,.9);
@@ -355,6 +360,13 @@
   #dokumentiOdprti { flex: none; display: inline-flex; align-items: center; gap: 4px; height: 28px; padding: 0 7px; border: 1px solid var(--crta);
     border-radius: 8px; background: #fff; color: var(--besedilo2); font: inherit; font-size: 12px; font-weight: 600; cursor: pointer; font-variant-numeric: tabular-nums; }
   #dokumentiOdprti:hover { background: var(--lebdenje); border-color: var(--crtaMocna); }
+  /* izbira izdaje projekta (od 2026-11-10): Delovno | Izdaja 1 | Izdaja 2 pod iskanjem; le pri projektih z mapo Izdaje */
+  #izdajeVrstica { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 6px; }
+  #izdajeVrstica[hidden] { display: none; }
+  #izdajeVrstica button { height: 26px; padding: 0 9px; border: 1px solid var(--crta); border-radius: 8px; background: #fff; color: var(--besedilo2);
+    font: inherit; font-size: 12px; font-weight: 600; cursor: pointer; font-variant-numeric: tabular-nums; }
+  #izdajeVrstica button:hover { background: var(--lebdenje); border-color: var(--crtaMocna); }
+  #izdajeVrstica button.izbran { color: var(--poudarek); background: #dcebfc; border-color: #b7d4f5; }
   #dokumentiOdprti[aria-expanded="true"] { color: var(--poudarek); background: #dcebfc; border-color: #b7d4f5; }
   #dokumentiOdprti:focus-visible { outline: none; box-shadow: var(--obroc); }
   #dokumentiStolpec { position: relative; }
@@ -1069,6 +1081,7 @@
         <div id="dokumentiGlava">
           <div class="naslov" style="display: none"><span class="napis">Dokumenti</span><button type="button" id="dokumentiProjekt" title="Projekt, katerega dokumenti so prikazani; klik odpre vse projekte"><span class="delovni"></span><span class="ime"></span><svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M3 4.5 6 7.5 9 4.5"/></svg></button><span class="stevilo" id="dokumentiStevilo"></span></div>
           <div class="vrsticaIskanja"><label class="iskanje"><span id="dokumentiLupa"></span><input id="dokumentiIskanje" type="search" placeholder="Išči med dokumenti …" autocomplete="off" spellcheck="false"><span class="stevec" id="dokumentiStevec"></span></label><button type="button" class="ikonaGumb" id="dokumentiFilter"></button><button type="button" id="dokumentiOdprti" aria-expanded="false"></button></div>
+          <div id="izdajeVrstica" role="group" aria-label="Izdaja projekta" hidden></div>
         </div>
         <div id="odprtiPlosca" class="skrit"></div>
         <div id="stranskiVsebina"><div class="prazno">Nalagam …</div></div>
@@ -2533,6 +2546,7 @@ function podatkiProjektov() {   // [{kljuc, datoteke, odprtih, zadnja}]: datotek
   const p = stanje.projekti || {}, projekti = new Map();
   const vnos = k => { if (!projekti.has(k)) projekti.set(k, { kljuc: k, datoteke: new Map(), odprtih: 0, zadnja: 0 }); return projekti.get(k); };
   for (const sk of p.skupine || []) for (const d of sk.datoteke || []) {
+    if (d.izdaja) continue;   // zamrznjene kopije izdaj ne štejejo med datoteke projekta
     const k = projektPoti(d.pot); if (k === null) continue;
     const v = vnos(k); v.datoteke.set(d.pot.toLowerCase(), d); v.zadnja = Math.max(v.zadnja, d.spremenjeno || 0);
   }
@@ -2747,8 +2761,12 @@ function narisiOdprteDokumente() {
   let vseDatotek = 0, najdenih = 0;
   prvaNajdenaDatoteka = null;
   if ((p.skupine || []).some(sk => (sk.datoteke || []).some(d => vProjektu(d.pot)))) vsebina.append(preklopPogleda());
+  // Izdaje projekta (od 2026-11-10): datoteke izdaj (d.izdaja = številka) niso med delovnimi; pokaže jih izbira izdaje nad seznamom.
+  const izdajeProj = (!vsiProjekti && proj && p.izdaje && p.izdaje[proj]) || [];
+  const izd = izdajeProj.find(i => i.st === izbraneIzdaje.get(proj)) || null;
+  narisiIzbiroIzdaj(proj, izdajeProj, izd);
   for (const sk of p.skupine || []) {
-    const zaprte = (sk.datoteke || []).filter(d => vProjektu(d.pot));
+    const zaprte = (sk.datoteke || []).filter(d => vProjektu(d.pot) && (d.izdaja || 0) === (izd ? izd.st : 0));
     vseDatotek += zaprte.length;
     const vidne = q ? zaprte.filter(d => (d.ime + ' ' + (d.projekt || '')).toLowerCase().includes(q)) : zaprte;
     najdenih += vidne.length;
@@ -2760,7 +2778,7 @@ function narisiOdprteDokumente() {
     }
     // drevo map: vsaka podmapa je zložljiva vrstica, datoteke mape so pod njenimi podmapami; pri enem projektu se drevo
     // začne v mapi projekta (predpona gre v ključ razprtih map, da ostane enak kot pri vseh projektih)
-    const predpona = !vsiProjekti && proj ? proj + '/' : '';
+    const predpona = !vsiProjekti && proj ? proj + '/' + (izd ? 'Izdaje/' + izd.mapa + '/' : '') : '';
     const koren = { mape: new Map(), datoteke: [] };
     for (const d of vidne) {
       let m = koren, rel = d.projekt || '';
@@ -2819,6 +2837,26 @@ function narisiOdprteDokumente() {
   }
 }
 let prvaNajdenaDatoteka = null;
+// Izbira izdaje nad seznamom datotek (od 2026-11-10; strežnik: izdaje.py, seznam v stanje.projekti.izdaje po projektu): »Delovno«
+// kaže delovne datoteke, »Izdaja N« datoteke zamrznjenega posnetka in odpre njegov glavni sestav. Vrstice ni, če projekt nima izdaj.
+const izbraneIzdaje = new Map();   // projekt -> številka izbrane izdaje (brez vnosa = delovno)
+function narisiIzbiroIzdaj(proj, izdajeProj, izd) {
+  const v = $('izdajeVrstica'); v.innerHTML = ''; v.hidden = !izdajeProj.length;
+  if (!izdajeProj.length) return;
+  const gumb = (napis, namig, izbran, klik) => {
+    const b = el('button', izbran ? 'izbran' : '', napis); b.type = 'button'; b.title = namig; b.setAttribute('aria-pressed', String(izbran));
+    b.addEventListener('click', klik); v.append(b);
+  };
+  gumb('Delovno', 'Delovne datoteke projekta (to, kar se spreminja)', !izd, () => { izbraneIzdaje.delete(proj); narisiOdprteDokumente(); });
+  for (const i of izdajeProj) {
+    // oznaka iz izdaje.json (Malibu F: »1.4« = zadnja številka serijske boxa x.6.1.4), sicer zaporedna številka
+    gumb('Izdaja ' + (i.oznaka || i.st), 'Izdaja ' + (i.oznaka || i.st) + ' · ' + i.datum + (i.boxi ? ' · boxi ' + i.boxi : '') + ' · ' + sklon(i.modelov, 'model', 'modela', 'modeli', 'modelov') + (i.opis ? '\n' + i.opis : '')
+      + '\nKlik: pokaži datoteke izdaje in odpri njen glavni sestav', !!izd && izd.st === i.st, () => {
+      izbraneIzdaje.set(proj, i.st); izbraniProjekt = proj; $('stranskiVsebina').scrollTop = 0; narisiOdprteDokumente();
+      if (i.glavni) projektDejanje({ dejanje: 'odpri', pot: i.glavni });
+    });
+  }
+}
 const odprtiProjekti = new Set((() => { try { return JSON.parse(localStorage.getItem('odprtiProjekti') || '[]'); } catch (e) { return []; } })());
 // Datoteke kot mreža sličic (od 2026-10-26, želja uporabnika »manj map, bolj slikovno«). Le prikaz: datoteke ostanejo v svojih
 // mapah, ker sestavi kažejo nanje s potmi. Pogled »Mape«: podmape so ploščice z mozaikom sličic, klik odpre mapo (drobtinice za
@@ -3246,9 +3284,12 @@ async function osveziTrakRazlicic(znova) {
     const zahteva = ++trakRazlicic.zahteva;
     if (potNiz(pot) !== potNiz(trakRazlicic.pot)) { trakRazlicic.pot = pot; trakRazlicic.zgodovina = null; praznoTraku('Nalagam različice …'); }
     try {
+      // različice kosa čez izdaje projekta (izdaje.py); projekt brez izdaj vrne prazen seznam
+      const izd = fetch('/izdaje/razlicice?pot=' + encodeURIComponent(pot), { cache: 'no-store' }).then(r => r.ok ? r.json() : null).catch(() => null);
       const z = await oblakKlic('GET', '/oblak/zgodovina', { pot });
+      const vIzdajah = await izd;
       if (zahteva !== trakRazlicic.zahteva) return;
-      trakRazlicic.zgodovina = z;
+      trakRazlicic.zgodovina = z; trakRazlicic.izdaje = vIzdajah && vIzdajah.razlicice && vIzdajah.razlicice.length ? vIzdajah : null;
     } catch (e) { if (zahteva !== trakRazlicic.zahteva) return; trakRazlicic.zgodovina = null; praznoTraku(String(e.message || e)); return; }
   }
   narisiTrakRazlicic();
@@ -3256,7 +3297,7 @@ async function osveziTrakRazlicic(znova) {
 function narisiTrakRazlicic() {
   const z = trakRazlicic.zgodovina, o = aktivniOdprti();
   if (!z || !o || potNiz(o.pot) !== potNiz(trakRazlicic.pot)) return;
-  const podpis = JSON.stringify([o.pot, !!o.spremenjen, o.samodejno, o.verzija, z.pdm, z.razlicice.map(r => [r.rev_id, r.current, r.stanje, r.oznaka, r.komentar, r.slicica])]);
+  const podpis = JSON.stringify([o.pot, !!o.spremenjen, o.samodejno, o.verzija, z.pdm, z.razlicice.map(r => [r.rev_id, r.current, r.stanje, r.oznaka, r.komentar, r.slicica]), trakRazlicic.izdaje]);
   if (podpis !== trakRazlicic.podpis) {
     trakRazlicic.podpis = podpis;
     trakRazlicicEl.innerHTML = '';
@@ -3284,11 +3325,32 @@ function narisiTrakRazlicic() {
     const vse = el('button', 'g', 'Podrobnosti'); vse.type = 'button'; vse.title = 'Plošča z različicami: zaklep, stanje revizije, komentarji, reference';
     vse.addEventListener('click', () => pokaziRazlicice(o.pot, o.oznaka || o.ime));
     gumbi.append(vse); glava.append(naslov, opis, gumbi); trakRazlicicEl.append(glava);
+    // Različice kosa čez izdaje (od 2026-11-10): vedno vse (V1, V2 ...), z značkami, v kateri izdaji je katera; obrobljena je
+    // tista, ki je odprta (v izdaji »vključena«). Klik odpre datoteko te različice. Desno od njih so shranjevanja iz oblaka.
+    const izd = trakRazlicic.izdaje;
+    if (izd) {
+      trakRazlicicEl.append(el('div', 'locilo', 'Izdaje'));
+      for (const r of izd.razlicice) trakRazlicicEl.append(kartaIzdajneRazlicice(izd, r));
+      trakRazlicicEl.append(el('div', 'locilo', 'Shranjevanja'));
+    }
     if (!n) trakRazlicicEl.append(el('div', 'prazno', o.samodejno ? 'Dokument še nima različic v oblaku: prva nastane ob prvi spremembi.'
       : 'Dokument še nima različic v oblaku: shrani ga, odjemalec oblaka pošlje prvo.'));
     for (const r of z.razlicice) trakRazlicicEl.append(kartaRazlicice(o, r));   // najnovejša levo, kot v plošči
   }
   posljiSlicicoTrenutne();
+}
+function kartaIzdajneRazlicice(izd, r) {
+  const k = el('button', 'kartaRazlicice izdajna' + (r.vkljucena ? ' trenutna' : '')); k.type = 'button';
+  const kje = r.clani.map(c => c.ime).join(', ');
+  k.title = 'Različica V' + r.v + ' tega kosa · ' + kje + (r.datum ? ' · od ' + r.datum : '')
+    + (r.vkljucena ? '\nOdprta je ta različica' + (izd.kje ? ' (vključena v Izdajo ' + izd.kje + ').' : ' (delovna).') : '\nKlik: odpri to različico.');
+  const slika = el('div', 'slika');
+  slika.style.backgroundImage = 'url("/slicica?pot=' + encodeURIComponent(r.pot) + '"), url("' + IKONA_KOCKE(false) + '")';
+  const spodaj = el('div', 'spodaj'); spodaj.append(el('b', '', 'V' + r.v));
+  for (const c of r.clani) spodaj.append(el('span', 'znacka' + (c.st === izd.kje ? ' ok' : c.st ? ' izdano' : ''), c.st ? 'I' + c.st : 'delovno'));
+  k.append(slika, spodaj, el('div', 'op', r.vkljucena ? (izd.kje ? 'vključena v Izdajo ' + izd.kje : 'odprta · delovna') : kje));
+  k.addEventListener('click', () => { if (r.vkljucena) obvesti('Ta različica je odprta v pogledu.'); else projektDejanje({ dejanje: 'odpri', pot: r.pot }); });
+  return k;
 }
 function kartaRazlicice(o, r) {
   const k = el('button', 'kartaRazlicice' + (r.current ? ' trenutna' : '')); k.type = 'button';
@@ -4973,7 +5035,7 @@ async function izrisiSliciceDatotek() {
     for (;;) {
       const p = stanje.projekti || {}, odprte = new Set((p.odprti || []).map(o => (o.pot || '').toLowerCase()));
       const kljuc = d => d.pot + '|' + (d.spremenjeno || 0);
-      const kandidati = (p.skupine || []).flatMap(sk => sk.datoteke || []).filter(d => d.pot
+      const kandidati = (p.skupine || []).flatMap(sk => sk.datoteke || []).filter(d => d.pot && (!d.izdaja || izbraneIzdaje.get(projektPoti(d.pot)) === d.izdaja)
         && (!d.slicica || d.slicicaStara || slicicaNeNalozi.has(d.pot)) && !odprte.has(d.pot.toLowerCase()) && !sliciceDatotekPoskus.has(kljuc(d)));
       if (!kandidati.length) break;
       // najprej trenutni projekt, nato najnovejše datoteke (to, s čimer se dela, npr. pravkar uvožene)

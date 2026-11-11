@@ -111,6 +111,8 @@ import mcp_orodja  # noqa: E402  (orodja za AI prek MCP: GET /mcp/orodja, POST /
 import pomocnik  # noqa: E402  (pomočnik AI v stranski plošči strani: GET/POST /pomocnik, isti katalog orodij)
 import toplota as toplota_modul  # noqa: E402  (5. stopnja Toplota: GET /toplota, /toplota/stanje, /toplota/slika; POST /toplota/*)
 import pomnilnik  # noqa: E402  (App.listDocuments brez puščanja v C++; opozorilo, ko proces ali sistem zmanjkuje pomnilnika)
+import re  # noqa: E402
+import izdaje as izdaje_modul  # noqa: E402  (izdaje projekta: zamrznjeni posnetki v <projekt>/Izdaje; GET/POST /izdaje)
 
 MAPA_OBLAK = os.path.join(os.path.expanduser("~"), "Oblak", "3D modeliranje")
 MAPE_PROJEKTOV = [os.path.normpath(MAPA_OBLAK)]
@@ -2987,7 +2989,10 @@ _LASTNOSTI_FCSTD = {}  # (pot, mtime, velikost) -> {vrsta, teles, povezav, slici
 # Meja vnosov predpomnilnikov datotek (lastnosti FCStd, uporabnost renderjev); nad njo se izločijo le najstarejši vnosi.
 # Do 2026-10-19 se je slovar pri 500 vnosih v celoti izpraznil: pri 793 projektih (DJ DarMar) je pregled map vsaki 2 s
 # znova bral ~500 datotek (zip, Document.xml, analiza sličic, ~6–10 s) in glavno nit zasedel 98 %, vsak klik je čakal.
-PREDPOMNILNIK_DATOTEK = 5000
+# 2026-11-10: po prenosu map iz SolidWorksa je datotek ~17.000; pri meji 5000 se je predpomnilnik ves čas praznil, vsak
+# pregled map (po vsaki novi sličici) je znova bral vse datoteke ~100 s in glavna nit je stala (sličice vnaprej so propadale
+# s 404 po 60 s). Meja mora biti nad številom datotek; vnos je majhen slovar.
+PREDPOMNILNIK_DATOTEK = 100000
 
 
 def _omeji_predpomnilnik(slovar):
@@ -3163,23 +3168,73 @@ def _datoteka_projekta(pot):
     return d
 
 
+# Izdaje projektov (od 2026-11-10, izdaje.py): zamrznjeni posnetki v <projekt>/Izdaje/Izdaja N (datum)/. Datoteke izdaj so v
+# seznamu z oznako "izdaja": N (stran jih med delovnimi datotekami ne kaže; pokaže jih izbira izdaje nad seznamom), seznam
+# izdaj po projektih gre v "izdaje" {<mapa projekta pod modeliranjem>: [{st, datum, opis, glavni}]}.
+_IZDAJA_V_POTI = re.compile(r"(?:^|/)" + re.escape(izdaje_modul.MAPA_IZDAJ) + r"/Izdaja (\d+)\b[^/]*(?:/|$)")
+_IZDAJE_PROJEKTOV = {}
+_IZDAJE_PREDPOMNILNIK = {}   # pot izdaje.json -> (mtime, seznam)
+
+
+def _izdaje_projekta(mapa_projekta):
+    pot = os.path.join(mapa_projekta, izdaje_modul.MAPA_IZDAJ, izdaje_modul.SEZNAM)
+    try:
+        mtime = os.stat(pot).st_mtime
+    except OSError:
+        return []
+    znano = _IZDAJE_PREDPOMNILNIK.get(pot)
+    if znano is None or znano[0] != mtime:
+        try:
+            seznam = [{"st": i["st"], "datum": i.get("datum", ""), "opis": i.get("opis", ""), "modelov": i.get("modelov", 0),
+                       "mapa": i.get("mapa", ""), "glavni": i["potGlavnega"] if i.get("glavniObstaja") else "",
+                       "oznaka": i.get("oznaka", ""), "boxi": i.get("boxi", "")}   # Malibu F: oznaka 1.4, boxi s serijsko x.6.1.4
+                      for i in izdaje_modul.seznam(mapa_projekta) if i.get("obstaja")]
+        except Exception as e:  # noqa: BLE001
+            _log("izdaje: %s: %r" % (pot, e))
+            seznam = []
+        znano = _IZDAJE_PREDPOMNILNIK[pot] = (mtime, seznam)
+    return znano[1]
+
+
+def _mapa_projekta_izdaj(projekt):
+    """Mapa projekta pod mapo modeliranja iz ključa strani (npr. »Photobox Space 7«) ali None."""
+    projekt = str(projekt or "").replace("\\", "/").strip("/")
+    if not projekt or ".." in projekt.split("/"):
+        return None
+    mapa = os.path.normpath(os.path.join(MAPA_OBLAK, projekt))
+    return mapa if os.path.isdir(mapa) else None
+
+
 def _projekti_v_mapah():
     skupine = []
+    izdaje_projektov = {}
     for mapa in MAPE_PROJEKTOV:
         if not os.path.isdir(mapa):
             continue
         datoteke = []
         for koren, podmape, imena in os.walk(mapa):
             globina = 0 if koren == mapa else os.path.relpath(koren, mapa).count(os.sep) + 1
-            podmape[:] = sorted(d for d in podmape if not d.startswith((".", "__")) and globina < GLOBINA_PROJEKTOV)
+            rel = "" if koren == mapa else os.path.relpath(koren, mapa).replace("\\", "/")
+            v_izdaji = _IZDAJA_V_POTI.search(rel)
+            # mape izdaje so dve ravni globlje kot delovne (Izdaje/Izdaja N/...), zato zanje dve ravni več
+            meja = GLOBINA_PROJEKTOV + (2 if v_izdaji or rel.endswith("/" + izdaje_modul.MAPA_IZDAJ) else 0)
+            podmape[:] = sorted(d for d in podmape if not d.startswith((".", "__")) and globina < meja)
+            if izdaje_modul.MAPA_IZDAJ in podmape and rel:
+                seznam_izdaj = _izdaje_projekta(koren)
+                if seznam_izdaj:
+                    izdaje_projektov[rel] = seznam_izdaj
             for ime in sorted(imena, key=str.lower):
                 if ime.lower().endswith(".fcstd"):
                     d = _datoteka_projekta(os.path.join(koren, ime))
                     if d is not None:
-                        d["projekt"] = "" if koren == mapa else os.path.relpath(koren, mapa).replace("\\", "/")
+                        d["projekt"] = rel
+                        if v_izdaji:
+                            d["izdaja"] = int(v_izdaji.group(1))
                         datoteke.append(d)
         _dosegi_sestavov(datoteke)
         skupine.append({"mapa": _pot(mapa), "naslov": os.path.basename(mapa), "datoteke": datoteke})
+    _IZDAJE_PROJEKTOV.clear()
+    _IZDAJE_PROJEKTOV.update(izdaje_projektov)
     return skupine
 
 
@@ -3272,7 +3327,8 @@ def zgradi_projekte():
             except OSError:
                 pass
         odprti.append(o)
-    return {"odprti": odprti, "skupine": _projekti_v_mapah(), "skupineProjektov": _skupine_projektov()}
+    skupine = _projekti_v_mapah()   # napolni tudi _IZDAJE_PROJEKTOV
+    return {"odprti": odprti, "skupine": skupine, "skupineProjektov": _skupine_projektov(), "izdaje": dict(_IZDAJE_PROJEKTOV)}
 
 
 # Skupine projektov (od 2026-10-16, želja uporabnika: sorodne projekte, npr. Photobox Slim, Slim A in Merilnik, v oknu projektov
@@ -4678,7 +4734,9 @@ class Zahteva(http.server.BaseHTTPRequestHandler):
                         return
                     time.sleep(0.5)
             STANJE.vrsta_ozadje.put(("posnetek", {"ime": (q.get("ime") or [""])[0], "pot": iskana, "znana": znana}, odgovor))
-            if not odgovor["konec"].wait(60) or odgovor["rezultat"] is None:
+            # 600 s (do 2026-11-10 60 s): velik sestav (PHOTO BOX 43 7: 247 s) ali vrsta za drugim posnetkom je po 60 s dobil
+            # 404, glavna nit pa je delo vseeno opravila v prazno in stran datoteke v tej seji ni več poskusila
+            if not odgovor["konec"].wait(600) or odgovor["rezultat"] is None:
                 self._odgovor(b'{"napaka":"ni posnetka"}', koda=404)
             else:
                 self._odgovor(odgovor["rezultat"])
@@ -4688,6 +4746,30 @@ class Zahteva(http.server.BaseHTTPRequestHandler):
             self._odgovor(STANJE.projekti())
         elif pot == "/knjiznica":
             self._odgovor(json.dumps(zgradi_knjiznico(), ensure_ascii=False).encode("utf-8"))
+        elif pot == "/izdaje/razlicice":
+            # Različice kosa čez izdaje in delovno mapo (vrstica različic pod pogledom): V1, V2 ... in v kateri izdaji je katera.
+            import urllib.parse
+            q = urllib.parse.parse_qs(self.path.partition("?")[2])
+            iskana = (q.get("pot") or [""])[0]
+            izid = None
+            if iskana.lower().endswith(".fcstd") and os.path.isfile(iskana) and izdaje_modul._znotraj(iskana, MAPA_OBLAK):
+                try:
+                    izid = izdaje_modul.razlicice_kosa(iskana, MAPA_OBLAK)
+                except Exception as e:  # noqa: BLE001
+                    _log("izdaje: različice %s: %r" % (iskana, e))
+            self._odgovor(json.dumps(izid or {"razlicice": []}, ensure_ascii=False).encode("utf-8"))
+        elif pot == "/izdaje":
+            # Izdaje projekta (izdaje.py): seznam z glavnimi sestavi in povzetek razlik med zaporednima izdajama; samo datoteke.
+            import urllib.parse
+            q = urllib.parse.parse_qs(self.path.partition("?")[2])
+            mapa = _mapa_projekta_izdaj((q.get("projekt") or [""])[0])
+            if mapa is None:
+                self._odgovor(b'{"napaka":"ni projekta"}', koda=404)
+            else:
+                podatki = izdaje_modul.preberi(mapa)
+                self._odgovor(json.dumps({"projekt": podatki["projekt"], "izdaje": izdaje_modul.seznam(mapa),
+                                          "razlike": [{"med": k["med"], "povzetek": k.get("povzetek", {})} for k in podatki["kosi"]]},
+                                         ensure_ascii=False).encode("utf-8"))
         elif pot == "/oblak/slicica":
             # Sličica različice (render strani, oblak.shrani_slicico) za vrstico različic pod pogledom; PNG ali 404.
             import urllib.parse
@@ -5000,6 +5082,21 @@ class Zahteva(http.server.BaseHTTPRequestHandler):
                 _log("oblak: sličica kopije: %r" % e)
             STANJE.zadnji_projekti = 0.0   # seznam se pošlje znova z novo različico sličice
             self._odgovor(b'{"ok":true}')
+        elif pot == "/izdaje":
+            # Nova izdaja: zamrzne delovne datoteke projekta kot naslednjo številko (kopija v <projekt>/Izdaje; nit strežnika,
+            # samo datoteke). Neshranjene spremembe odprtih dokumentov niso zajete: stran prej opozori.
+            mapa = _mapa_projekta_izdaj(podatki.get("projekt", ""))
+            if podatki.get("dejanje") != "nova" or mapa is None:
+                self._odgovor(b'{"napaka":"dejanje nova in projekt sta obvezna"}', koda=400)
+                return
+            try:
+                zapis = izdaje_modul.nova(mapa, opis=str(podatki.get("opis", "")).strip(), glavni=str(podatki.get("glavni", "")),
+                                          dnevnik=lambda s: _log("izdaje: %s" % s))
+            except (izdaje_modul.NapakaIzdaje, OSError, zipfile.BadZipFile) as e:
+                self._odgovor(json.dumps({"napaka": str(e)}, ensure_ascii=False).encode("utf-8"), koda=409)
+                return
+            STANJE.zadnji_projekti = 0.0
+            self._odgovor(json.dumps({"ok": True, "izdaja": zapis}, ensure_ascii=False).encode("utf-8"))
         elif pot == "/python":
             # Počaka na izvedbo na glavni niti in vrne izpis, napako in spremenljivko "rezultat".
             odgovor = {"konec": threading.Event(), "izpis": "", "napaka": "", "rezultat": None}
