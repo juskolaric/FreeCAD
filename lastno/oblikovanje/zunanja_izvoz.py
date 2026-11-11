@@ -31,18 +31,23 @@ def _ravna(ploskev):
         return False
 
 
-def _telesa(o, oblika):
+def _telesa(o, oblika, pokazi=()):
     """(ime kosa v podsestavu, telo) za vrhnji kos sestava; ime je prazno, če vrhnji kos ni podsestav. Imena kosov
-    omogočajo material po kosu (recept: "Prikazovalnik/Veliki")."""
+    omogočajo material po kosu (recept: "Prikazovalnik/Veliki"). `pokazi`: imena »vrhnji/kos«, ki gredo v obliko, čeprav so
+    v podsestavu skriti (recept "pokazi"; Malibu F 1.1–1.3 ima stranice ohišja skrite, od 2026-11-11)."""
     izid = []
+    vsiljeno = False
     cilj = getattr(o, "LinkedObject", None) or o
     otroci = [c for c in getattr(cilj, "Group", []) if c.TypeId not in ("App::Origin", "Assembly::JointGroup")]
     if otroci and o.TypeId == "App::Link":
         m = o.Placement.toMatrix()
+        vrh = re.sub(r"-\d+$", "", o.Label)
         try:
             for c in otroci:
                 if not getattr(c, "Visibility", True):
-                    continue
+                    if vrh + "/" + re.sub(r"-\d+$", "", c.Label) not in pokazi:
+                        continue
+                    vsiljeno = True
                 s = Part.getShape(c)
                 if s.isNull():
                     continue
@@ -50,7 +55,7 @@ def _telesa(o, oblika):
                 izid += [(podime, t) for t in s.transformed(m).Solids]
         except Exception:  # noqa: BLE001
             izid = []
-    if not izid or len(izid) != len(oblika.Solids):     # neznana zgradba: celota brez imen kosov
+    if not izid or (len(izid) != len(oblika.Solids) and not vsiljeno):     # neznana zgradba: celota brez imen kosov
         return [("", t) for t in oblika.Solids]
     return izid
 
@@ -80,9 +85,10 @@ def main():
     nalepka_debelina = float(recept.get("nalepka_debelina", 1.5))
     skupine, st_tock, st_ploskev, zaprtih = [], 0, 0, 0
     for o in vrhnji:
-        if o.TypeId in ("App::Origin", "Assembly::JointGroup") or not getattr(o, "Visibility", True):
-            continue
         ime = re.sub(r"-\d+$", "", o.Label)
+        if o.TypeId in ("App::Origin", "Assembly::JointGroup") or (
+                not getattr(o, "Visibility", True) and ime not in recept.get("pokazi", [])):   # "pokazi" tudi za vrhnje kose
+            continue
         if ime in izpusti:
             continue
         try:
@@ -100,7 +106,7 @@ def main():
         zasuk = recept.get("zasuki", {}).get(ime)
         zm = App.Placement(App.Vector(), App.Rotation(App.Vector(*zasuk["os"]), float(zasuk["kot"])),
                            App.Vector(*zasuk["tocka"])).toMatrix() if zasuk else None
-        for podime, telo in _telesa(o, oblika):
+        for podime, telo in _telesa(o, oblika, set(recept.get("pokazi", []))):
             if zm is not None:
                 telo = telo.transformed(zm)
             if telo.BoundBox.DiagonalLength < najm_kos:
