@@ -149,7 +149,7 @@ def primerjaj(mapa_prej, mapa_zdaj):
     return kosi
 
 
-def nova(projekt, opis="", datum=None, glavni="", izvor=None, st=None, kosi=None, dnevnik=print):
+def nova(projekt, opis="", datum=None, glavni="", izvor=None, st=None, kosi=None, dnevnik=print, ime_mape=None):
     """Zamrzne stanje izvora (privzeto delovne datoteke projekta) kot naslednjo izdajo. Vrne zapis izdaje."""
     projekt = os.path.normpath(projekt)
     izvor = os.path.normpath(izvor or projekt)
@@ -160,7 +160,7 @@ def nova(projekt, opis="", datum=None, glavni="", izvor=None, st=None, kosi=None
     if any(i["st"] == st for i in podatki["izdaje"]):
         raise NapakaIzdaje("Izdaja %d že obstaja" % st)
     datum = datum or datetime.date.today().isoformat()
-    ime_mape = "Izdaja %d (%s)" % (st, datum)
+    ime_mape = ime_mape or "Izdaja %d (%s)" % (st, datum)   # Malibu S: »Izdaja 2.2« (verzija 2.2 izdaje 2)
     cilj = os.path.join(mapa_izdaj(projekt), ime_mape)
     if os.path.exists(cilj):
         raise NapakaIzdaje("Mapa %s že obstaja" % cilj)

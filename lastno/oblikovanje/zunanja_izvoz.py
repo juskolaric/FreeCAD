@@ -114,8 +114,11 @@ def main():
         # recept "zasuki": {vrhnji kos: {os, tocka, kot}} — vrata, ki so v sestavu odprta, se za obliko zaprejo
         # (zasuk okoli osi tečaja; Malibu F 1.5 in delovno, od 2026-11-11)
         zasuk = recept.get("zasuki", {}).get(ime)
-        zm = App.Placement(App.Vector(), App.Rotation(App.Vector(*zasuk["os"]), float(zasuk["kot"])),
-                           App.Vector(*zasuk["tocka"])).toMatrix() if zasuk else None
+        if zasuk and "premik" in zasuk:     # vrata, ki so v sestavu le premaknjena (Malibu S delovno): premik v mm
+            zm = App.Placement(App.Vector(*zasuk["premik"]), App.Rotation()).toMatrix()
+        else:
+            zm = App.Placement(App.Vector(), App.Rotation(App.Vector(*zasuk["os"]), float(zasuk["kot"])),
+                               App.Vector(*zasuk["tocka"])).toMatrix() if zasuk else None
         for podime, telo in _telesa(o, oblika, set(recept.get("pokazi", []))):
             if zm is not None:
                 telo = telo.transformed(zm)

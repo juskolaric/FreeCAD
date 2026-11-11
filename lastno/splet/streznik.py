@@ -3173,6 +3173,17 @@ def _datoteka_projekta(pot):
 # izdaj po projektih gre v "izdaje" {<mapa projekta pod modeliranjem>: [{st, datum, opis, glavni}]}.
 _IZDAJA_V_POTI = re.compile(r"(?:^|/)" + re.escape(izdaje_modul.MAPA_IZDAJ) + r"/Izdaja (\d+)\b[^/]*(?:/|$)")
 _IZDAJE_PROJEKTOV = {}
+
+
+def _st_izdaje(izdaje_projektov, rel, zadetek):
+    """Številka izdaje za mapo v Izdaje/: po imenu mape iz izdaje.json (Malibu S ima mape »Izdaja 2.2«, od 2026-11-11),
+    sicer prva številka v imenu (»Izdaja 3 (2024-04-29)«)."""
+    projekt = rel[:zadetek.start()].rstrip("/") if zadetek.start() else ""
+    ime = rel[zadetek.start():].strip("/").split("/")[1]
+    for i in izdaje_projektov.get(projekt, []):
+        if i.get("mapa") == ime:
+            return i["st"]
+    return int(zadetek.group(1))
 _IZDAJE_PREDPOMNILNIK = {}   # pot izdaje.json -> (mtime, seznam)
 
 
@@ -3187,7 +3198,7 @@ def _izdaje_projekta(mapa_projekta):
         try:
             seznam = [{"st": i["st"], "datum": i.get("datum", ""), "opis": i.get("opis", ""), "modelov": i.get("modelov", 0),
                        "mapa": i.get("mapa", ""), "glavni": i["potGlavnega"] if i.get("glavniObstaja") else "",
-                       "oznaka": i.get("oznaka", ""), "boxi": i.get("boxi", "")}   # Malibu F: oznaka 1.4, boxi s serijsko x.6.1.4
+                       "oznaka": i.get("oznaka", ""), "boxi": i.get("boxi", ""), "napis": i.get("napis", "")}   # Malibu F: oznaka 1.4, boxi s serijsko x.6.1.4
                       for i in izdaje_modul.seznam(mapa_projekta) if i.get("obstaja")]
         except Exception as e:  # noqa: BLE001
             _log("izdaje: %s: %r" % (pot, e))
@@ -3229,7 +3240,7 @@ def _projekti_v_mapah():
                     if d is not None:
                         d["projekt"] = rel
                         if v_izdaji:
-                            d["izdaja"] = int(v_izdaji.group(1))
+                            d["izdaja"] = _st_izdaje(izdaje_projektov, rel, v_izdaji)
                         datoteke.append(d)
         _dosegi_sestavov(datoteke)
         skupine.append({"mapa": _pot(mapa), "naslov": os.path.basename(mapa), "datoteke": datoteke})

@@ -2850,7 +2850,8 @@ function narisiIzbiroIzdaj(proj, izdajeProj, izd) {
   gumb('Delovno', 'Delovne datoteke projekta (to, kar se spreminja)', !izd, () => { izbraneIzdaje.delete(proj); narisiOdprteDokumente(); });
   for (const i of izdajeProj) {
     // oznaka iz izdaje.json (Malibu F: »1.4« = zadnja številka serijske boxa x.6.1.4), sicer zaporedna številka
-    gumb('Izdaja ' + (i.oznaka || i.st), 'Izdaja ' + (i.oznaka || i.st) + ' · ' + i.datum + (i.boxi ? ' · boxi ' + i.boxi : '') + ' · ' + sklon(i.modelov, 'model', 'modela', 'modeli', 'modelov') + (i.opis ? '\n' + i.opis : '')
+    // napis iz izdaje.json (Malibu S: »2.2« = verzija 2.2 izdaje 2), sicer »Izdaja <oznaka>«
+    gumb(i.napis || ('Izdaja ' + (i.oznaka || i.st)), 'Izdaja ' + (i.oznaka || i.st) + (i.datum ? ' · ' + i.datum : '') + (i.boxi ? ' · boxi ' + i.boxi : '') + ' · ' + sklon(i.modelov, 'model', 'modela', 'modeli', 'modelov') + (i.opis ? '\n' + i.opis : '')
       + '\nKlik: pokaži datoteke izdaje in odpri njen glavni sestav', !!izd && izd.st === i.st, () => {
       izbraneIzdaje.set(proj, i.st); izbraniProjekt = proj; $('stranskiVsebina').scrollTop = 0; narisiOdprteDokumente();
       if (i.glavni) projektDejanje({ dejanje: 'odpri', pot: i.glavni });
