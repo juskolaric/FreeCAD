@@ -95,7 +95,14 @@ def main():
         if ime not in skupine:
             skupine.append(ime)
         sid = skupine.index(ime)
+        # recept "zasuki": {vrhnji kos: {os, tocka, kot}} — vrata, ki so v sestavu odprta, se za obliko zaprejo
+        # (zasuk okoli osi tečaja; Malibu F 1.5 in delovno, od 2026-11-11)
+        zasuk = recept.get("zasuki", {}).get(ime)
+        zm = App.Placement(App.Vector(), App.Rotation(App.Vector(*zasuk["os"]), float(zasuk["kot"])),
+                           App.Vector(*zasuk["tocka"])).toMatrix() if zasuk else None
         for podime, telo in _telesa(o, oblika):
+            if zm is not None:
+                telo = telo.transformed(zm)
             if telo.BoundBox.DiagonalLength < najm_kos:
                 continue
             st_teles += 1

@@ -4,6 +4,7 @@
     python lastno/oblikovanje/zunanja_oblika.py "Space"             osveži, če se je zunanjost spremenila
     python lastno/oblikovanje/zunanja_oblika.py "Space" --preveri   samo pove, ali je Blender datoteka še enaka (koda 3 = ni)
     python lastno/oblikovanje/zunanja_oblika.py "Space" --vedno     zgradi novo različico v vsakem primeru
+    python lastno/oblikovanje/zunanja_oblika.py "Malibu F" --recept=zunanja_oblika_1.5   recept Skripte/zunanja_oblika_1.5.json
 
 Projekt je mapa v Oblak/3D modeliranje (ali polna pot); v njej je recept Skripte/zunanja_oblika.json:
     sestav                 glavni sestav (FCStd) v mapi projekta
@@ -73,13 +74,18 @@ def main():
         print(__doc__)
         return 2
     projekt = argv[0] if os.path.isdir(argv[0]) else os.path.join(MODELI, argv[0])
-    recept_pot = os.path.join(projekt, "Skripte", "zunanja_oblika.json")
+    # --recept=<ime>: drug recept v Skripte/ (od 2026-11-11: Malibu F ima svojo obliko za vsako izdajo,
+    # zunanja_oblika_1.5.json s »sestav« Izdaje/Izdaja 5 (...)/Malibu F.FCStd)
+    ime_recepta = next((a.split("=", 1)[1] for a in sys.argv[1:] if a.startswith("--recept=")), "zunanja_oblika.json")
+    if not ime_recepta.lower().endswith(".json"):
+        ime_recepta += ".json"
+    recept_pot = os.path.join(projekt, "Skripte", ime_recepta)
     if not os.path.isfile(recept_pot):
         print("Ni recepta: %s" % recept_pot)
         return 2
     with open(recept_pot, encoding="utf-8") as f:
         recept = json.load(f)
-    delovna = os.path.join(tempfile.gettempdir(), "zunanja-oblika", os.path.basename(projekt))
+    delovna = os.path.join(tempfile.gettempdir(), "zunanja-oblika", os.path.basename(projekt), os.path.splitext(ime_recepta)[0])
     os.makedirs(delovna, exist_ok=True)
     mreza = os.path.join(delovna, "mreza.npz")
     okolje = dict(os.environ, ZO_RECEPT=recept_pot, ZO_IZHOD=mreza, ZO_VHOD=mreza, PYTHONIOENCODING="utf-8")
