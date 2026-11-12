@@ -20,6 +20,14 @@ import numpy as np
 import FreeCAD as App
 import Part
 
+# Oznake kosov imajo znake zunaj kodne strani konzole (»Ø« v cp1250): izpis ne sme podreti izvoza (Rudl, 2026-11-12).
+# FreeCADCmd ne upošteva PYTHONIOENCODING; zunanja_oblika.py izpis bere kot UTF-8.
+for _tok in (sys.stdout, sys.stderr):
+    try:
+        _tok.reconfigure(encoding="utf-8", errors="replace")
+    except Exception:  # noqa: BLE001
+        pass
+
 
 def _ravna(ploskev):
     """Ravna ploskev, tudi če je po uvozu iz STEP zapisana kot B-zlepek."""
