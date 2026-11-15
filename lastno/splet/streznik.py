@@ -3768,6 +3768,7 @@ class Stanje:
     def __init__(self):
         self.vrsta = queue.Queue()          # zahteve iz brskalnika -> glavna nit
         self.vrsta_ozadje = queue.Queue()   # nizka prednost (geometrija za sličice): le ko ni drugega dela, ena na obhod
+        self.vrsta_mcp = queue.Queue()      # klici orodij AI: za zahtevami brskalnika, en klic na obhod (prednost uporabnika)
         self.odjemalci = []                 # vrste SSE odjemalcev
         self.kljuc = threading.Lock()
         self._posnetek = b'{"dokument":"","verzija":0,"objekti":[]}'
@@ -3895,17 +3896,30 @@ class Stanje:
     # -- glavna nit --
     def obdelaj(self):
         ozadje = False
+        mcp = False
+        vrsta_mcp = getattr(self, "vrsta_mcp", None)
         while True:
             try:
                 ukaz, podatki, odgovor = self.vrsta.get_nowait()
             except queue.Empty:
-                if ozadje:
-                    break
-                ozadje = True   # zahteve iz ozadja (sličice) šele, ko je vrsta prazna, in samo ena
-                try:
-                    ukaz, podatki, odgovor = self.vrsta_ozadje.get_nowait()
-                except queue.Empty:
-                    break
+                # klic AI šele, ko so zahteve brskalnika obdelane, in en na obhod: vmes pride uporabnik vedno na vrsto
+                prvi = None
+                if not mcp and vrsta_mcp is not None:
+                    try:
+                        prvi = vrsta_mcp.get_nowait()
+                        mcp = True
+                    except queue.Empty:
+                        pass
+                if prvi is not None:
+                    ukaz, podatki, odgovor = prvi
+                else:
+                    if ozadje:
+                        break
+                    ozadje = True   # zahteve iz ozadja (sličice) šele, ko je vrsta prazna, in samo ena
+                    try:
+                        ukaz, podatki, odgovor = self.vrsta_ozadje.get_nowait()
+                    except queue.Empty:
+                        break
             else:
                 self.zadnja_zahteva = time.time()
             prej = _zaseda(_opis_ukaza(ukaz, podatki))

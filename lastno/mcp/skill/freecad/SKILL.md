@@ -43,7 +43,9 @@ njegovih dokumentov, zato vedno delaj na pravem dokumentu (argument `dokument`, 
 - **Brez strežnika** ali krog zapis-branje STEP (v strežniku lahko sesuje proces): `freecadcmd`.
 
 ## Ne
-- Ne poganjaj Boolovih operacij (common, cut, fuse) v zankah čez veliko kosov: glavna nit obvisi za minute.
+- Ne poganjaj težkega dela na glavni niti (Boolove operacije, distToShape na uvoženih sestavih): uporabnik med tem ne
+  more delati. `python` ima proračun 20 s in velike Boolove operacije zavrne; trki → `izmeri`, izvoz → `izvozi`,
+  ostalo → `python` z `v_ozadju: true` in `objekti` (slovar `oblike`, rezultat v `vrni`) ali `datoteke`.
 - Ne shranjuj, ne zapiraj dokumentov in ne briši datotek ali uporabnikovih objektov brez izrecne želje.
 - `izhod` le na izrecno zahtevo. `dovoli_pisanje` le, če je uporabnik to izrecno dovolil.
 - Imena objektov (Name) naj bodo ASCII, oznake (Label) so lahko slovenske. Poti v Pythonu: `r"C:\..."` ali `/`.

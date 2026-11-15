@@ -77,6 +77,23 @@ FreeCAD je motor, vmesnik in grafika nastajata v brskalniku (plan, korak 8 napre
   ga kopiraj znova); isto besedilo vrne orodje `postopki`. V namizni aplikaciji Claude vpis v claude_desktop_config.json
   med njenim delovanjem ne obstane (prepiše ga iz pomnilnika): `lastno/mcp/vpisi_v_claude_desktop.py --cakaj` vpiše ob
   zaprtju aplikacije. Ob selitvi mape v »3D tisk« popravi še registracijo `claude mcp` in vpis v aplikaciji (pot do mostu).
+- **Delovni procesi in prednost uporabnika** (od 2026-11-15, `lastno/splet/delovni.py`, `delovni_proces.py`): dolg klic OCC na
+  glavni niti drži **GIL**, zato ne obvisi le glavna nit, ampak tudi niti HTTP (`/stanje` ne odgovori, nove povezave
+  WinError 10061; 15. 11. `common`/`distToShape` z uvoženo VALINO 20+ min). Česar ne smemo prekiniti, ne smemo začeti na glavni niti:
+  (1) **bazen FreeCADCmd** iste gradnje (`SPLET_DELOVNI`, privzeto 2; prvi se zažene 20 s po `povezi`, dnevnik
+  `build/splet-delovni.log`): glavna nit zapiše le posnetek BREP z globalno lego (`delovni.posnemi`, `%TEMP%/freecad-splet-posli/<posel>`),
+  proces izračuna in vrne po `multiprocessing.connection` (naključen ključ); posel čez `cakaj` postane `opravilo`
+  (`opravilo` {id, ustavi: true} proces ubije, naslednji posel zažene novega). Skozenj gredo `izmeri` (razdalje, trki,
+  prekrivanja; en sklic brez parov ostane na glavni niti), novo orodje `izvozi` (STEP/STL/BREP, brez barv) in
+  `python` z `v_ozadju: true` (`objekti` → slovar `oblike`, `datoteke` → `dokumenti`/`doc` z diska, oblike v `vrni` se
+  dodajo kot Part::Feature v eni transakciji). (2) **`python` na glavni niti** ima proračun (`proracun`, privzeto 20 s,
+  največ 120) prek `sys.setprofile` (`_Proracun`): ob roku `PrekoracenProracun` (BaseException) in razveljavitev, pred
+  `common/cut/fuse/section/distToShape/...` na obliki z > 1500 ploskvami (`countElement("Face")`) zavrnitev, razen z
+  `dovoli_tezko`. Profil vidi le obliko, na kateri je metoda klicana, ne argumenta. (3) **Prednost brskalnika**: klici AI
+  gredo v `STANJE.vrsta_mcp`, `obdelaj` vzame enega na obhod in šele, ko je `vrsta` brskalnika prazna. Ostaja: mreženje
+  posnetka velikega novega objekta (5000 krogel ~2 min) in ukazi iz brskalnika še vedno tečejo na glavni niti in med tem
+  ustavijo HTTP. Preizkus na ločenem primerku: `SPLET_VRATA=3029`, `LOCALAPPDATA` v začasno mapo (sicer prepiše
+  `povezava.json` in most MCP vseh sej preklopi na preizkus), `SPLET_SAMODEJNO_SHRANJEVANJE=0`, `SPLET_OBLAK_MAPA`.
 - **Pomočnik AI v brskalniku** (od 2026-10-10, `lastno/splet/pomocnik.py`, gumb ✦ Pomočnik v glavi ob Izhodu (razred
   `.gumbPomocnik`, stanje prek `gumbiPomocnika`), plošča `#pomocnik` desno od pogleda; gumb 🖨 3D natisni je iz glave odstranjen
   2026-10-13 na željo uporabnika, tisk je »Natisni« v drevesu in v vrstici Oblikovanja)

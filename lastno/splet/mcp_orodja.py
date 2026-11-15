@@ -77,6 +77,13 @@ def povezi(modul):
         zapisi_katalog()
     except Exception as e:  # noqa: BLE001
         _dnevnik("mcp", "katalog ni zapisan: %r" % e)
+    try:
+        import delovni   # delovni procesi FreeCADCmd: dnevnik strežnika, en proces pripravljen vnaprej
+        delovni._log[0] = lambda b: S._log(b)
+        if not delovni.stanje():
+            delovni.ogrej()
+    except Exception as e:  # noqa: BLE001
+        _dnevnik("mcp", "delovni procesi: %r" % e)
 
 
 def _st():
@@ -218,7 +225,9 @@ def _na_glavni(fn, cakaj=120.0, ime="", ozadje=False):
     """Izvede fn na glavni niti FreeCAD-a in vrne njen rezultat. Če ne konča v `cakaj` s, vrne oznako opravila
     (`opravilo` počaka nanj kasneje); glavna nit ga vseeno dokonča."""
     odgovor = {"konec": threading.Event(), "izpis": "", "napaka": "", "rezultat": None}
-    (S.STANJE.vrsta_ozadje if ozadje else S.STANJE.vrsta).put(("mcp", {"fn": fn}, odgovor))
+    # vrsta_mcp: zahteve brskalnika (odpiranje, izbira, urejanje) imajo prednost, glavna nit vzame en klic AI na obhod
+    vrsta = S.STANJE.vrsta_ozadje if ozadje else getattr(S.STANJE, "vrsta_mcp", S.STANJE.vrsta)
+    vrsta.put(("mcp", {"fn": fn}, odgovor))
     if not odgovor["konec"].wait(cakaj):
         oid = uuid.uuid4().hex[:8]
         _st()["opravila"][oid] = {"odgovor": odgovor, "ime": ime, "zacetek": time.time()}
@@ -487,10 +496,11 @@ odprtih je lahko več deset njegovih dokumentov.
 - Delo: `python` (celoten FreeCAD API na glavni niti; vrne izpis in spremenljivko `rezultat`), `ukaz` + `obrazec` za
   ukaze z okni (Zaokrožitev, Make Wall …), `izberi` za ploskve in robove pred ukazom.
 - Vsak klic `python` je ena transakcija: ob napaki se razveljavi sam, sicer ga vrne `razveljavi`.
-- Na disk piše samo `shrani` (s `komentar` za različico v oblaku). `python` ne shranjuje, ne zapira dokumentov in ne
-  briše datotek. `izhod` konča program le z izrecno potrditvijo uporabnika.
-- Boolovih operacij (common, cut, fuse) ne poganjaj v zankah čez veliko kosov: glavna nit obvisi za minute. Trke
-  preverjaj z `izmeri`.
+- Na disk piše samo `shrani` (s `komentar` za različico v oblaku) in `izvozi` (STEP/STL, nova datoteka). `python` ne
+  shranjuje, ne zapira dokumentov in ne briše datotek. `izhod` konča program le z izrecno potrditvijo uporabnika.
+- Glavna nit je skupna uporabniku in vsem sejam: `python` ima proračun 20 s, Boolove operacije in distToShape na
+  oblikah z > 1500 ploskvami zavrne. Trke preverjaj z `izmeri` (teče v delovnem procesu), izvoz z `izvozi`, drugo
+  težko delo s `python` v_ozadju=true (delovni proces FreeCADCmd nad posnetkom `objekti` ali datotekami z diska).
 - Modeli: C:\Users\Uporabnik\Oblak\3D modeliranje\<Projekt>\ (skripte v Skripte\, PREBERI.txt); standardni deli v
   Standardni deli\. Poti v Python nizih piši kot r"C:\..." ali z "/".
 - Postopki dela (nov kos, okna ukazov, pločevina, sestav, pregled, tisk, render): orodje `postopki`.
@@ -755,6 +765,14 @@ def t_stanje(a):
         v.append(S.oblikovanje_povzetek())   # Blender v ozadju: teče, minute mirovanja, prag ugasnitve, zaseden
     except Exception:  # noqa: BLE001
         pass
+    try:
+        import delovni   # FreeCADCmd za težke izračune (izmeri, python v_ozadju, izvozi)
+        v.append(delovni.povzetek())
+    except Exception:  # noqa: BLE001
+        pass
+    zaseda = S._zasedenost() if hasattr(S, "_zasedenost") else None
+    if zaseda and zaseda.get("s", 0) >= 2:
+        v.append("Glavna nit dela: %s (%s s)" % (zaseda["kaj"], zaseda["s"]))
     if st.get("napaka"):
         v.append("Zadnja napaka strežnika (lahko stara): " + st["napaka"].strip().splitlines()[-1][:300])
     return "\n".join(v)
@@ -1066,7 +1084,7 @@ PREPOVEDANO_V_KODI = [
 ]
 
 
-@orodje("python", naslov="Python v FreeCAD-u", unicujoce=True, cakaj=120, lastnosti={
+@orodje("python", naslov="Python v FreeCAD-u", nit="streznik", unicujoce=True, cakaj=120, lastnosti={
     "koda": {"type": "string", "description": "Python koda; imena: App/FreeCAD, Gui/FreeCADGui, doc (ciljni dokument), "
                                              "Vector, Placement, Rotation, Part (uvozi ostalo sam). Nastavi `rezultat` "
                                              "za vrnjeno vrednost (JSON)."},
@@ -1078,12 +1096,36 @@ PREPOVEDANO_V_KODI = [
     "dovoli_pisanje": {"type": "boolean", "description": "dovoli save/close/brisanje datotek v kodi; samo z izrecnim "
                                                          "dovoljenjem uporabnika"},
     "cakaj": {"type": "number", "description": "največ sekund čakanja (privzeto 120); potem `opravilo`"},
+    "proracun": {"type": "number", "description": "časovni proračun na glavni niti v s (privzeto 20, največ 120); "
+                                                  "potem se klic prekine in razveljavi"},
+    "dovoli_tezko": {"type": "boolean", "description": "dovoli Boolove operacije in distToShape na velikih oblikah "
+                                                       "na glavni niti (samo z izrecnim dovoljenjem uporabnika)"},
+    "v_ozadju": {"type": "boolean", "description": "izvedi v delovnem procesu (FreeCADCmd) nad posnetkom `objekti` "
+                                                   "in/ali shranjenimi `datoteke`; FreeCAD ostane odziven"},
+    "objekti": {"type": "array", "items": {"type": "string"},
+                "description": "v_ozadju: sklici objektov (kot pri izmeri), na voljo kot oblike[\"sklic\"] "
+                               "(Part.Shape z globalno lego)"},
+    "datoteke": {"type": "array", "items": {"type": "string"},
+                 "description": "v_ozadju: poti FCStd, ki jih proces odpre z diska (dokumenti, doc = prvi; "
+                                "neshranjene spremembe uporabnika v njih niso vidne)"},
 }, opis="""
 Izvede Python kodo na glavni niti tekočega FreeCAD-a (celoten API: Part, PartDesign, Sketcher, Assembly, Draft, Mesh
 …). Vrne izpis (print), spremenljivko `rezultat`, nove in odstranjene objekte ter napake po preračunu. Klic je ena
 transakcija (ob napaki razveljavljen, sicer ga vrne `razveljavi`). Brez dovoli_pisanje ne shranjuje, ne zapira
-dokumentov in ne briše datotek. Med izvajanjem stran zamrzne: dolgo delo razdeli.""")
+dokumentov in ne briše datotek. Med izvajanjem uporabnik ne more delati, zato ima klic časovni proračun (privzeto
+20 s), Boolove operacije in distToShape na velikih oblikah (> 1500 ploskev) pa so na glavni niti zavrnjene.
+Dolgo delo: v_ozadju=true teče v delovnem procesu nad posnetkom oblik (objekti -> slovar `oblike`) ali datotekami
+z diska (`dokumenti`, `doc`); `rezultat` in izpis se vrneta, oblike v slovarju `vrni` {ime: Part.Shape} pa se
+dodajo v ciljni dokument kot Part::Feature (ena transakcija). Tam ni Gui in ni dokumentov uporabnika.""")
 def t_python(a):
+    """Nit strežnika: glavna nit (s proračunom) ali delovni proces (v_ozadju)."""
+    if a.get("v_ozadju"):
+        return _python_v_ozadju(a)
+    _preveri_kodo(a)
+    return _na_glavni(lambda: _python_glavna(a), _cakaj(a, 120), "python")
+
+
+def _preveri_kodo(a):
     koda = a.get("koda") or ""
     ime_datoteke = "<mcp>"
     if a.get("datoteka"):
@@ -1101,9 +1143,129 @@ def t_python(a):
                 raise Napaka("Koda ni izvedena: %s. Če je uporabnik to izrecno dovolil, ponovi z "
                              "dovoli_pisanje: true." % razlog)
     try:
-        prevedeno = compile(koda, ime_datoteke, "exec")
+        compile(koda, ime_datoteke, "exec")
     except SyntaxError as e:
         raise Napaka("Skladenjska napaka v vrstici %s: %s\n%s" % (e.lineno, e.msg, (e.text or "").rstrip()))
+    return koda, ime_datoteke
+
+
+def _python_v_ozadju(a):
+    import delovni
+    koda, _ = _preveri_kodo(a)
+    datoteke = [os.path.normpath(p) for p in (a.get("datoteke") or [])]
+    for p in datoteke:
+        if not os.path.isfile(p):
+            raise Napaka("Datoteke ni: %s" % p)
+    refs = list(a.get("objekti") or [])
+    mapa = delovni.nova_mapa()
+    try:
+        def zberi():
+            doc = _dokument(a.get("dokument"))
+            oblike = [(r, _oblika(doc, r)[0]) for r in refs]
+            return {"posnetek": dict(delovni.posnemi(oblike, mapa)), "dokument": doc.Name if doc else ""}
+        zbrano = _glavna_vrednost(zberi, 60) if refs else {"posnetek": {}, "dokument": ""}
+        odgovor = delovni.posel("python", {"koda": koda, "oblike": zbrano["posnetek"], "datoteke": datoteke,
+                                           "mapa": mapa}, opis="python v ozadju")
+
+        def pretvori(r):
+            v = []
+            if r.get("napaka"):
+                v.append("NAPAKA v kodi (delovni proces, %.1f s):\n%s" % (r.get("trajanje") or 0, r["napaka"].rstrip()))
+            else:
+                v.append("Koda je tekla v delovnem procesu %s s." % _st_mm(r.get("trajanje") or 0, 2))
+            if r.get("izpis"):
+                v.append("Izpis:\n" + _kratko(r["izpis"].rstrip(), 30000))
+            if r.get("rezultat") is not None:
+                v.append("rezultat = " + _kratko(json.dumps(r["rezultat"], ensure_ascii=False, indent=1), 20000))
+            if r.get("vrnjene"):
+                imena = _glavna_vrednost(lambda: _dodaj_vrnjene(a, zbrano["dokument"], r["vrnjene"]), 120)
+                v.append("Dodano v dokument (transakcija »AI: python v ozadju«): " + ", ".join(imena))
+            return {"napaka": bool(r.get("napaka")), "besedilo": "\n".join(v)}
+        return _cakaj_delovni(odgovor, _cakaj(a, 120), "python v ozadju", mapa, pretvori)
+    except BaseException:
+        delovni.pospravi(mapa)
+        raise
+
+
+def _dodaj_vrnjene(a, ime_dokumenta, vrnjene):
+    """Glavna nit: oblike iz delovnega procesa (BREP) kot Part::Feature v ciljni dokument."""
+    import Part
+    doc = App.getDocument(ime_dokumenta) if ime_dokumenta else _dokument(a.get("dokument"))
+    if doc is None:
+        raise Napaka("Ni ciljnega dokumenta za vrnjene oblike (odpri ali podaj dokument).")
+    doc.openTransaction("AI: python v ozadju")
+    imena = []
+    try:
+        for ime, pot in vrnjene.items():
+            oblika = Part.Shape()
+            oblika.read(pot)
+            obj = doc.addObject("Part::Feature", "Rezultat")
+            obj.Label = ime
+            obj.Shape = oblika
+            imena.append("%s (%s)" % (obj.Label, obj.Name))
+        doc.recompute()
+    finally:
+        doc.commitTransaction()
+    S.STANJE.umazano = True
+    return imena
+
+
+# Proračun glavne niti: profilna funkcija (sys.setprofile) ob vsakem klicu preveri rok, pred Boolovo operacijo ali
+# distToShape na veliki obliki pa klic zavrne. Klica OCC, ki že teče, ni mogoče prekiniti (drži GIL in s tem tudi niti
+# HTTP strežnika), zato ga je treba ustaviti, preden se začne. Velikost se preveri na obliki, na kateri je metoda
+# klicana (argumentov profil ne vidi): `mala.common(VELIKA)` gre skozi, ujame ga le proračun pred naslednjim klicem.
+TEZKE_METODE = {"common", "cut", "fuse", "multiFuse", "generalFuse", "section", "slice", "slices", "distToShape",
+                "makeThickness", "makeOffsetShape", "oldFuse", "removeSplitter"}
+PRAG_PLOSKEV = 1500
+
+
+class PrekoracenProracun(BaseException):
+    """BaseException, da je `except Exception` v kodi AI ne pogoltne."""
+
+
+class _Proracun:
+    def __init__(self, sekunde, tezko):
+        import Part
+        self.sekunde = sekunde
+        self.rok = time.monotonic() + sekunde
+        self.tezko = tezko
+        self.Shape = Part.Shape
+
+    def __call__(self, frame, dogodek, arg):
+        if dogodek == "c_call":
+            if time.monotonic() > self.rok:
+                raise PrekoracenProracun(self._sporocilo())
+            if not self.tezko and getattr(arg, "__name__", "") in TEZKE_METODE:
+                sam = getattr(arg, "__self__", None)
+                if isinstance(sam, self.Shape):
+                    try:
+                        n = sam.countElement("Face")
+                    except Exception:  # noqa: BLE001
+                        n = 0
+                    if n > PRAG_PLOSKEV:
+                        raise PrekoracenProracun(
+                            "%s na obliki s %d ploskvami bi zasedel glavno nit FreeCAD-a (uporabnik med tem ne more "
+                            "delati, lahko več minut). Trke in prekrivanja preverjaj z `izmeri`; drugo težko delo "
+                            "pošlji v delovni proces: `python` z v_ozadju=true in objekti=[...] (slovar oblike). "
+                            "Na glavni niti samo z izrecnim dovoljenjem uporabnika (dovoli_tezko=true)."
+                            % (arg.__name__, n))
+        elif dogodek == "call" and time.monotonic() > self.rok:
+            raise PrekoracenProracun(self._sporocilo())
+
+    def _sporocilo(self):
+        return ("Klic je presegel časovni proračun %d s na glavni niti FreeCAD-a (med tem uporabnik ne more delati), "
+                "zato je prekinjen in razveljavljen. Dolgo delo razdeli na krajše klice ali ga pošlji v delovni proces: "
+                "`python` z v_ozadju=true (objekti=[...] -> oblike, datoteke=[...] -> dokumenti)." % self.sekunde)
+
+
+def _python_glavna(a):
+    """Glavna nit: izvedba kode kot ena transakcija, s proračunom (_Proracun)."""
+    koda, ime_datoteke = _preveri_kodo(a)
+    prevedeno = compile(koda, ime_datoteke, "exec")
+    try:
+        proracun = max(1.0, min(float(a.get("proracun") or 20.0), 120.0))
+    except (TypeError, ValueError):
+        proracun = 20.0
     doc = _dokument(a.get("dokument"), obvezen=bool(a.get("dokument")))
     import Part
     okolje = {"__name__": "__mcp__", "__file__": ime_datoteke if ime_datoteke != "<mcp>" else "",
@@ -1125,9 +1287,16 @@ def t_python(a):
         transakcija = 0
     zacetek = time.time()
     napaka = ""
+    prej_profil = sys.getprofile()
     try:
         with contextlib.redirect_stdout(izpis), contextlib.redirect_stderr(izpis):
-            exec(prevedeno, okolje)
+            sys.setprofile(_Proracun(proracun, bool(a.get("dovoli_tezko"))))
+            try:
+                exec(prevedeno, okolje)
+            finally:
+                sys.setprofile(prej_profil)
+    except PrekoracenProracun as e:
+        napaka = "⏱ %s\n" % e
     except BaseException as e:  # noqa: BLE001  (tudi SystemExit iz skripte)
         vrstice = traceback.format_exception(type(e), e, e.__traceback__)
         uporabniske = [v for v in vrstice if "mcp_orodja.py" not in v]
@@ -1518,7 +1687,7 @@ def _opis_elementa(el):
     return t
 
 
-@orodje("izmeri", naslov="Meritve", samo_branje=True, cakaj=180, lastnosti={
+@orodje("izmeri", naslov="Meritve", nit="streznik", samo_branje=True, cakaj=180, lastnosti={
     "objekti": {"type": "array", "items": {"type": "string"},
                 "description": "sklici (»Objekt«, »Objekt.Face3«, pot »Sestav.Povezava.Edge2«) ali [\"izbira\"]"},
     "vsi": {"type": "boolean", "description": "vsa vidna telesa dokumenta: mere in trki med njimi"},
@@ -1529,8 +1698,63 @@ def _opis_elementa(el):
 }, opis="""
 Mere v globalnih koordinatah: okvir, prostornina, površina, težišče, masa; za ploskve in robove vrsta, polmer, dolžina,
 normala. Za več sklicev še najmanjša razdalja, kot med ravninami ali premicami in trk (prekrivanje ali dotik). vsi=true
-preveri trke med vsemi vidnimi telesi (brez Boolovih operacij, razen s prekrivanje).""")
+preveri trke med vsemi vidnimi telesi (brez Boolovih operacij, razen s prekrivanje). Razdalje in trki se računajo v
+delovnem procesu (FreeCADCmd nad posnetkom oblik), zato uporabnik med tem normalno dela v brskalniku.""")
 def t_izmeri(a):
+    """Nit strežnika: glavna nit le zbere oblike (in zapiše posnetek BREP); razdalje, trki in prekrivanja (distToShape,
+    isInside, common), ki na uvoženih sestavih trajajo minute, tečejo v delovnem procesu (delovni.py)."""
+    import delovni
+    mapa = delovni.nova_mapa()
+    try:
+        zbrano = _glavna_vrednost(lambda: _izmeri_zberi(a, mapa), _cakaj(a, 60))
+        if zbrano["besedilo"] is not None:   # en sklic brez parov: mere so hitre in že izračunane na glavni niti
+            delovni.pospravi(mapa)
+            return zbrano["besedilo"]
+        cakaj = _cakaj(a, 180)
+        odgovor = delovni.posel("izmeri", {"oblike": zbrano["posnetek"], "a": a},
+                                opis="izmeri (%d oblik)" % len(zbrano["posnetek"]))
+        return _cakaj_delovni(odgovor, cakaj, "izmeri", mapa, lambda r: r.get("besedilo") or "")
+    except BaseException:
+        delovni.pospravi(mapa)
+        raise
+
+
+def _cakaj_delovni(odgovor, cakaj, ime, mapa, pretvori):
+    """Počaka na posel delovnega procesa; po roku vrne opravilo (kot _na_glavni). Mapo posla pobriše ob koncu."""
+    import delovni
+
+    def koncaj():
+        try:
+            if odgovor["napaka"]:
+                return {"napaka": True, "besedilo": _kratka_sled(odgovor["napaka"], 20)}
+            r = odgovor["rezultat"] or {}
+            if r.get("napaka") and not r.get("izpis") and "besedilo" not in r:
+                return {"napaka": True, "besedilo": "Napaka v delovnem procesu:\n" + _kratka_sled(r["napaka"], 20)}
+            return pretvori(r)
+        finally:
+            delovni.pospravi(mapa)
+
+    if odgovor["konec"].wait(cakaj):
+        return koncaj()
+    # opravilo: `opravilo` počaka na odgovor; rezultat pretvori nit, ki počaka na konec posla
+    koncni = {"konec": threading.Event(), "izpis": "", "napaka": "", "rezultat": None}
+
+    def pocakaj():
+        odgovor["konec"].wait()
+        koncni["rezultat"] = koncaj()
+        koncni["konec"].set()
+    threading.Thread(target=pocakaj, name="delovni-opravilo", daemon=True).start()
+    oid = uuid.uuid4().hex[:8]
+    _st()["opravila"][oid] = {"odgovor": koncni, "ime": ime + " (delovni proces)", "zacetek": time.time(),
+                              "delovni": odgovor}
+    return {"besedilo": "Še teče v delovnem procesu (več kot %d s); FreeCAD med tem ostane odziven. Opravilo %s: "
+                        "počakaj nanj z `opravilo` {\"id\": \"%s\"} ali ga ustavi z `opravilo` {\"id\": \"%s\", "
+                        "\"ustavi\": true}." % (cakaj, oid, oid, oid), "opravilo": oid}
+
+
+def _izmeri_zberi(a, mapa):
+    """Glavna nit: oblike za izmeri; pri enem sklicu (brez parov in trkov) izračuna kar tu, sicer zapiše posnetek."""
+    import delovni
     doc = _dokument(a.get("dokument"))
     refs = list(a.get("objekti") or [])
     if refs == ["izbira"] or (not refs and not a.get("vsi")):
@@ -1557,6 +1781,14 @@ def t_izmeri(a):
             oblike.append((r if "." in r else obj.Label, oblika))
     if not oblike:
         raise Napaka("Ni geometrije za merjenje.")
+    if len(oblike) == 1 and not a.get("vsi"):
+        return {"besedilo": izmeri_oblike(oblike, a), "posnetek": None}
+    return {"besedilo": None, "posnetek": delovni.posnemi(oblike, mapa)}
+
+
+def izmeri_oblike(oblike, a):
+    """Mere, razdalje in trki za [(ime, oblika)] v globalnih koordinatah. Teče v delovnem procesu (delovni_proces.py),
+    pri enem sklicu na glavni niti; ne kliče Gui in ne dokumentov."""
     v = []
     skupni = None
     for ime, o in oblike:
@@ -1628,6 +1860,57 @@ def t_izmeri(a):
             vrstica += ", " + _vrsta_stika(oa, ob)
         v.append(vrstica)
     return "\n".join(v)
+
+
+@orodje("izvozi", naslov="Izvoz STEP/STL", nit="streznik", cakaj=300, lastnosti={
+    "objekti": {"type": "array", "items": {"type": "string"}, "description": "sklici (kot pri izmeri) ali [\"izbira\"]"},
+    "vsi": {"type": "boolean", "description": "vsa vidna telesa dokumenta"},
+    "dokument": {"type": "string", "description": "ime ali oznaka (privzeto aktivni)"},
+    "pot": {"type": "string", "description": "ciljna datoteka .step/.stp, .stl ali .brep"},
+    "natancnost": {"type": "number", "description": "STL: največje odstopanje mreže v mm (privzeto 0,1)"},
+    "prepisi": {"type": "boolean", "description": "prepiši obstoječo datoteko (samo z dovoljenjem uporabnika)"},
+    "cakaj": {"type": "number", "description": "sekunde čakanja (privzeto 300); potem `opravilo`"},
+}, obvezne=("pot",), opis="""
+Izvozi oblike (globalna lega, en kos na objekt z oznako kot imenom) v STEP, STL ali BREP. Izvoz teče v delovnem
+procesu nad posnetkom oblik, zato FreeCAD med tem ostane odziven. Barve se ne prenesejo.""")
+def t_izvozi(a):
+    import delovni
+    cilj = os.path.normpath(a.get("pot") or "")
+    konec = os.path.splitext(cilj)[1].lower()
+    if konec not in (".step", ".stp", ".stl", ".brep", ".brp"):
+        raise Napaka("Pot mora imeti končnico .step, .stp, .stl ali .brep.")
+    if not os.path.isdir(os.path.dirname(cilj) or "."):
+        raise Napaka("Mapa ne obstaja: %s" % os.path.dirname(cilj))
+    if os.path.exists(cilj) and not a.get("prepisi"):
+        raise Napaka("Datoteka že obstaja: %s (prepisi=true samo z dovoljenjem uporabnika)." % cilj)
+    mapa = delovni.nova_mapa()
+    try:
+        def zberi():
+            doc = _dokument(a.get("dokument"))
+            refs = list(a.get("objekti") or [])
+            oblike = []
+            if a.get("vsi"):
+                for o in _telesa_dokumenta(doc):
+                    try:
+                        oblike.append((o.Label, _oblika(doc, o.Name)[0]))
+                    except Exception:  # noqa: BLE001
+                        continue
+            else:
+                if refs == ["izbira"] or not refs:
+                    refs = [s.Object.Name for s in Gui.Selection.getSelectionEx("", 0)]
+                for r in refs:
+                    oblika, obj = _oblika(doc, r)
+                    oblike.append((r if "." in r else obj.Label, oblika))
+            if not oblike:
+                raise Napaka("Ni oblik za izvoz (objekti, izbira ali vsi=true).")
+            return delovni.posnemi(oblike, mapa)
+        posnetek = _glavna_vrednost(zberi, 60)
+        odgovor = delovni.posel("izvoz", {"oblike": posnetek, "cilj": cilj, "natancnost": a.get("natancnost")},
+                                opis="izvoz %s" % os.path.basename(cilj))
+        return _cakaj_delovni(odgovor, _cakaj(a, 300), "izvozi", mapa, lambda r: r.get("besedilo") or "")
+    except BaseException:
+        delovni.pospravi(mapa)
+        raise
 
 
 # ---------------------------------------------------------------------------
@@ -2870,8 +3153,10 @@ def t_splet(a):
 @orodje("opravilo", naslov="Opravilo v teku", nit="streznik", samo_branje=True, lastnosti={
     "id": {"type": "string", "description": "oznaka opravila (iz odgovora, ki je potekel) ali render:<id>"},
     "cakaj": {"type": "number", "description": "sekunde čakanja (privzeto 60)"},
+    "ustavi": {"type": "boolean", "description": "ustavi posel delovnega procesa (izmeri, python v_ozadju, izvozi)"},
 }, opis="""
-Počaka na klic, ki je presegel čas čakanja (python, render …), in vrne njegov rezultat. Brez id našteje opravila.""")
+Počaka na klic, ki je presegel čas čakanja (python, render …), in vrne njegov rezultat. Brez id našteje opravila.
+Posel v delovnem procesu ustavi z ustavi=true (dela na glavni niti ni mogoče ustaviti).""")
 def t_opravilo(a):
     opravila = _st()["opravila"]
     oid = a.get("id") or ""
@@ -2885,6 +3170,10 @@ def t_opravilo(a):
     o = opravila.get(oid)
     if o is None:
         raise Napaka("Opravila %s ni (morda je že prebrano)." % oid)
+    if a.get("ustavi"):
+        if not o.get("delovni"):
+            raise Napaka("Opravilo %s teče na glavni niti FreeCAD-a; tega ni mogoče ustaviti." % oid)
+        o["delovni"]["ustavi"] = True
     if not o["odgovor"]["konec"].wait(_cakaj(a, 60)):
         return "Opravilo %s še teče (%d s)." % (oid, time.time() - o["zacetek"])
     opravila.pop(oid, None)
