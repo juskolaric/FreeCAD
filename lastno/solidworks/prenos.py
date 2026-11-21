@@ -31,7 +31,7 @@ try:
 except Exception:  # noqa: BLE001
     pass
 
-REPO = os.path.dirname(os.path.dirname(TU))                          # CAD in 3D/FreeCAD
+REPO = os.path.dirname(os.path.dirname(TU))                          # CAD in 3D/Razvoj
 FREECAD = os.path.join(REPO, ".pixi", "envs", "default", "Library", "bin", "FreeCAD.exe")
 FREECADCMD = os.path.join(REPO, ".pixi", "envs", "default", "Library", "bin", "FreeCADCmd.exe")
 USER_CFG = os.path.join(cfg.DELOVNA, "user.cfg")
@@ -249,7 +249,7 @@ def preberi_txt(p):
     b.append("%s — prenos iz SolidWorksa v naš FreeCAD (%s)" % (p["cilj"].upper(), datum))
     b.append("")
     b.append("Izvor: PHOTOLANDIA Dropbox/PHOTOLANDIA/PROJEKTI/%s (SolidWorks je bil odprt samo za branje, nobena izvorna" % kljuc)
-    b.append("datoteka ni spremenjena). Prenos je samodejen: CAD in 3D/FreeCAD/lastno/solidworks (prenos.py, prenos.json).")
+    b.append("datoteka ni spremenjena). Prenos je samodejen: CAD in 3D/Razvoj/lastno/solidworks (prenos.py, prenos.json).")
     b.append("")
     b.append("ZGRADBA: enaka kot v Dropboxu. Vsak .SLDPRT je .FCStd z istim imenom v isti mapi, vsak .SLDASM je sestav (Assembly)")
     b.append("z istim imenom, ki kaže na iste dele in podsestave na istih legah kot v SolidWorksu. Vse stoji z osjo Z navzgor")
@@ -305,7 +305,7 @@ def preberi_txt(p):
         if os.path.exists(p2):
             shutil.copy2(p2, os.path.join(cilj, ime))
     with open(os.path.join(mapa, "Skripte", "PREBERI.txt"), "w", encoding="utf-8") as f:
-        f.write("Skripte prenosa so skupne: CAD in 3D/FreeCAD/lastno/solidworks (sw_preberi.py, zgradi.py, preveri.py, prenos.py).\n"
+        f.write("Skripte prenosa so skupne: CAD in 3D/Razvoj/lastno/solidworks (sw_preberi.py, zgradi.py, preveri.py, prenos.py).\n"
                 "Tu so le podatki tega projekta (podatki/). Ponovni prenos: python prenos.py beri \"%s\"; python prenos.py gradi \"%s\"\n"
                 % (kljuc, kljuc))
 

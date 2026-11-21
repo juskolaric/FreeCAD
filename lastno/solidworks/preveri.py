@@ -20,7 +20,7 @@ except Exception:  # noqa: BLE001
 try:
     TU = os.path.dirname(os.path.abspath(__file__))
 except NameError:
-    TU = os.path.join(os.path.expanduser("~"), "Desktop", "GitHub", "CAD in 3D", "FreeCAD", "lastno", "solidworks")
+    TU = os.path.join(os.path.expanduser("~"), "Desktop", "GitHub", "CAD in 3D", "Razvoj", "lastno", "solidworks")
 if TU not in sys.path:
     sys.path.insert(0, TU)
 import zgradi as zd  # noqa: E402

@@ -15,7 +15,7 @@ import FreeCAD as App
 import FreeCADGui as Gui
 
 TU = os.path.dirname(os.path.abspath(__file__)) if "__file__" in globals() else \
-    os.path.join(os.path.expanduser("~"), "Desktop", "GitHub", "CAD in 3D", "FreeCAD", "lastno", "solidworks")
+    os.path.join(os.path.expanduser("~"), "Desktop", "GitHub", "CAD in 3D", "Razvoj", "lastno", "solidworks")
 if TU not in sys.path:
     sys.path.insert(0, TU)
 import prenos_cfg as cfg  # noqa: E402
