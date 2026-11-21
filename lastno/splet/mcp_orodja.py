@@ -697,11 +697,11 @@ PREDLOGE = [
      "besedilo": "Kos {kos} premakni v bazo standardnih delov, kategorija {kategorija}: najprej `splet` POST "
                  "/standardni {{\"dejanje\": \"podatki\", \"dokument\": \"{kos}\"}}, nato po potrditvi uporabnika "
                  "{{\"dejanje\": \"oznaci\", \"dokument\": \"{kos}\", \"kategorija\": \"{kategorija}\"}}."},
-    {"name": "natisni_kos", "description": "Priprava kosa za 3D tisk (Bambu P2S) in okno Pripravi.",
+    {"name": "natisni_kos", "description": "Priprava kosa za 3D tisk (Bambu P2S) v ozadju.",
      "arguments": [{"name": "kos", "description": "objekt ali dokument", "required": True}],
      "besedilo": "Pripravi {kos} za 3D tisk: `izmeri` (okvir mora biti znotraj 256 x 256 x 256 mm), `splet` POST "
-                 "/tisk/lega za lego brez podpor, nato `natisni`. Tiskalnik, predal in polnilo potrdi uporabnik v oknu "
-                 "Pripravi; tisk se ne zažene sam."},
+                 "/tisk/lega za lego, nato `natisni` s polnilom (polnilo, podpore, barva, v_vrsto), ki kos nareže v "
+                 "plošči Tiskaj brez okna Pripravi. Tisk se ne zažene sam, razen če je čakalna vrsta vklopljena."},
 ]
 
 
@@ -2630,13 +2630,66 @@ def t_oblikovanje(a):
     return {"napaka": napaka, "besedilo": "\n".join(v), "slike": slike}
 
 
+def _tiskaj_privzete_prilagoditve():
+    """Prilagoditve procesa iz config.json plošče Tiskaj (kot jih okno Pripravi vpiše v obrazec)."""
+    try:
+        with open(os.path.join(S.TISKAJ_MAPA or "", "config.json"), encoding="utf-8") as f:
+            return {k: str(v) for k, v in ((json.load(f).get("prilagoditve") or {}).get("process") or {}).items()}
+    except (OSError, ValueError, AttributeError):
+        return {}
+
+
+def _tiskaj_lege(ime_doc, imena, kot_previsa=45):
+    """Najboljša STABILNA lega iz analize (tisk_lega.py) za vsako datoteko: {datoteka: kandidat}. Kos brez stabilnega
+    kandidata (prvi je lahko nagnjen na robu, stik 0) ni v slovarju: plošča ga postavi na največjo ravno ploskev."""
+    odgovor = {"konec": threading.Event(), "izpis": "", "napaka": "", "rezultat": None}
+    S.STANJE.vrsta.put(("tisk_mreze", {"dokument": ime_doc, "imena": imena}, odgovor))
+    if not odgovor["konec"].wait(120) or odgovor["napaka"] or not (odgovor["rezultat"] or {}).get("ok"):
+        return {}
+    out = {}
+    for k in S.tisk_lega_kosov(odgovor["rezultat"], kot_previsa).get("kosi", []):
+        stabilni = [c for c in k.get("kandidati") or [] if c.get("stabilna")]
+        if stabilni:
+            out[k["datoteka"]] = stabilni[0]
+    return out
+
+
+def _tiskaj_opravilo(oid):
+    koda, s = S._tiskaj_klic("GET", "/api/stanje", cas=5.0)
+    if koda != 200 or not isinstance(s, dict):
+        return None
+    return next((o for o in s.get("opravila") or [] if o.get("id") == oid), None)
+
+
+def _tiskaj_v_vrsto(projekt, tiskalnik, barva):
+    telo = {"projekt": projekt, "tiskalnik": tiskalnik or ""}
+    if barva:
+        telo["barva"] = barva
+    koda, odg = S._tiskaj_klic("POST", "/api/vrsta/dodaj", telo, cas=10.0)
+    return koda == 200, (odg or {}).get("napaka") if isinstance(odg, dict) else ""
+
+
 @orodje("natisni", naslov="Natisni (3D tisk)", nit="streznik", lastnosti={
     "dokument": {"type": "string", "description": "ime ali oznaka (privzeto aktivni)"},
     "objekti": {"type": "array", "items": {"type": "string"},
                 "description": "kosi za tisk (imena ali oznake); privzeto vsa vidna telesa"},
+    "polnilo": {"type": "number", "description": "gostota polnila v % (0–100); privzeto iz nastavitev plošče (75 %)"},
+    "podpore": {"type": "string", "enum": ["samodejno", "vedno", "nikoli"],
+                "description": "podpore; privzeto nikoli, če je lega brez podpor, sicer samodejno"},
+    "lega": {"type": "string", "enum": ["freecad", "samodejno", "ploskev", "kot-je"],
+             "description": "freecad = najboljša lega iz analize /tisk/lega (privzeto); samodejno = izbere rezalnik; "
+                            "ploskev = največja ravna ploskev na mizo; kot-je = kot v modelu"},
+    "barva": {"type": "string", "description": "barva filamenta #RRGGBB (po njej vrsta izbere predal AMS)"},
+    "material": {"type": "string", "description": "ključ materiala plošče (petg, petg-basic, pla, pla-matte, abs, asa, tpu)"},
+    "tiskalnik": {"type": "string", "description": "P2S 1 ali P2S 2 (privzeto katerikoli)"},
+    "v_vrsto": {"type": "boolean", "description": "narezan projekt dodaj v čakalno vrsto (privzeto true)"},
+    "prilagoditve": {"type": "object", "description": "dodatne nastavitve procesa Bambu Studia, npr. "
+                                                      "{\"wall_loops\": \"4\", \"sparse_infill_pattern\": \"gyroid\"}"},
+    "okno": {"type": "boolean", "description": "true = po starem odpri okno Pripravi v brskalniku (uporabnik potrdi sam)"},
 }, opis="""
-Kose izvozi kot STEP v vhodno mapo plošče tiskalnikov (Tiskaj) in v brskalniku odpre zavihek Tiskanje z oknom Pripravi.
-Tiskalnik, predal, lego in polnilo potrdi uporabnik; tisk se nikoli ne zažene sam.""")
+Kose izvozi kot STEP v vhodno mapo plošče tiskalnikov (Tiskaj) in jih tam nareže v ozadju (brez okna Pripravi) z
+izbranim polnilom, podporami, lego in barvo; narezane doda v čakalno vrsto. Vrne čas, težo in projekt vsakega kosa.
+okno=true po starem odpre okno Pripravi, kjer vse potrdi uporabnik.""")
 def t_natisni(a):
     def pripravi():
         doc = _dokument(a.get("dokument"))
@@ -2664,13 +2717,93 @@ def t_natisni(a):
     izid = odgovor["rezultat"] or {}
     if not izid.get("ok"):
         raise Napaka(izid.get("sporocilo") or "Izvoz za tisk ni uspel.")
-    plosca = S._tiskaj_oznaci_rocno(list(izid["datoteke"]))
-    odziv = brskalnik("natisni", {"datoteke": izid["datoteke"]}, cakaj=4.0)
+    plosca = S._tiskaj_oznaci_rocno(list(izid["datoteke"]))   # opazovalec vhoda jih ne pripravi sam
     v = [izid.get("sporocilo", ""), "Mapa: %s" % izid.get("mapa", ""), "Datoteke: " + ", ".join(izid["datoteke"])]
+    if a.get("okno"):
+        odziv = brskalnik("natisni", {"datoteke": izid["datoteke"]}, cakaj=4.0)
+        if plosca is False:
+            v.append("Plošča Tiskaj ne teče: uporabnik jo zažene v zavihku Tiskanje (datoteke počakajo).")
+        v.append("Okno Pripravi je odprto v brskalniku; tiskalnik, predal in polnilo potrdi uporabnik." if odziv else
+                 "Brskalnik ni odprt: okno Pripravi se odpre v zavihku Tiskanje, ko ga uporabnik odpre.")
+        return "\n".join(v)
     if plosca is False:
-        v.append("Plošča Tiskaj ne teče: uporabnik jo zažene v zavihku Tiskanje (datoteke počakajo).")
-    v.append("Okno Pripravi je odprto v brskalniku; tiskalnik, predal in polnilo potrdi uporabnik." if odziv else
-             "Brskalnik ni odprt: okno Pripravi se odpre v zavihku Tiskanje, ko ga uporabnik odpre.")
+        raise Napaka("Plošča Tiskaj ne teče (STEP je v vhodni mapi). Zaženi jo s `splet` POST /tiskaj/zazeni in "
+                     "ponovi `natisni`.")
+
+    # ---- priprava v ozadju (od 2026-11-21): polnilo, podpore, lega, barva brez okna Pripravi ----
+    pril = _tiskaj_privzete_prilagoditve()
+    if a.get("polnilo") is not None:
+        p = float(a["polnilo"])
+        if not 0 <= p <= 100:
+            raise Napaka("polnilo mora biti 0–100 %")
+        pril["sparse_infill_density"] = "%s%%" % (int(p) if p.is_integer() else p)
+    pril.update({str(k): str(x) for k, x in (a.get("prilagoditve") or {}).items()})
+    lega = a.get("lega") or "freecad"
+    lege = _tiskaj_lege(ime_doc, imena) if lega == "freecad" else {}
+    mapa = izid.get("mapa") or S._tiskaj_vhod_mapa()
+    tiskalnik, barva = a.get("tiskalnik") or "", a.get("barva") or ""
+    v_vrsto = a.get("v_vrsto", True)
+    opravila = []
+    for dat in izid["datoteke"]:
+        telo = {"pot": os.path.join(mapa, dat), "prilagoditve": pril, "barva": barva}
+        kand = lege.get(dat)
+        if lega == "freecad" and kand:
+            telo.update(orientacija="rocno", rotacija=kand["rotacija"])
+        elif lega != "freecad":
+            telo["orientacija"] = lega
+        podpore = a.get("podpore") or ("nikoli" if kand and kand.get("brez_podpor") else "samodejno")
+        telo["podpore"] = podpore
+        for k in ("material", "tiskalnik"):
+            if a.get(k):
+                telo[k] = a[k]
+        koda, odg = S._tiskaj_klic("POST", "/api/pripravi", telo, cas=15.0)
+        if koda != 200 or not isinstance(odg, dict) or not odg.get("opravilo"):
+            v.append("%s: priprava se ni začela (%s)" % (dat, (odg or {}).get("napaka") if isinstance(odg, dict) else koda))
+            continue
+        opis_lege = ("lega iz analize (podpore ~%.1f cm³)" % kand["podpore_cm3"]) if kand else \
+            ("lega: %s" % ("rezalnik" if lega == "samodejno" else
+                           "največja ravna ploskev (analiza ni našla stabilne lege)" if lega == "freecad" else lega))
+        opravila.append({"dat": dat, "id": odg["opravilo"], "opis": "%s, podpore %s" % (opis_lege, podpore)})
+    v.append("Polnilo %s; priprava v plošči Tiskaj (brez okna Pripravi)." % pril.get("sparse_infill_density", "po profilu"))
+
+    def dokoncaj(o, rok):
+        """Počaka na rezanje; vrne (stanje, opravilo plošče). Narezano doda v vrsto."""
+        while time.time() < rok:
+            op = _tiskaj_opravilo(o["id"])
+            if op and op.get("stanje") != "teče":
+                if op.get("stanje") == "končano" and v_vrsto:
+                    projekt = os.path.basename(((op.get("porocilo") or {}).get("projekt")) or "")
+                    if projekt:
+                        o["vrsta"] = _tiskaj_v_vrsto(projekt, tiskalnik, barva)
+                return op
+            time.sleep(2)
+        return None
+
+    rok = time.time() + 150
+    nedokoncana = []
+    for o in opravila:
+        op = dokoncaj(o, rok)
+        if op is None:
+            nedokoncana.append(o)
+            v.append("%s: rezanje še teče (opravilo %s, %s)%s." % (o["dat"], o["id"], o["opis"],
+                                                                 "; v vrsto gre, ko konča" if v_vrsto else ""))
+            continue
+        por = op.get("porocilo") or {}
+        if op.get("stanje") != "končano":
+            v.append("%s: napaka pri rezanju: %s" % (o["dat"], (op.get("dnevnik") or ["?"])[-1]))
+            continue
+        vrsta = o.get("vrsta")
+        v.append("%s: narezano %s, %.1f g%s, %s; projekt %s%s." % (
+            o["dat"], por.get("cas_besedilo", "?"), float(por.get("teza_g") or 0),
+            (", podpore %.1f g" % por["podpore_g"]) if por.get("podpore") and por.get("podpore_g") else "",
+            o["opis"], os.path.basename(por.get("projekt") or ""),
+            ("; v čakalni vrsti" if vrsta and vrsta[0] else ("; v vrsto ni šlo: %s" % (vrsta[1] if vrsta else "?")))
+            if v_vrsto else ""))
+    if nedokoncana and v_vrsto:
+        def ozadje():
+            for o in nedokoncana:
+                dokoncaj(o, time.time() + 900)
+        threading.Thread(target=ozadje, daemon=True, name="natisni-v-vrsto").start()
     return "\n".join(v)
 
 
